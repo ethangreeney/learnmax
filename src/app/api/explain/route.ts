@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateJSON } from '@/lib/ai';
+import { generateText } from '@/lib/ai';
 
 export type ExplanationStyle = 'default' | 'simplified' | 'detailed' | 'example';
 
@@ -14,68 +14,49 @@ export async function POST(req: NextRequest) {
     let styleInstruction = '';
     switch (style) {
       case 'simplified':
-        styleInstruction = 'Explain it in very simple terms, as if for a complete beginner. Use analogies and avoid jargon.';
+        styleInstruction = 'Explain it in very simple terms, as if for a first-year student.';
         break;
       case 'detailed':
-        styleInstruction = 'Provide a more detailed, in-depth explanation suitable for a university-level student. Cover nuances and complexities.';
+        styleInstruction = 'Provide a more detailed, in-depth explanation suitable for a post-graduate student, covering nuances and complexities.';
         break;
       case 'example':
         styleInstruction = 'Focus on providing a concrete, real-world example of the concept in action. Keep the theory brief and emphasize the practical application.';
         break;
       default:
-        styleInstruction = 'Provide a clear and comprehensive explanation of the core concept.';
+        styleInstruction = 'Provide a clear and comprehensive explanation suitable for a university undergraduate.';
         break;
     }
 
     const prompt = `
-      You are a world-class educator creating a study guide.
-      Your task is to explain the concept of "${subtopicTitle}".
+      You are a University Professor creating a study guide. Your task is to explain the concept of "${subtopicTitle}".
 
-      **Instruction:** ${styleInstruction}
-
-      **CRITICAL FORMATTING RULES:**
-      - Your entire output MUST be a single JSON object with one key: "explanation".
-      - The "explanation" value must be a string containing well-structured, readable Markdown.
-      - **Paragraphs MUST be separated by a blank line.** This is essential for readability.
-      - **Headings**: Use \`###\` for main headings and \`####\` for sub-headings.
-      - **Lists**: Use bullet points ('*') for all lists of concepts, definitions, or key points.
-      - **Code**: Use inline backticks (\`code\`) for technical terms. For multi-line code snippets, you MUST use triple backticks (\`\`\`c).
+      **CRITICAL INSTRUCTIONS:**
+      1.  **DO NOT WRITE A PREAMBLE OR INTRODUCTION.** Your response must begin *directly* with the main Markdown heading (e.g., "### Introduction to xv6"). Do not include any conversational filler.
+      2.  **Prioritize Concepts:** Your primary goal is to explain the underlying computer science concepts. Use code snippets only as supporting examples.
+      3.  **Explain the "Why":** Do not just describe what a piece of code is. Explain *why* it exists and the problem it solves.
+      4.  **University-Level Depth:** The explanation must be detailed and conceptually rich.
+      5.  **Formatting:** Use clean Markdown with paragraphs, headings (\`###\`, \`####\`), lists, and code blocks (\`\`\`c).
 
       ---
-      **A GOOD EXAMPLE of the required output format:**
+      **EXAMPLE OF GOOD VS. BAD EXPLANATION:**
 
-      ### Introduction to xv6
+      **BAD (Shallow):**
+      \`uint64 kstack;\` // Virtual address of kernel stack
 
-      * **Definition**: A modern re-implementation of the Unix V6 operating system, created by MIT for educational purposes.
-      * **Platforms**: Supports both Intel x86 and RISC-V processors.
-
-      This operating system provides a classic monolithic kernel structure, which is excellent for teaching fundamental OS concepts.
-
-      ### Core Components
-
-      #### Process Control Block (\`struct proc\`)
-      This is the most important data structure for process management in xv6. It contains all essential per-process state.
-
-      \`\`\`c
-      // A simplified view from proc.h
-      struct proc {
-        struct spinlock lock;   // Protects this structure
-        enum procstate state;   // Process state (e.g., UNUSED, RUNNING)
-        int pid;                // Process ID
-        struct proc *parent;    // Parent process
-        uint64 kstack;          // Virtual address of kernel stack
-      };
-      \`\`\`
+      **GOOD (Deep, University-Level):**
+      #### Kernel Stack (\`kstack\`)
+      Each process has a private **kernel stack**, whose address is stored in \`kstack\`. This is separate from the process's user stack. When a process makes a system call or an interrupt occurs, the CPU switches from user mode to kernel mode. At this point, it needs a secure place to execute kernel code and save the user registers—this is what the kernel stack is for. This separation is a critical security boundary, preventing user code from interfering with the kernel's operation.
       ---
 
-      Now, using the full lecture text below for context, generate the explanation by strictly following all the rules and matching the style of the good example.
+      Now, using the full lecture text below for context, generate a deep, university-level explanation for "${subtopicTitle}".
 
       **LECTURE TEXT:**
       ${content}
     `;
 
-    const aiResponse = await generateJSON(prompt);
-    return NextResponse.json(aiResponse);
+    const markdownExplanation = await generateText(prompt);
+
+    return NextResponse.json({ explanation: markdownExplanation });
 
   } catch (error: any) {
     console.error("Error in explain API:", error);

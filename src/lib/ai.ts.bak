@@ -10,35 +10,50 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
  * Generates a JSON object from a prompt.
- * Uses the 'application/json' response MIME type for reliable JSON output.
+ * Uses 'gemini-1.5-flash' which is fast and has a generous free tier,
+ * perfect for structural tasks like breakdown and quiz generation.
  */
 export async function generateJSON(prompt: string): Promise<any> {
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-1.5-flash', // REVERTED to Flash for higher rate limits
     generationConfig: {
       responseMimeType: 'application/json',
     },
   });
 
+  let rawResponseText = ''; // To store the response for debugging
   try {
     const result = await model.generateContent(prompt);
-    const responseText = result.response?.text();
+    let responseText = result.response?.text();
+    rawResponseText = responseText || ''; // Store the raw response
+
     if (!responseText) {
       throw new Error("The AI returned an empty response.");
     }
+
+    const startIndex = responseText.indexOf('{');
+    const endIndex = responseText.lastIndexOf('}');
+
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      responseText = responseText.substring(startIndex, endIndex + 1);
+    }
+    
     return JSON.parse(responseText);
   } catch (e: any) {
     console.error("Failed to get valid JSON from AI response:", e.message);
+    console.error("Raw AI response that failed parsing:", rawResponseText);
     throw new Error("The AI failed to generate a valid response. Please try again.");
   }
 }
 
 /**
  * Generates plain text from a prompt.
- * Does not force a specific MIME type, suitable for natural language responses.
+ * Uses the powerful 'gemini-1.5-pro' model for the highest quality explanations,
+ * as this is the most critical content.
  */
 export async function generateText(prompt: string): Promise<string> {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // KEEPING Pro model for the most important content generation (the explanation)
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
   
     try {
       const result = await model.generateContent(prompt);

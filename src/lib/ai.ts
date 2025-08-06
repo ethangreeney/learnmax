@@ -6,54 +6,50 @@ if (!apiKey) {
   throw new Error("GOOGLE_API_KEY is not set. Please add it to your .env.local file.");
 }
 
-const genAI = new GoogleGenerativeAI(apiKey);
+// Client for the Flash model - for speed, cost-effectiveness, and JSON tasks
+const flashAI = new GoogleGenerativeAI(apiKey);
+
+// Client for the Pro model - for highest quality text generation
+const proAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Generates a JSON object from a prompt.
- * Uses the 'application/json' response MIME type for reliable JSON output.
+ * Generates a JSON object using the 'gemini-2.5-flash' model.
+ * This is the best model for high-volume, low-latency, structured output tasks.
  */
 export async function generateJSON(prompt: string): Promise<any> {
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+  const model = flashAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
     generationConfig: {
       responseMimeType: 'application/json',
     },
   });
 
-  let rawResponseText = ''; // To store the response for debugging
   try {
     const result = await model.generateContent(prompt);
-    let responseText = result.response?.text();
-    rawResponseText = responseText || ''; // Store the raw response
-
+    const responseText = result.response?.text();
     if (!responseText) {
       throw new Error("The AI returned an empty response.");
     }
-
-    // Heuristic to find the JSON object in the response string.
-    // This helps strip out any leading/trailing text or markdown.
+    // A simple heuristic to find the JSON object in the response string.
     const startIndex = responseText.indexOf('{');
     const endIndex = responseText.lastIndexOf('}');
-
     if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-      responseText = responseText.substring(startIndex, endIndex + 1);
+      return JSON.parse(responseText.substring(startIndex, endIndex + 1));
     }
-    
     return JSON.parse(responseText);
   } catch (e: any) {
     console.error("Failed to get valid JSON from AI response:", e.message);
-    // Log the raw text that failed to parse, which is crucial for debugging.
-    console.error("Raw AI response that failed parsing:", rawResponseText);
-    throw new Error("The AI failed to generate a valid response. Please try again.");
+    throw new Error("The AI failed to generate a valid JSON response. Please try again.");
   }
 }
 
 /**
- * Generates plain text from a prompt.
- * Does not force a specific MIME type, suitable for natural language responses.
+ * Generates plain text using the 'gemini-2.5-pro' model.
+ * This is the most powerful model for generating high-quality, accurate,
+ * and coherent educational content.
  */
 export async function generateText(prompt: string): Promise<string> {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = proAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
   
     try {
       const result = await model.generateContent(prompt);

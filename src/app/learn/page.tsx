@@ -95,6 +95,7 @@ export default function Learn() {
     setExplanation('Crafting your learning module...');
     try {
       const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
+      // No longer need the client-side parser. Trusting the new prompt.
       setExplanation(res.explanation);
     } catch (e: any) {
       setExplanation('Could not generate explanation. ' + e.message);
@@ -165,7 +166,6 @@ export default function Learn() {
                   <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
                 </div>
                 <hr className="border-neutral-800 my-6" />
-                {/* THIS IS THE FIX: Applying prose styles to the container */}
                 <div className="prose prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
                 </div>
