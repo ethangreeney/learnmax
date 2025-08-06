@@ -10,12 +10,12 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
  * Generates a JSON object from a prompt.
- * Uses 'gemini-1.5-flash' which is fast and has a generous free tier,
+ * Uses 'gemini-2.0-flash' which is fast and has a generous free tier,
  * perfect for structural tasks like breakdown and quiz generation.
  */
 export async function generateJSON(prompt: string): Promise<any> {
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash', // REVERTED to Flash for higher rate limits
+    model: 'gemini-2.0-flash', // REVERTED to Flash for higher rate limits
     generationConfig: {
       responseMimeType: 'application/json',
     },
@@ -48,12 +48,12 @@ export async function generateJSON(prompt: string): Promise<any> {
 
 /**
  * Generates plain text from a prompt.
- * Uses the powerful 'gemini-1.5-pro' model for the highest quality explanations,
+ * Uses the powerful 'gemini-2.0-flash' model for the highest quality explanations,
  * as this is the most critical content.
  */
 export async function generateText(prompt: string): Promise<string> {
     // KEEPING Pro model for the most important content generation (the explanation)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
     try {
       const result = await model.generateContent(prompt);

@@ -13,12 +13,12 @@ const flashAI = new GoogleGenerativeAI(apiKey);
 const proAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Generates a JSON object using the 'gemini-2.5-flash' model.
+ * Generates a JSON object using the 'gemini-2.0-flash' model.
  * This is the best model for high-volume, low-latency, structured output tasks.
  */
 export async function generateJSON(prompt: string): Promise<any> {
   const model = flashAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     generationConfig: {
       responseMimeType: 'application/json',
     },
@@ -44,12 +44,12 @@ export async function generateJSON(prompt: string): Promise<any> {
 }
 
 /**
- * Generates plain text using the 'gemini-2.5-pro' model.
+ * Generates plain text using the 'gemini-2.0-flash' model.
  * This is the most powerful model for generating high-quality, accurate,
  * and coherent educational content.
  */
 export async function generateText(prompt: string): Promise<string> {
-    const model = proAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const model = proAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
     try {
       const result = await model.generateContent(prompt);
