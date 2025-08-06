@@ -21,8 +21,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
-        <div className="container-narrow">
-          <header className="py-8 flex items-center justify-between border-b border-neutral-900">
+        <header className="py-8 border-b border-neutral-900">
+          <div className="container-narrow flex items-center justify-between">
             <Link href="/" className="text-2xl font-semibold tracking-tight hover:text-white transition-colors">
               LearnMax
             </Link>
@@ -33,12 +33,12 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
-          </header>
-          <main className="py-10">{children}</main>
-          <footer className="py-12 text-center text-sm text-neutral-500">
-            Built with Next.js, Tailwind CSS, and Google Gemini.
-          </footer>
-        </div>
+          </div>
+        </header>
+        <main className="py-10">{children}</main>
+        <footer className="py-12 text-center text-sm text-neutral-500">
+          Built with Next.js, Tailwind CSS, and Google Gemini.
+        </footer>
       </body>
     </html>
   );

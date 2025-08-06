@@ -5,8 +5,9 @@ import { useLearnStore } from '@/lib/learn-store';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ExplanationStyle } from '@/app/api/explain/route';
+import { Loader2, Wand2 } from 'lucide-react';
+import ChatPanel from '@/components/ChatPanel';
 
-// API call functions
 async function postJSON<T>(url: string, body: any): Promise<T> {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
@@ -43,21 +44,47 @@ export default function Learn() {
   const currentSubtopic = subtopics[currentIndex];
   const isSubtopicActive = currentSubtopic != null;
 
-  const analyzeContent = async (text: string) => {
-    if (!text.trim()) return;
-    setLoading(true);
-    setError(undefined);
-    resetAll();
-    setInput(text);
-    setContent(text);
-    setBreakdown('Analyzing…', []);
+  const performAnalysis = async (text: string) => {
     try {
+      setContent(text);
+      setBreakdown('Analyzing, please wait...', []);
       const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
       setBreakdown(bd.topic, bd.subtopics);
       const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
       setQuiz(qz.questions);
     } catch (e: any) {
       setError(e.message || 'Failed to analyze content.');
+      setBreakdown('Analysis Failed', []);
+    }
+  };
+
+  const handleTextAnalysis = async () => {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    try {
+      await performAnalysis(input);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePdfUpload = async (file: File) => {
+    if (loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    setInput('');
+    setBreakdown(`Processing ${file.name}...`, []);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
+      await performAnalysis(res.content);
+    } catch (e: any) {
+      setError(e.message || 'Failed to upload PDF');
+      setBreakdown('PDF Upload Failed', []);
     } finally {
       setLoading(false);
     }
@@ -65,7 +92,7 @@ export default function Learn() {
 
   const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
     if (!currentSubtopic || !content) return;
-    setExplanation(`Generating ${style} explanation...`);
+    setExplanation('Crafting your learning module...');
     try {
       const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
       setExplanation(res.explanation);
@@ -80,61 +107,55 @@ export default function Learn() {
     }
   }, [currentIndex, currentSubtopic, fetchExplanation]);
 
-  const handlePdfUpload = async (file: File) => {
-    setLoading(true);
-    setError(undefined);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
-      await analyzeContent(res.content);
-    } catch (e: any) {
-      setError(e.message || 'Failed to upload PDF');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-8">
-      <aside className="rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* --- Left Column: Workspace (2/10 width) --- */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
         <h2 className="text-xl font-semibold">Learn Workspace</h2>
-        <textarea
-            className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700"
-            placeholder="Paste notes or drop a PDF..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
-        />
+        <div 
+          className="relative"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
+        >
+          <textarea
+              className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 disabled:opacity-60"
+              placeholder="Paste notes or drop a PDF..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={loading}
+          />
+        </div>
         <div className="flex gap-2">
-            <button onClick={() => analyzeContent(input)} disabled={loading || !input.trim()} className="rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50">Analyze</button>
-            <button onClick={() => { resetAll(); setInput(''); }} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200">Reset</button>
+            <button onClick={handleTextAnalysis} disabled={loading || !input.trim()} className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? ( <> <Loader2 className="w-4 h-4 animate-spin" /> Analyzing... </> ) : ( <> <Wand2 className="w-4 h-4" /> Analyze </> )}
+            </button>
+            <button onClick={() => { resetAll(); setInput(''); }} disabled={loading} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50">Reset</button>
         </div>
         {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
         <hr className="border-neutral-800" />
         <div>
             <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
+            {subtopics.length > 0 && ( <div className="my-4"> <TopicProgressBar current={unlockedIndex} total={subtopics.length} /> </div> )}
             {subtopics.length > 0 && (
-                <div className="my-4">
-                    <TopicProgressBar current={unlockedIndex} total={subtopics.length} />
-                </div>
-            )}
-            {subtopics.length > 0 && (
-                <ul className="space-y-2">{subtopics.map((s, i) => (
-                    <li key={i}><button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2 text-sm ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>{i + 1}. {s.title}</button></li>
+                <ul className="space-y-1">{subtopics.map((s, i) => (
+                    <li key={i}>
+                      <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
+                        {i + 1}. {s.title}
+                      </button>
+                    </li>
                 ))}</ul>
             )}
         </div>
       </aside>
-      <main>
+
+      {/* --- Center Column: Main Content (5/10 width) --- */}
+      <main className="lg:col-span-5">
         {isSubtopicActive ? (
           <div className="space-y-8">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
                 <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
-                  <span>Importance: {currentSubtopic.importance}</span>
-                  <span>•</span>
-                  <span>Difficulty: {currentSubtopic.difficulty}</span>
+                  <span>Importance: {currentSubtopic.importance}</span> <span>•</span> <span>Difficulty: {currentSubtopic.difficulty}</span>
                 </div>
                 <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
                   <span className="text-sm font-medium text-neutral-400">Style:</span>
@@ -144,27 +165,9 @@ export default function Learn() {
                   <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
                 </div>
                 <hr className="border-neutral-800 my-6" />
-                <div className="text-base text-neutral-300">
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                            h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-10 mb-4 pb-3 border-b border-neutral-800" {...props} />,
-                            h3: ({node, ...props}) => <h3 className="text-xl font-bold mt-8 mb-3" {...props} />,
-                            p: ({ node, ...props }) => {
-                                if (node.children[0]?.type === 'element' && node.children[0]?.tagName === 'code') {
-                                    return <>{props.children}</>;
-                                }
-                                return <p className="leading-relaxed my-4" {...props} />;
-                            },
-                            strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
-                            ul: ({node, ...props}) => <ul className="list-disc pl-6 space-y-2 my-4" {...props} />,
-                            ol: ({node, ...props}) => <ol className="list-decimal pl-6 space-y-2 my-4" {...props} />,
-                            code: ({node, inline, ...props}) => inline ? <code className="bg-neutral-800 rounded-md px-2 py-1 text-sm font-mono" {...props} /> : <pre className="bg-neutral-800 rounded-md p-4 overflow-x-auto text-sm" {...props} />,
-                            a: ({node, ...props}) => <a className="text-blue-400 font-medium hover:underline" {...props} />,
-                        }}
-                    >
-                        {explanation}
-                    </ReactMarkdown>
+                {/* THIS IS THE FIX: Applying prose styles to the container */}
+                <div className="prose prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
                 </div>
             </div>
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
@@ -174,10 +177,15 @@ export default function Learn() {
           </div>
         ) : (
           <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
-            <p>Select a subtopic to begin learning</p>
+            <p>{loading ? 'Analyzing...' : 'Analyze some content to begin learning'}</p>
           </div>
         )}
       </main>
+
+      {/* --- Right Column: AI Tutor (3/10 width) --- */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={content} />
+      </aside>
     </div>
   );
 }
