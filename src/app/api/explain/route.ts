@@ -10,17 +10,16 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = `
-      You are a world-class educator creating a study guide.
-      Your task is to provide a detailed, in-depth explanation of the core concept of "${subtopicTitle}".
+      You are a world-class educator creating a study guide for a university student.
+      Your task is to provide a detailed explanation of the core concept of "${subtopicTitle}".
 
       **Formatting Rules:**
       - The output MUST be a JSON object with a single key: "explanation".
       - The "explanation" value MUST be a string containing well-structured Markdown.
-      - Use '##' for main section titles. These are the most important headings.
+      - Use '##' for main section titles. These are the most important headings and should be used for major concepts.
       - Use '###' for sub-section titles.
-      - Use bold text ('**term**') for all key terms and definitions.
+      - Use bold text ('**term**') for all key terms and definitions to make them stand out.
       - Use bulleted or numbered lists for steps, components, or key points.
-      - Use ample whitespace and structure to create a highly readable document.
 
       Use the full lecture text below for context.
       ---

@@ -74,67 +74,54 @@ export default function Learn() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-8">
-      {/* Sidebar for topic navigation */}
-      <aside className="rounded-lg border border-neutral-800 p-4 space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold">Learn Workspace</h2>
-          <p className="text-sm text-neutral-400 mt-1">Upload content to start a new topic.</p>
-        </div>
+      {/* Sidebar */}
+      <aside className="rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Learn Workspace</h2>
         <textarea
-            className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 focus:ring-white"
-            placeholder="Paste lecture notes or drop a PDF here..."
+            className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700"
+            placeholder="Paste notes or drop a PDF..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
         />
-        <div className="flex flex-wrap gap-2">
-            <button onClick={() => analyzeContent(input)} disabled={loading || !input.trim()} className="rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50">
-                {loading ? 'Analyzing…' : 'Analyze'}
-            </button>
+        <div className="flex gap-2">
+            <button onClick={() => analyzeContent(input)} disabled={loading || !input.trim()} className="rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50">Analyze</button>
             <button onClick={() => { resetAll(); setInput(''); }} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200">Reset</button>
         </div>
         {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
         <hr className="border-neutral-800" />
         <div>
-            <div className="mb-3">
-                <div className="text-sm uppercase tracking-wide text-neutral-400">Topic</div>
-                <div className="font-semibold text-lg">{topic}</div>
-            </div>
+            <div className="mb-3"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
             {subtopics.length > 0 && (
-                <ul className="space-y-2">
-                    {subtopics.map((s, i) => (
-                    <li key={i}>
-                        <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors ${i > unlockedIndex ? 'text-neutral-600 cursor-not-allowed' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
-                            {i + 1}. {s.title}
-                        </button>
-                    </li>
-                    ))}
-                </ul>
+                <ul className="space-y-2">{subtopics.map((s, i) => (
+                    <li key={i}><button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2 text-sm ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>{i + 1}. {s.title}</button></li>
+                ))}</ul>
             )}
         </div>
       </aside>
 
-      {/* Main content area for the explanation and quiz */}
+      {/* Main content */}
       <main>
         {isSubtopicActive ? (
           <div className="space-y-8">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-                <h3 className="text-2xl font-bold tracking-tight">{currentSubtopic.title}</h3>
-                <div className="text-sm text-neutral-400 mt-2">
-                    Importance: {currentSubtopic.importance} • Difficulty: {currentSubtopic.difficulty}
-                </div>
+                <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
+                <div className="text-sm text-neutral-400 mt-2">Importance: {currentSubtopic.importance} • Difficulty: {currentSubtopic.difficulty}</div>
                 <hr className="border-neutral-800 my-6" />
-                <div className="prose prose-invert max-w-none 
-prose-headings:font-bold prose-headings:tracking-tight 
-prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4 prose-h2:pb-4 prose-h2:border-b prose-h2:border-neutral-800 
-prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 
-prose-p:leading-7 prose-p:text-neutral-300 
-prose-strong:text-neutral-100 
-prose-a:text-blue-400 prose-a:font-medium prose-a:no-underline hover:prose-a:underline 
-prose-ul:list-disc prose-ul:pl-5 prose-li:my-2 
-prose-ol:list-decimal prose-ol:pl-5 
-prose-code:bg-neutral-800 prose-code:rounded prose-code:px-2 prose-code:py-1 prose-code:font-mono prose-code:text-sm">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <div className="text-base text-neutral-300">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                            h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-10 mb-4 pb-3 border-b border-neutral-800" {...props} />,
+                            h3: ({node, ...props}) => <h3 className="text-xl font-bold mt-8 mb-3" {...props} />,
+                            p: ({node, ...props}) => <p className="leading-relaxed my-4" {...props} />,
+                            strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
+                            ul: ({node, ...props}) => <ul className="list-disc pl-6 space-y-2 my-4" {...props} />,
+                            ol: ({node, ...props}) => <ol className="list-decimal pl-6 space-y-2 my-4" {...props} />,
+                            code: ({node, inline, ...props}) => inline ? <code className="bg-neutral-800 rounded-md px-2 py-1 text-sm font-mono" {...props} /> : <pre className="bg-neutral-800 rounded-md p-4 overflow-x-auto text-sm" {...props} />,
+                            a: ({node, ...props}) => <a className="text-blue-400 font-medium hover:underline" {...props} />,
+                        }}
+                    >
                         {explanation}
                     </ReactMarkdown>
                 </div>
@@ -145,7 +132,7 @@ prose-code:bg-neutral-800 prose-code:rounded prose-code:px-2 prose-code:py-1 pro
             </div>
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
             <p>Select a subtopic to begin learning</p>
           </div>
         )}

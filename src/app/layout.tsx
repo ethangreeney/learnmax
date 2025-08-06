@@ -1,10 +1,17 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'LearnMax — An AI Study Companion',
-  description: 'Mastery learning made effortless. Break complex lectures into focused steps, review key insights, and advance only when you master each concept.',
+  title: 'LearnMax — Your AI Study Companion',
+  description: 'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',
 };
+
+const navLinks = [
+  { href: '/', label: 'Home' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/learn', label: 'Learn' },
+];
 
 export default function RootLayout({
   children,
@@ -13,19 +20,23 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">
+      <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
         <div className="container-narrow">
           <header className="py-8 flex items-center justify-between border-b border-neutral-900">
-            <h1 className="text-2xl font-semibold tracking-tight">LearnMax</h1>
-            <nav className="text-sm text-neutral-300">
-              <a className="hover:text-white" href="/">Home</a>
-              <span className="mx-3">•</span>
-              <a className="hover:text-white" href="/dashboard">Dashboard</a><span className="mx-3">•</span><a className="hover:text-white" href="/learn">Learn</a>
+            <Link href="/" className="text-2xl font-semibold tracking-tight hover:text-white transition-colors">
+              LearnMax
+            </Link>
+            <nav className="flex items-center gap-4 text-sm text-neutral-300">
+              {navLinks.map((link, index) => (
+                <Link key={index} href={link.href} className="hover:text-white transition-colors">
+                  {link.label}
+                </Link>
+              ))}
             </nav>
           </header>
-          <main className="py-6">{children}</main>
-          <footer className="py-12 text-sm text-neutral-500">
-            Built with Next.js, Tailwind, and AI.
+          <main className="py-10">{children}</main>
+          <footer className="py-12 text-center text-sm text-neutral-500">
+            Built with Next.js, Tailwind CSS, and Google Gemini.
           </footer>
         </div>
       </body>

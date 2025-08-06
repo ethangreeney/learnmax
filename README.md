@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LearnMax - Your Personal AI Study Companion
+
+[![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js-black?logo=next.js)](https://nextjs.org)
+[![Powered by Google Gemini](https://img.shields.io/badge/Powered%20by-Gemini%20AI-blue?logo=google)](https://ai.google.com/)
+[![Styled with Tailwind CSS](https://img.shields.io/badge/Styled%20with-Tailwind%20CSS-38B2AC?logo=tailwind-css)](https://tailwindcss.com)
+
+LearnMax is a web application designed to accelerate learning and improve comprehension. By leveraging the power of Google's Gemini AI, it transforms raw text or PDF study materials into a structured, interactive learning path.
+
+## How It Works
+
+1.  **Provide Content**: Paste text directly or upload a PDF of your lecture notes, an article, or any other study material into the Learn Workspace.
+2.  **AI Analysis**: The application sends the content to the Gemini API, which analyzes the text and breaks it down into a logical sequence of subtopics.
+3.  **Guided Learning**: For each subtopic, the AI generates a detailed explanation.
+4.  **Mastery Check**: After studying a subtopic, take a quiz. You can only proceed to the next subtopic after you've passed the quiz, ensuring you've understood the concept.
+
+## Features
+
+-   **PDF & Text Upload**: Easily input your study materials.
+-   **AI-Powered Topic Breakdown**: Automatically structures your content into a step-by-step learning plan.
+-   **Detailed Explanations**: Get clear, AI-generated explanations for each subtopic.
+-   **Mastery Quizzes**: Reinforce learning and ensure comprehension before moving on.
+-   **Learning Dashboard**: Track your progress.
+-   **Responsive Design**: Fully usable on desktop and mobile.
+
+## Tech Stack
+
+-   **Framework**: [Next.js](https://nextjs.org/)
+-   **AI**: [Google Gemini API](https://ai.google.dev/)
+-   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+-   **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+-   **Deployment**: Vercel
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+-   Node.js (v18 or later recommended)
+-   A package manager like `npm`.
+-   A Google AI API Key.
+
+### Installation
+
+1.  **Clone the repository:**
+    ```sh
+    git clone https://github.com/your-username/learnmax.git
+    cd learnmax
+    ```
+
+2.  **Install dependencies:**
+    ```sh
+    npm install
+    ```
+
+3.  **Set up your environment variables:**
+    -   Create a new file named `.env.local` in the root of the project.
+    -   Copy the contents of `.env.example` into it.
+    -   Get your API key from the [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into `.env.local`:
+    ```env
+    GOOGLE_API_KEY=your_super_secret_api_key
+    ```
+
+4.  **Run the development server:**
+    ```sh
+    npm run dev
+    ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## License
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is available under the [MIT License](LICENSE).
