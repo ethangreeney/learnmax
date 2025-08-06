@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLearnStore } from '@/lib/learn-store';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { ExplanationStyle } from '@/app/api/explain/route';
 
-// API call functions remain the same
+// API call functions
 async function postJSON<T>(url: string, body: any): Promise<T> {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
@@ -16,6 +17,21 @@ async function postForm<T>(url: string, form: FormData): Promise<T> {
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: `); }
   return res.json();
 }
+
+const TopicProgressBar = ({ current, total }: { current: number, total: number }) => {
+  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-baseline text-sm">
+        <span className="font-medium text-neutral-300">Topic Progress</span>
+        <span className="text-neutral-400">{current} / {total} Mastered</span>
+      </div>
+      <div className="w-full bg-neutral-800 rounded-full h-2.5">
+        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+      </div>
+    </div>
+  );
+};
 
 export default function Learn() {
   const [input, setInput] = useState('');
@@ -35,11 +51,10 @@ export default function Learn() {
     setInput(text);
     setContent(text);
     setBreakdown('Analyzing…', []);
-
     try {
       const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
       setBreakdown(bd.topic, bd.subtopics);
-      const qz = await postJSON<{ questions: any[] }>('/api/quiz', { subtopics: bd.subtopics });
+      const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
       setQuiz(qz.questions);
     } catch (e: any) {
       setError(e.message || 'Failed to analyze content.');
@@ -47,15 +62,23 @@ export default function Learn() {
       setLoading(false);
     }
   };
+
+  const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
+    if (!currentSubtopic || !content) return;
+    setExplanation(`Generating ${style} explanation...`);
+    try {
+      const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
+      setExplanation(res.explanation);
+    } catch (e: any) {
+      setExplanation('Could not generate explanation. ' + e.message);
+    }
+  }, [content, currentSubtopic, setExplanation]);
   
   useEffect(() => {
     if (currentSubtopic) {
-      setExplanation('Generating explanation...');
-      postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title })
-        .then(res => setExplanation(res.explanation))
-        .catch(e => setExplanation('Could not generate explanation. ' + e.message));
+      fetchExplanation('default');
     }
-  }, [currentIndex, content, currentSubtopic, setExplanation]);
+  }, [currentIndex, currentSubtopic, fetchExplanation]);
 
   const handlePdfUpload = async (file: File) => {
     setLoading(true);
@@ -74,7 +97,6 @@ export default function Learn() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-8">
-      {/* Sidebar */}
       <aside className="rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
         <h2 className="text-xl font-semibold">Learn Workspace</h2>
         <textarea
@@ -91,7 +113,12 @@ export default function Learn() {
         {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
         <hr className="border-neutral-800" />
         <div>
-            <div className="mb-3"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
+            <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
+            {subtopics.length > 0 && (
+                <div className="my-4">
+                    <TopicProgressBar current={unlockedIndex} total={subtopics.length} />
+                </div>
+            )}
             {subtopics.length > 0 && (
                 <ul className="space-y-2">{subtopics.map((s, i) => (
                     <li key={i}><button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2 text-sm ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>{i + 1}. {s.title}</button></li>
@@ -99,14 +126,23 @@ export default function Learn() {
             )}
         </div>
       </aside>
-
-      {/* Main content */}
       <main>
         {isSubtopicActive ? (
           <div className="space-y-8">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
                 <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
-                <div className="text-sm text-neutral-400 mt-2">Importance: {currentSubtopic.importance} • Difficulty: {currentSubtopic.difficulty}</div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                  <span>Importance: {currentSubtopic.importance}</span>
+                  <span>•</span>
+                  <span>Difficulty: {currentSubtopic.difficulty}</span>
+                </div>
+                <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-400">Style:</span>
+                  <button onClick={() => fetchExplanation('default')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Default</button>
+                  <button onClick={() => fetchExplanation('simplified')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Simplified</button>
+                  <button onClick={() => fetchExplanation('detailed')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Detailed</button>
+                  <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
+                </div>
                 <hr className="border-neutral-800 my-6" />
                 <div className="text-base text-neutral-300">
                     <ReactMarkdown
@@ -114,7 +150,12 @@ export default function Learn() {
                         components={{
                             h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-10 mb-4 pb-3 border-b border-neutral-800" {...props} />,
                             h3: ({node, ...props}) => <h3 className="text-xl font-bold mt-8 mb-3" {...props} />,
-                            p: ({node, ...props}) => <p className="leading-relaxed my-4" {...props} />,
+                            p: ({ node, ...props }) => {
+                                if (node.children[0]?.type === 'element' && node.children[0]?.tagName === 'code') {
+                                    return <>{props.children}</>;
+                                }
+                                return <p className="leading-relaxed my-4" {...props} />;
+                            },
                             strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
                             ul: ({node, ...props}) => <ul className="list-disc pl-6 space-y-2 my-4" {...props} />,
                             ol: ({node, ...props}) => <ol className="list-decimal pl-6 space-y-2 my-4" {...props} />,
@@ -141,17 +182,14 @@ export default function Learn() {
   );
 }
 
-// QuizPanel component remains unchanged
 function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
   const qs = relevantQs.length > 0 ? relevantQs : [];
-
   const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
   const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
   useEffect(() => { setAnswers([]); setRevealed(false); }, [activeTitle]);
-
   return (
     <div className="space-y-4">
       {qs.length === 0 ? <p className="text-neutral-400 text-sm">No quiz questions available for this subtopic.</p> :
@@ -164,12 +202,7 @@ function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () 
                 const isSelected = answers[i] === j;
                 const isCorrect = revealed && j === q.answerIndex;
                 const isIncorrect = revealed && isSelected && j !== q.answerIndex;
-                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
-                  isCorrect ? 'border-green-500 bg-green-900/30' :
-                  isIncorrect ? 'border-red-500 bg-red-900/30' :
-                  isSelected ? 'border-blue-500 bg-blue-900/20' :
-                  'border-neutral-700 hover:bg-neutral-800'
-                }`;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
                 return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed}>{o}</button>;
               })}
             </div>
