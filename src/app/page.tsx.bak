@@ -1,0 +1,21 @@
+import Link from 'next/link';
+
+export default function Page() {
+  return (
+    <div className="space-y-12">
+      <section className="space-y-4">
+        <h2 className="text-4xl font-semibold tracking-tight">LearnMax — Focused Learning, Effortlessly</h2>
+        <p className="text-neutral-300">
+          Struggle to stay focused? Love to scroll? LearnMax turns dense
+          slides and notes into a calm, interactive flow—so you master
+          more in less time, without the clutter.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-2xl font-semibold">Mastery Learning, Simplified</h3>
+        <ol className="list-decimal pl-5 space-y-2 text-neutral-300">
+          <li><span className="font-medium">Learn:</span> We distill each topic into a small, focused idea.</li>
+          <li><span className="font-medium">Check:</span> A quick mastery quiz keeps you honest.</li>
+          <li><span className="font-medium">Master:</span> Pass to prove you really understand.</li>
+          <li><span className="font-medium">Progress:</span> Move forward only when you’re ready.</li>

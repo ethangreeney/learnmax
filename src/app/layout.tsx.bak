@@ -20,7 +20,7 @@ export default function RootLayout({
             <nav className="text-sm text-neutral-300">
               <a className="hover:text-white" href="/">Home</a>
               <span className="mx-3">•</span>
-              <a className="hover:text-white" href="/dashboard">Dashboard</a><span className="mx-3">•</span><a className="hover:text-white" href="/learn">Learn</a>
+              <a className="hover:text-white" href="/dashboard">Dashboard</a>
             </nav>
           </header>
           <main className="py-6">{children}</main>
