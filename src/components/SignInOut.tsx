@@ -23,12 +23,7 @@ export default function SignInOut() {
 
   return (
     <div className="flex items-center gap-3">
-      <Link
-        href="/dashboard"
-        className="text-sm text-neutral-200 hover:text-white"
-      >
-        Dashboard
-      </Link>
+   
       <button
         onClick={() => signOut()}
         className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm"

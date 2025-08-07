@@ -36,14 +36,15 @@ export default function HomePage() {
           <p className="mt-4 max-w-3xl mx-auto text-base md:text-lg text-neutral-300">
             Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science to build a hyper-efficient study path, ensuring you master every concept with minimal time and effort.
           </p>
-          <div className="mt-8">
-            <Link
-              href="/learn"
-              className="inline-flex items-center gap-3 rounded-md bg-white px-6 py-3 text-base text-black font-semibold shadow-lg transition-transform hover:scale-105"
-            >
-              Optimize Your First Lecture
-            </Link>
-          </div>
+          <div className="mt-8 flex items-center justify-center gap-3">
+    <Link
+      href="/learn"
+      className="inline-flex items-center gap-3 rounded-md bg-white px-6 py-3 text-base text-black font-semibold shadow-lg transition-transform hover:scale-105"
+    >
+      Optimize Your First Lecture
+    </Link>
+   
+  </div>
         </div>
         <div className="w-full mt-12">
           <div className="grid gap-5 md:grid-cols-3">
@@ -62,3 +63,4 @@ export default function HomePage() {
     </div>
   );
 }
+
