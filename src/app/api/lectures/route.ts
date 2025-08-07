@@ -10,14 +10,130 @@ type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+type BreakdownSubtopic = {
+  title: string;
+  importance: string;   // 'high' | 'medium' | 'low'
+  difficulty: number;   // 1..3
+  overview?: string;
+};
 type Breakdown = {
   topic: string;
-  subtopics: Array<{ title: string; importance: string; difficulty: number; overview?: string }>;
+  subtopics: BreakdownSubtopic[];
 };
 
-type QuizOut = {
-  questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string; subtopicTitle?: string }>;
+type QuizQuestion = {
+  prompt: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+  subtopicTitle?: string;
 };
+type QuizOut = { questions: QuizQuestion[] };
+
+// --- Helpers: shape guards & fallbacks --------------------------------------
+
+function normImportance(v: unknown): 'high'|'medium'|'low' {
+  const s = String(v || '').toLowerCase();
+  return s === 'high' || s === 'low' ? (s as any) : 'medium';
+}
+function clampDifficulty(v: unknown): 1|2|3 {
+  const n = Number(v);
+  if (n <= 1) return 1;
+  if (n >= 3) return 3;
+  return 2;
+}
+function clip(s: string, max = 240): string {
+  const t = (s || '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+
+function sanitizeBreakdown(raw: any, text: string): Breakdown {
+  const topic =
+    typeof raw?.topic === 'string' && raw.topic.trim()
+      ? raw.topic.trim()
+      : 'Untitled';
+
+  let subs: BreakdownSubtopic[] = [];
+  if (Array.isArray(raw?.subtopics)) {
+    subs = raw.subtopics
+      .map((s: any) => {
+        const title =
+          typeof s?.title === 'string' && s.title.trim()
+            ? s.title.trim()
+            : '';
+        if (!title) return null;
+        return {
+          title,
+          importance: normImportance(s?.importance),
+          difficulty: clampDifficulty(s?.difficulty),
+          overview:
+            typeof s?.overview === 'string' && s.overview.trim()
+              ? clip(s.overview, 500)
+              : undefined,
+        } as BreakdownSubtopic;
+      })
+      .filter(Boolean) as BreakdownSubtopic[];
+  }
+
+  // Fallback: at least one subtopic
+  if (subs.length === 0) {
+    const firstChunk = clip(text, 500);
+    subs = [
+      {
+        title: topic !== 'Untitled' ? `${topic} — Overview` : 'Overview',
+        importance: 'high',
+        difficulty: 1,
+        overview: firstChunk || 'Overview of the provided content.',
+      },
+    ];
+  }
+
+  return { topic, subtopics: subs };
+}
+
+function isGoodQuestion(q: any): q is QuizQuestion {
+  return (
+    q &&
+    typeof q.prompt === 'string' &&
+    Array.isArray(q.options) &&
+    q.options.length === 4 &&
+    typeof q.answerIndex === 'number' &&
+    q.answerIndex >= 0 &&
+    q.answerIndex < 4 &&
+    typeof q.explanation === 'string'
+  );
+}
+
+function fallbackQuestions(subtopics: BreakdownSubtopic[]): QuizQuestion[] {
+  // Cheap, deterministic questions that still tie to the breakdown.
+  // One per subtopic.
+  return subtopics.map((s) => {
+    const correct = String(s.difficulty);
+    const opts = ['1', '2', '3', 'Not specified'];
+    const answerIndex =
+      correct === '1' ? 0 : correct === '2' ? 1 : correct === '3' ? 2 : 3;
+    return {
+      prompt: `What difficulty was assigned to "${s.title}"?`,
+      options: opts,
+      answerIndex,
+      explanation: `The breakdown labeled "${s.title}" with difficulty ${s.difficulty}.`,
+      subtopicTitle: s.title,
+    };
+  });
+}
+
+function sanitizeQuiz(raw: any, subtopics: BreakdownSubtopic[]): QuizOut {
+  let items: QuizQuestion[] = [];
+  if (Array.isArray(raw?.questions)) {
+    items = raw.questions.filter(isGoodQuestion);
+  }
+  if (items.length === 0) {
+    items = fallbackQuestions(subtopics);
+  }
+  return { questions: items };
+}
+
+// --- Route -------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
   try {
@@ -56,21 +172,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unsupported content type.' }, { status: 415 });
     }
 
+    // 1) Breakdown (robust)
     const breakdownPrompt = `
       As an expert instructional designer, analyze the following text and break it down into a structured learning path.
-      Output JSON with keys: "topic" and "subtopics".
+
+      Return ONLY a single JSON object with exactly these keys:
+      {
+        "topic": "string",
+        "subtopics": [
+          {
+            "title": "string",
+            "importance": "high" | "medium" | "low",
+            "difficulty": 1 | 2 | 3,
+            "overview": "string"
+          }
+        ]
+      }
+
       ---
       ${text}
     `;
-    const bd = (await generateJSON(breakdownPrompt)) as Breakdown;
+    const bdRaw = await generateJSON(breakdownPrompt);
+    const bd = sanitizeBreakdown(bdRaw, text);
 
+    // 2) Quiz (robust)
     const quizPrompt = `
       You are an expert in educational assessments. Generate a quiz based on the subtopics.
-      ---
-      ${JSON.stringify(bd.subtopics, null, 2)}
-    `;
-    const qz = (await generateJSON(quizPrompt)) as QuizOut;
 
+      CRITICAL:
+      - Answer with ONLY one JSON object.
+      - Shape:
+        {
+          "questions": [
+            {
+              "prompt": "string",
+              "options": ["A","B","C","D"],
+              "answerIndex": 0,
+              "explanation": "string",
+              "subtopicTitle": "string"
+            }
+          ]
+        }
+      - Exactly ONE question per subtopic below.
+
+      Subtopics:
+      ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title })), null, 2)}
+    `;
+    const qzRaw = await generateJSON(quizPrompt);
+    const qz = sanitizeQuiz(qzRaw, bd.subtopics);
+
+    // 3) Persist
     const result = await prisma.$transaction(async (tx: TransactionClient) => {
       const lecture = await tx.lecture.create({
         data: { title: bd.topic || 'Untitled', originalContent: text, userId },
@@ -94,7 +245,7 @@ export async function POST(req: NextRequest) {
       const byTitle = new Map<string, string>();
       for (const st of subtopics) byTitle.set(st.title.trim().toLowerCase(), st.id);
 
-      for (const q of qz.questions || []) {
+      for (const q of qz.questions) {
         const matchTitle = (q.subtopicTitle || '').trim().toLowerCase();
         const subtopicId = byTitle.get(matchTitle) ?? subtopics[0]?.id;
         if (!subtopicId) continue;
@@ -114,7 +265,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ lectureId: result.id }, { status: 201 });
   } catch (e: any) {
-    console.error('LECTURES_API_ERROR:', e);
+    console.error('LECTURES_API_ERROR:', e?.stack || e?.message || e);
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
   }
 }

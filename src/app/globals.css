@@ -259,3 +259,8 @@ body {
   color: rgb(115, 115, 115);
 }
 /* END markdown-typography (Tailwind v4 safe) */
+
+/* Wider container for Learn page */
+.container-wide {
+  @apply mx-auto max-w-[1600px] px-6 md:px-8;
+}

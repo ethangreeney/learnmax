@@ -181,7 +181,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       </aside>
 
       {/* Center: Explanation + Quiz */}
-      <main className="lg:col-span-6">
+      <main className="lg:col-span-7">
         {currentSubtopic ? (
           <div className="space-y-8">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
@@ -274,7 +274,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       </main>
 
       {/* Right: AI Tutor */}
-      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-2">
         <ChatPanel documentContent={initial.originalContent} />
       </aside>
     </div>

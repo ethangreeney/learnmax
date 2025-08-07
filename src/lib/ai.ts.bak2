@@ -1,0 +1,157 @@
+// src/lib/ai.ts
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const apiKey = process.env.GOOGLE_API_KEY;
+if (!apiKey) {
+  throw new Error("GOOGLE_API_KEY is not set. Please add it to your .env.local file.");
+}
+
+const client = new GoogleGenerativeAI(apiKey);
+
+/**
+ * Extract the FIRST complete JSON object from an arbitrary string by
+ * balancing braces and respecting strings/escapes. This fixes cases where
+ * the model returns `{...}{...}` or adds trailing commentary.
+ */
+function extractFirstJSONObject(text: string): string | null {
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (ch === '}') {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          return text.slice(start, i + 1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Try ```json ... ``` fenced blocks first (common LLM behavior). */
+function extractFromCodeFence(text: string): string | null {
+  const m = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Attempt a straightforward parse. */
+function tryParseJson(s: string): any | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generate a JSON object using Gemini.
+ * Robust against extra commentary or multiple JSON objects in one response.
+ */
+export async function generateJSON(prompt: string): Promise<any> {
+  const model = client.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    generationConfig: {
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+
+  // 1) Best case: the SDK gives us clean JSON string
+  const responseText = response?.text();
+  if (responseText) {
+    // direct parse
+    const direct = tryParseJson(responseText);
+    if (direct !== null) return direct;
+
+    // fenced code block
+    const fenced = extractFromCodeFence(responseText);
+    if (fenced) {
+      const parsedFenced = tryParseJson(fenced);
+      if (parsedFenced !== null) return parsedFenced;
+    }
+
+    // first balanced { ... } only
+    const firstObj = extractFirstJSONObject(responseText);
+    if (firstObj) {
+      const parsedBalanced = tryParseJson(firstObj);
+      if (parsedBalanced !== null) return parsedBalanced;
+    }
+  }
+
+  // 2) Fall back to scanning candidate parts (some SDK responses hold text there)
+  const parts: string[] = [];
+  try {
+    const candidates = (response as any)?.candidates ?? [];
+    for (const c of candidates) {
+      const p = c?.content?.parts ?? [];
+      for (const part of p) {
+        if (typeof part?.text === 'string') parts.push(part.text);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  for (const p of parts) {
+    const direct = tryParseJson(p);
+    if (direct !== null) return direct;
+
+    const fenced = extractFromCodeFence(p);
+    if (fenced) {
+      const parsedFenced = tryParseJson(fenced);
+      if (parsedFenced !== null) return parsedFenced;
+    }
+
+    const firstObj = extractFirstJSONObject(p);
+    if (firstObj) {
+      const parsedBalanced = tryParseJson(firstObj);
+      if (parsedBalanced !== null) return parsedBalanced;
+    }
+  }
+
+  // 3) Nothing worked
+  throw new Error("The AI failed to generate a valid JSON response. Please try again.");
+}
+
+/**
+ * Generate plain text with the higher-quality model.
+ */
+export async function generateText(prompt: string): Promise<string> {
+  // Use pro model for higher-quality long-form text
+  const model = client.getGenerativeModel({ model: 'gemini-2.0-pro' });
+
+  const result = await model.generateContent(prompt);
+  const responseText = result.response?.text();
+  if (!responseText) {
+    throw new Error("The AI returned an empty response.");
+  }
+  return responseText;
+}
