@@ -13,7 +13,7 @@ import { createLearnUIStore } from '@/lib/client/learn-ui-store';
 import { renameLecture } from '@/lib/client/rename-lecture';
 
 export default function LearnView({ initial }: { initial: LearnLecture }) {
-  // UI-only store per page mount
+  // Per-page UI-only store
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
   const storeRef = useRef(
     createLearnUIStore({
@@ -23,13 +23,13 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   );
   const ui = storeRef.current;
 
-  // Use the zustand hook returned by create()
+  // Subscribe via the store-as-hook pattern (no extra imports needed)
   const currentIndex = ui((s) => s.currentIndex);
   const unlockedIndex = ui((s) => s.unlockedIndex);
 
   const currentSubtopic = initial.subtopics[currentIndex];
 
-  // Scroll to top of main panel on subtopic change
+  // For scroll-to-top on subtopic change
   const mainRef = useRef<HTMLElement | null>(null);
   const scrollToMainTop = () => {
     if (typeof window === 'undefined') return;
@@ -40,19 +40,19 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     }
   };
 
-  // Title editing
+  // Lecture title editing
   const [title, setTitle] = useState(initial.title);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  // Explanations cache
+  // Explanations cache per subtopic
   const [explanations, setExplanations] = useState<Record<string, string>>(
     () => Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
   );
 
   const canSelect = (i: number) => i <= unlockedIndex;
 
-  // Keep unlockedIndex sane if server state changes
+  // Keep unlockedIndex sane if mastered state changes server-side
   useEffect(() => {
     const u = deriveUnlockedIndex(initial.subtopics);
     ui.setState((s) => ({
@@ -67,7 +67,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
       const s = currentSubtopic;
       if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
       try {
         const res = await fetch('/api/explain-db', {
           method: 'POST',
@@ -87,7 +87,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     [currentSubtopic]
   );
 
-  // On subtopic change: fetch explanation once and scroll to top
+  // On subtopic change: fetch default explanation (once) and scroll to top
   useEffect(() => {
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
@@ -213,7 +213,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
               <hr className="my-6 border-neutral-800" />
               <div className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {explanations[currentSubtopic.id] || 'Crafting learning module...'}
+                  {explanations[currentSubtopic.id] || 'Loading...'}
                 </ReactMarkdown>
               </div>
             </div>
@@ -234,7 +234,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                   });
                   scrollToMainTop();
 
-                  // Persist mastery
+                  // Persist mastery in background
                   try {
                     const res = await fetch('/api/mastery', {
                       method: 'POST',
@@ -242,6 +242,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                       body: JSON.stringify({ subtopicId: currentSubtopic.id }),
                     });
                     if (!res.ok) {
+                      // non-blocking
                       try { console.warn('mastery persist failed', await res.json()); } catch {}
                     }
                   } catch (e) {
@@ -309,7 +310,7 @@ function QuizPanel({
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.error || `HTTP ${res.status}`);
+        throw new Error(e.error || \`HTTP \${res.status}\`);
       }
       const data = (await res.json()) as {
         questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
@@ -317,7 +318,7 @@ function QuizPanel({
       const q = data.questions?.[0];
       if (!q) throw new Error('No question returned');
       const newQ: QuizQuestion = {
-        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `q-${Date.now()}`,
+        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : \`q-\${Date.now()}\`,
         prompt: q.prompt,
         options: q.options,
         answerIndex: q.answerIndex,
@@ -326,7 +327,7 @@ function QuizPanel({
       setItems([newQ]);
       setAnswers([]);
       setRevealed(false);
-    } catch (_e) {
+    } catch (e) {
       // Fallback: rotate options of the first question
       if (items && items.length > 0) {
         const base = items[0];
@@ -336,8 +337,8 @@ function QuizPanel({
         setItems([
           {
             ...base,
-            id: `${base.id}-v${Date.now()}`,
-            prompt: `${base.prompt} (Variant)`,
+            id: \`\${base.id}-v\${Date.now()}\`,
+            prompt: \`\${base.prompt} (Variant)\`,
             options: rotated,
             answerIndex: newAnswer,
             explanation: base.explanation,
@@ -360,7 +361,6 @@ function QuizPanel({
       <ul className="space-y-6">
         {items.map((q, i) => {
           const selected = answers[i];
-          const isAllCorrect = allCorrect;
           return (
             <li key={q.id} className="space-y-3">
               <div className="font-medium text-neutral-200">{q.prompt}</div>
@@ -369,21 +369,19 @@ function QuizPanel({
                   const isSelected = selected === j;
                   const isCorrect = revealed && j === q.answerIndex;
                   const isIncorrect = revealed && isSelected && j !== q.answerIndex;
-                  const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
-                    isCorrect
-                      ? 'border-green-500 bg-green-900/30'
-                      : isIncorrect
-                        ? 'border-red-500 bg-red-900/30'
-                        : isSelected
-                          ? 'border-blue-500 bg-blue-900/20'
-                          : 'border-neutral-700 hover:bg-neutral-800'
-                  }`;
+                  const buttonClass = \`rounded-md border p-3 text-left transition-all text-sm \${isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'}\`;
                   return (
                     <button
                       key={j}
                       onClick={() => setAns(i, j)}
                       className={buttonClass}
-                      disabled={revealed && isAllCorrect}
+                      disabled={revealed && allCorrect}
                     >
                       {o}
                     </button>
@@ -402,13 +400,13 @@ function QuizPanel({
 
       <div className="flex flex-wrap items-center gap-4 pt-4">
         {/* Hide Check Answer after everything is correct */}
-        {!revealed && (
+        {!(revealed && allCorrect) && (
           <button
             onClick={check}
             disabled={items.length === 0}
             className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
           >
-            Check Answer
+            {revealed ? 'Recheck' : 'Check Answer'}
           </button>
         )}
 
@@ -430,7 +428,14 @@ function QuizPanel({
           </>
         )}
 
-        
+        {revealed && !allCorrect && (
+          <button
+            onClick={tryAgain}
+            className="rounded-md border border-neutral-600 px-4 py-2 text-sm hover:bg-neutral-900"
+          >
+            Try Again
+          </button>
+        )}
       </div>
     </div>
   );

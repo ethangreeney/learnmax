@@ -67,7 +67,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
       const s = currentSubtopic;
       if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
       try {
         const res = await fetch('/api/explain-db', {
           method: 'POST',
@@ -213,7 +213,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
               <hr className="my-6 border-neutral-800" />
               <div className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {explanations[currentSubtopic.id] || 'Crafting learning module...'}
+                  {explanations[currentSubtopic.id] || 'Loading...'}
                 </ReactMarkdown>
               </div>
             </div>

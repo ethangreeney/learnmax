@@ -13,6 +13,7 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
   const userId = session.user.id;
   const { lectureId } = await params;
 
+  // Fetch the lecture + subtopics + questions + user's mastery
   const lecture = await prisma.lecture.findFirst({
     where: { id: lectureId, userId },
     include: {
@@ -26,7 +27,9 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
     },
   });
 
-  if (!lecture) notFound();
+  if (!lecture) {
+    notFound();
+  }
 
   const initial = {
     id: lecture.id,

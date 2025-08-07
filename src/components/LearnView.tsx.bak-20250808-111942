@@ -1,19 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useStore } from 'zustand';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ChatPanel from '@/components/ChatPanel';
 import {
   deriveUnlockedIndex,
   type LearnLecture,
+  type LearnSubtopic,
   type QuizQuestion,
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
 import { renameLecture } from '@/lib/client/rename-lecture';
 
 export default function LearnView({ initial }: { initial: LearnLecture }) {
-  // UI-only store per page mount
+  // Initialize UI-only store
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
   const storeRef = useRef(
     createLearnUIStore({
@@ -23,51 +25,45 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   );
   const ui = storeRef.current;
 
-  // Use the zustand hook returned by create()
-  const currentIndex = ui((s) => s.currentIndex);
-  const unlockedIndex = ui((s) => s.unlockedIndex);
-
+  // Subscribe to the store so UI re-renders on changes
+  const currentIndex = useStore(ui, (st) => st.currentIndex);
+  const unlockedIndex = useStore(ui, (st) => st.unlockedIndex);
   const currentSubtopic = initial.subtopics[currentIndex];
 
-  // Scroll to top of main panel on subtopic change
-  const mainRef = useRef<HTMLElement | null>(null);
-  const scrollToMainTop = () => {
-    if (typeof window === 'undefined') return;
-    if (mainRef.current) {
-      mainRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  // Title editing
+  // Local title editing state
   const [title, setTitle] = useState(initial.title);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  // Explanations cache
-  const [explanations, setExplanations] = useState<Record<string, string>>(
-    () => Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  // Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
   );
 
   const canSelect = (i: number) => i <= unlockedIndex;
 
-  // Keep unlockedIndex sane if server state changes
   useEffect(() => {
     const u = deriveUnlockedIndex(initial.subtopics);
     ui.setState((s) => ({
       ...s,
       unlockedIndex: Math.max(u, s.unlockedIndex),
-      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.subtopics.map((s) => (s as any).mastered).join('|')]);
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
 
   const fetchExplanation = useCallback(
-    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
       const s = currentSubtopic;
       if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
       try {
         const res = await fetch('/api/explain-db', {
           method: 'POST',
@@ -81,46 +77,37 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
         const data = (await res.json()) as { explanation: string };
         setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
       } catch (e: any) {
-        setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + e.message }));
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
       }
     },
     [currentSubtopic]
   );
 
-  // On subtopic change: fetch explanation once and scroll to top
   useEffect(() => {
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
       fetchExplanation('default');
     }
-    if (s) {
-      if (typeof requestAnimationFrame !== 'undefined') {
-        requestAnimationFrame(() => scrollToMainTop());
-      } else {
-        scrollToMainTop();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSubtopic?.id]);
+  }, [currentSubtopic, explanations, fetchExplanation]);
 
   const handleRename = async () => {
-    const newTitle = title.trim();
-    if (!newTitle || newTitle.length < 3) {
+    if (!title.trim() || title.trim().length < 3) {
       setSaveMsg('Title must be at least 3 characters.');
       return;
     }
     try {
       setIsSavingTitle(true);
       setSaveMsg(null);
-      if (newTitle !== initial.title) {
-        await renameLecture(initial.id, newTitle);
-      }
-      setSaveMsg('Saved!');
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
     } catch (e: any) {
-      setSaveMsg(e.message || 'Failed to save.');
+      setSaveMsg(e.message || 'Failed to save title.');
     } finally {
       setIsSavingTitle(false);
-      setTimeout(() => setSaveMsg(null), 2000);
+      setTimeout(() => setSaveMsg(null), 2500);
     }
   };
 
@@ -138,7 +125,26 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
             aria-label="Lecture title"
           />
           <button
-            onClick={handleRename}
+            onClick={async () => {
+              const newTitle = title.trim();
+              if (!newTitle || newTitle.length < 3) {
+                setSaveMsg('Title must be at least 3 characters.');
+                return;
+              }
+              try {
+                setIsSavingTitle(true);
+                setSaveMsg(null);
+                if (newTitle !== initial.title) {
+                  await renameLecture(initial.id, newTitle);
+                }
+                setSaveMsg('Saved!');
+              } catch (e: any) {
+                setSaveMsg(e.message || 'Failed to save.');
+              } finally {
+                setIsSavingTitle(false);
+                setTimeout(() => setSaveMsg(null), 2000);
+              }
+            }}
             disabled={isSavingTitle || title.trim().length < 3}
             className="mt-2 rounded-md bg-white px-4 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50 sm:mt-0 sm:ml-2"
           >
@@ -174,17 +180,22 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       </aside>
 
       {/* Center: Explanation + Quiz */}
-      <main ref={mainRef} className="lg:col-span-6">
+      <main className="lg:col-span-6">
         {currentSubtopic ? (
           <div className="space-y-8">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
-              <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
-                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
                 <span>Difficulty: {currentSubtopic.difficulty}</span>
               </div>
               <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
-                <span className="text-sm font-medium text-neutral-400">Style:</span>
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
                 <button
                   onClick={() => fetchExplanation('default')}
                   className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
@@ -213,39 +224,41 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
               <hr className="my-6 border-neutral-800" />
               <div className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {explanations[currentSubtopic.id] || 'Crafting learning module...'}
+                  {explanations[currentSubtopic.id] || 'Loading...'}
                 </ReactMarkdown>
               </div>
             </div>
 
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
-              <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
               <QuizPanel
                 key={currentSubtopic.id}
                 subtopicTitle={currentSubtopic.title}
                 questions={currentSubtopic.questions}
                 onPassed={async () => {
-                  // Optimistic advance
+                  // Advance optimistically
                   const idx = currentIndex;
                   const next = Math.min(idx + 1, initial.subtopics.length - 1);
                   ui.setState({
                     currentIndex: next,
                     unlockedIndex: Math.max(unlockedIndex, next),
                   });
-                  scrollToMainTop();
 
-                  // Persist mastery
+                  // Persist mastery in the background (best-effort)
                   try {
                     const res = await fetch('/api/mastery', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ subtopicId: currentSubtopic.id }),
                     });
+                    // No blocking if it fails; just log (dev)
                     if (!res.ok) {
-                      try { console.warn('mastery persist failed', await res.json()); } catch {}
+                      try { const e = await res.json(); console.warn('mastery persist failed:', e); } catch {}
                     }
                   } catch (e) {
-                    console.warn('mastery persist error', (e as any)?.message || e);
+                    console.warn('mastery persist error:', (e && e.message) || e);
                   }
                 }}
               />
@@ -275,16 +288,19 @@ function QuizPanel({
   questions: QuizQuestion[];
   onPassed: () => void;
 }) {
+  // Local working set of questions (so we can inject a new one on demand)
   const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
+  const [checkedAt, setCheckedAt] = useState(0); // bump to force explanation recompute after each check
   const [loadingAnother, setLoadingAnother] = useState(false);
 
-  // Reset when subtopic changes
+  // Ensure local items follow prop when subtopic changes
   useEffect(() => {
     setItems(questions || []);
     setAnswers([]);
     setRevealed(false);
+    setCheckedAt(0);
   }, [questions.map((q) => q.id).join('|')]);
 
   const setAns = (qIndex: number, ansIndex: number) => {
@@ -294,11 +310,20 @@ function QuizPanel({
   };
 
   const allCorrect =
-    items && items.length > 0 && items.every((q, i) => answers[i] === q.answerIndex);
+    items &&
+    items.length > 0 &&
+    items.every((q, i) => answers[i] === q.answerIndex);
 
-  const check = () => setRevealed(true);
-  const tryAgain = () => setRevealed(false);
+  const check = () => {
+    setRevealed(true);
+    setCheckedAt((n) => n + 1);
+  };
 
+  const tryAgain = () => {
+    setRevealed(false);
+  };
+
+  // Fetch a brand-new question for this subtopic
   const askAnother = async () => {
     setLoadingAnother(true);
     try {
@@ -312,39 +337,54 @@ function QuizPanel({
         throw new Error(e.error || `HTTP ${res.status}`);
       }
       const data = (await res.json()) as {
-        questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+        questions: Array<{
+          prompt: string;
+          options: string[];
+          answerIndex: number;
+          explanation: string;
+        }>;
       };
       const q = data.questions?.[0];
       if (!q) throw new Error('No question returned');
+
       const newQ: QuizQuestion = {
-        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `q-${Date.now()}`,
+        id:
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? (crypto as any).randomUUID()
+            : `q-${Date.now()}`,
         prompt: q.prompt,
         options: q.options,
         answerIndex: q.answerIndex,
         explanation: q.explanation,
       };
+
       setItems([newQ]);
       setAnswers([]);
       setRevealed(false);
-    } catch (_e) {
-      // Fallback: rotate options of the first question
+      setCheckedAt((n) => n + 1);
+    } catch {
+      // Fallback: synthesize a quick variant of the first question
       if (items && items.length > 0) {
         const base = items[0];
-        const rotated = [...base.options];
-        rotated.push(rotated.shift() as string);
-        const newAnswer = (base.answerIndex - 1 + rotated.length) % rotated.length;
-        setItems([
-          {
-            ...base,
-            id: `${base.id}-v${Date.now()}`,
-            prompt: `${base.prompt} (Variant)`,
-            options: rotated,
-            answerIndex: newAnswer,
-            explanation: base.explanation,
-          },
-        ]);
+        const rotatedOptions = [...base.options];
+        rotatedOptions.push(rotatedOptions.shift() as string);
+        const newAnswer =
+          (base.answerIndex - 1 + rotatedOptions.length) %
+          rotatedOptions.length;
+
+        const variant: QuizQuestion = {
+          ...base,
+          id: `${base.id}-v${Date.now()}`,
+          prompt: `${base.prompt} (Variant)`,
+          options: rotatedOptions,
+          answerIndex: newAnswer,
+          explanation: base.explanation,
+        };
+
+        setItems([variant]);
         setAnswers([]);
         setRevealed(false);
+        setCheckedAt((n) => n + 1);
       }
     } finally {
       setLoadingAnother(false);
@@ -352,7 +392,11 @@ function QuizPanel({
   };
 
   if (!items || items.length === 0) {
-    return <p className="text-sm text-neutral-400">No quiz questions for this subtopic.</p>;
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
   }
 
   return (
@@ -360,7 +404,7 @@ function QuizPanel({
       <ul className="space-y-6">
         {items.map((q, i) => {
           const selected = answers[i];
-          const isAllCorrect = allCorrect;
+          const explain = revealed ? q.explanation : '';
           return (
             <li key={q.id} className="space-y-3">
               <div className="font-medium text-neutral-200">{q.prompt}</div>
@@ -368,7 +412,8 @@ function QuizPanel({
                 {q.options.map((o, j) => {
                   const isSelected = selected === j;
                   const isCorrect = revealed && j === q.answerIndex;
-                  const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                  const isIncorrect =
+                    revealed && isSelected && j !== q.answerIndex;
                   const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
                     isCorrect
                       ? 'border-green-500 bg-green-900/30'
@@ -383,16 +428,16 @@ function QuizPanel({
                       key={j}
                       onClick={() => setAns(i, j)}
                       className={buttonClass}
-                      disabled={revealed && isAllCorrect}
+                      disabled={revealed && allCorrect}
                     >
                       {o}
                     </button>
                   );
                 })}
               </div>
-              {revealed && (
+              {revealed && explain && (
                 <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-                  {q.explanation}
+                  {explain}
                 </div>
               )}
             </li>
@@ -401,16 +446,13 @@ function QuizPanel({
       </ul>
 
       <div className="flex flex-wrap items-center gap-4 pt-4">
-        {/* Hide Check Answer after everything is correct */}
-        {!revealed && (
-          <button
-            onClick={check}
-            disabled={items.length === 0}
-            className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
-          >
-            Check Answer
-          </button>
-        )}
+        <button
+          onClick={check}
+          disabled={items.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          {revealed && !allCorrect ? 'Recheck' : 'Check Answer'}
+        </button>
 
         {revealed && allCorrect && (
           <>
@@ -430,7 +472,14 @@ function QuizPanel({
           </>
         )}
 
-        
+        {revealed && !allCorrect && (
+          <button
+            onClick={tryAgain}
+            className="rounded-md border border-neutral-600 px-4 py-2 text-sm hover:bg-neutral-900"
+          >
+            Try Again
+          </button>
+        )}
       </div>
     </div>
   );

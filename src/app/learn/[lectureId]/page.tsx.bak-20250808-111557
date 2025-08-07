@@ -5,6 +5,8 @@ import { redirect, notFound } from 'next/navigation';
 import { isSessionWithUser } from '@/lib/session-utils';
 import LearnView from '@/components/LearnView';
 
+type Params = { lectureId: string };
+
 export default async function LearnPage({ params }: { params: Promise<{ lectureId: string }> }) {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
@@ -13,6 +15,7 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
   const userId = session.user.id;
   const { lectureId } = await params;
 
+  // Fetch the lecture + subtopics + questions + user's mastery
   const lecture = await prisma.lecture.findFirst({
     where: { id: lectureId, userId },
     include: {
@@ -26,8 +29,11 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
     },
   });
 
-  if (!lecture) notFound();
+  if (!lecture) {
+    notFound();
+  }
 
+  // Shape data for LearnView
   const initial = {
     id: lecture.id,
     title: lecture.title,

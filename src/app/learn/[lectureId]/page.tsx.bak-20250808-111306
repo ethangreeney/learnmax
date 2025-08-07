@@ -5,14 +5,17 @@ import { redirect, notFound } from 'next/navigation';
 import { isSessionWithUser } from '@/lib/session-utils';
 import LearnView from '@/components/LearnView';
 
-export default async function LearnPage({ params }: { params: Promise<{ lectureId: string }> }) {
+type Params = { lectureId: string };
+
+export default async function LearnPage({ params }: { params: Params }) {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
     redirect('/api/auth/signin');
   }
   const userId = session.user.id;
-  const { lectureId } = await params;
+  const { lectureId } = params;
 
+  // Fetch the lecture + subtopics + questions + user's mastery
   const lecture = await prisma.lecture.findFirst({
     where: { id: lectureId, userId },
     include: {
@@ -26,8 +29,11 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
     },
   });
 
-  if (!lecture) notFound();
+  if (!lecture) {
+    notFound();
+  }
 
+  // Shape data for LearnView
   const initial = {
     id: lecture.id,
     title: lecture.title,
