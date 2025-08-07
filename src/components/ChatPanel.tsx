@@ -75,7 +75,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
             {msg.sender === 'ai' && <div className="flex-shrink-0 w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center"><Bot className="w-5 h-5" /></div>}
             <div className={`max-w-xs md:max-w-md rounded-lg px-4 py-2 ${msg.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-neutral-800'}`}>
               {msg.sender === 'ai' ? (
-                <div className="prose prose-sm prose-invert max-w-none">
+                <div className="markdown text-sm">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {msg.text}
                   </ReactMarkdown>

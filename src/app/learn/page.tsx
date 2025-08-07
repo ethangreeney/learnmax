@@ -166,7 +166,7 @@ export default function Learn() {
                   <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
                 </div>
                 <hr className="border-neutral-800 my-6" />
-                <div className="prose prose-invert max-w-none">
+                <div className="markdown">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
                 </div>
             </div>
