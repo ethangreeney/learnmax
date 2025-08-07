@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth';
 
 export async function PATCH(
   req: NextRequest,
-  context: { params: { lectureId: string } }
+  { params }: { params: { lectureId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -13,7 +13,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { lectureId } = context.params;
+    const { lectureId } = params;
     const userId = (session.user as any).id as string;
     const { title } = await req.json();
 
