@@ -41,6 +41,10 @@ The content is organized as follows:
 
 <directory_structure>
 prisma/
+  migrations/
+    20250807100731_init/
+      migration.sql
+    migration_lock.toml
   schema.prisma
 public/
   file.svg
@@ -51,28 +55,58 @@ public/
 src/
   app/
     api/
+      auth/
+        [...nextauth]/
+          route.ts
       breakdown/
         route.ts
       chat/
         route.ts
       explain/
         route.ts
+      explain-db/
+        route.ts
+      lectures/
+        [lectureId]/
+          route.ts
+        route.ts
+      mastery/
+        route.ts
       quiz/
         route.ts
       upload-pdf/
         route.ts
+      whoami/
+        route.ts
     dashboard/
       page.tsx
     learn/
+      [lectureId]/
+        page.tsx
       page.tsx
+      page.tsx.bak_save_open
     globals.css
     layout.tsx
     page.tsx
   components/
+    AuthProvider.tsx
     ChatPanel.tsx
+    ClientBoundary.tsx
+    LearnView.tsx
+    LearnView.tsx.bak2
+    LearnView.tsx.bak3
+    SignInOut.tsx
   lib/
+    client/
+      learn-ui-store.ts
+      lectures.ts
+      rename-lecture.ts
+    shared/
+      learn-types.ts
     ai.ts
+    auth.ts
     learn-store.ts
+    prisma.ts
     store.ts
 .gitignore
 .prettierignore
@@ -80,16 +114,1165 @@ src/
 eslint.config.mjs
 next.config.ts
 package.json
-phase1_test.mjs
+PHASE5_NOTES.md
 postcss.config.mjs
 README.md
-script.sh
 tailwind.config.ts
 tsconfig.json
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/app/api/lectures/[lectureId]/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { lectureId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const userId = (session.user as any).id as string;
+    const { title } = await req.json();
+
+    if (!title || typeof title !== 'string' || title.trim().length < 3) {
+      return NextResponse.json(
+        { error: 'Title must be at least 3 characters' },
+        { status: 400 }
+      );
+    }
+
+    const owned = await prisma.lecture.findFirst({
+      where: { id: params.lectureId, userId },
+      select: { id: true },
+    });
+    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const updated = await prisma.lecture.update({
+      where: { id: params.lectureId },
+      data: { title: title.trim() },
+      select: { id: true, title: true },
+    });
+
+    return NextResponse.json({ ok: true, lecture: updated });
+  } catch (e: any) {
+    console.error('LECTURE_PATCH_ERROR', e);
+    return NextResponse.json(
+      { error: e.message || 'Server error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="src/app/learn/page.tsx.bak_save_open">
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { createLectureFromText, createLectureFromPdf } from '@/lib/client/lectures';
+import { useLearnStore } from '@/lib/learn-store';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { ExplanationStyle } from '@/app/api/explain/route';
+import { Loader2, Wand2 } from 'lucide-react';
+import ChatPanel from '@/components/ChatPanel';
+
+async function postJSON<T>(url: string, body: any): Promise<T> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
+  return res.json();
+}
+async function postForm<T>(url: string, form: FormData): Promise<T> {
+  const res = await fetch(url, { method: 'POST', body: form });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: `); }
+  return res.json();
+}
+
+const TopicProgressBar = ({ current, total }: { current: number, total: number }) => {
+  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-baseline text-sm">
+        <span className="font-medium text-neutral-300">Topic Progress</span>
+        <span className="text-neutral-400">{current} / {total} Mastered</span>
+      </div>
+      <div className="w-full bg-neutral-800 rounded-full h-2.5">
+        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+      </div>
+    </div>
+  );
+};
+
+export default function Learn() {
+  const [input, setInput] = useState('');
+  const {
+    topic, subtopics, unlockedIndex, currentIndex, content, explanation, quiz, loading, error,
+    setContent, setBreakdown, setExplanation, setQuiz, setLoading, setError, selectIndex, unlockNext, resetAll,
+  } = useLearnStore();
+
+  const currentSubtopic = subtopics[currentIndex];
+  const isSubtopicActive = currentSubtopic != null;
+
+  const performAnalysis = async (text: string) => {
+    try {
+      setContent(text);
+      setBreakdown('Analyzing, please wait...', []);
+      const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
+      setBreakdown(bd.topic, bd.subtopics);
+      const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
+      setQuiz(qz.questions);
+    } catch (e: any) {
+      setError(e.message || 'Failed to analyze content.');
+      setBreakdown('Analysis Failed', []);
+    }
+  };
+
+  const handleTextAnalysis = async () => {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    try {
+      await performAnalysis(input);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePdfUpload = async (file: File) => {
+    if (loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    setInput('');
+    setBreakdown(`Processing ${file.name}...`, []);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
+      await performAnalysis(res.content);
+    } catch (e: any) {
+      setError(e.message || 'Failed to upload PDF');
+      setBreakdown('PDF Upload Failed', []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
+    if (!currentSubtopic || !content) return;
+    setExplanation('Crafting your learning module...');
+    try {
+      const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
+      // No longer need the client-side parser. Trusting the new prompt.
+      setExplanation(res.explanation);
+    } catch (e: any) {
+      setExplanation('Could not generate explanation. ' + e.message);
+    }
+  }, [content, currentSubtopic, setExplanation]);
+  
+  useEffect(() => {
+    if (currentSubtopic) {
+      fetchExplanation('default');
+    }
+  }, [currentIndex, currentSubtopic, fetchExplanation]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* --- Left Column: Workspace (2/10 width) --- */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Learn Workspace</h2>
+        <div 
+          className="relative"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
+        >
+          <textarea
+              className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 disabled:opacity-60"
+              placeholder="Paste notes or drop a PDF..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={loading}
+          />
+        </div>
+        <div className="flex gap-2">
+            <button onClick={handleTextAnalysis} disabled={loading || !input.trim()} className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? ( <> <Loader2 className="w-4 h-4 animate-spin" /> Analyzing... </> ) : ( <> <Wand2 className="w-4 h-4" /> Analyze </> )}
+            </button>
+            <button onClick={() => { resetAll(); setInput(''); }} disabled={loading} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50">Reset</button>
+        </div>
+        {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
+        <hr className="border-neutral-800" />
+        <div>
+            <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
+            {subtopics.length > 0 && ( <div className="my-4"> <TopicProgressBar current={unlockedIndex} total={subtopics.length} /> </div> )}
+            {subtopics.length > 0 && (
+                <ul className="space-y-1">{subtopics.map((s, i) => (
+                    <li key={i}>
+                      <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
+                        {i + 1}. {s.title}
+                      </button>
+                    </li>
+                ))}</ul>
+            )}
+        </div>
+      </aside>
+
+      {/* --- Center Column: Main Content (5/10 width) --- */}
+      <main className="lg:col-span-5">
+        {isSubtopicActive ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+                <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                  <span>Importance: {currentSubtopic.importance}</span> <span>•</span> <span>Difficulty: {currentSubtopic.difficulty}</span>
+                </div>
+                <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-400">Style:</span>
+                  <button onClick={() => fetchExplanation('default')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Default</button>
+                  <button onClick={() => fetchExplanation('simplified')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Simplified</button>
+                  <button onClick={() => fetchExplanation('detailed')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Detailed</button>
+                  <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
+                </div>
+                <hr className="border-neutral-800 my-6" />
+                <div className="markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
+                </div>
+            </div>
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+                <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+                <QuizPanel key={currentIndex} quiz={quiz} onPassed={unlockNext} activeTitle={currentSubtopic.title} />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>{loading ? 'Analyzing...' : 'Analyze some content to begin learning'}</p>
+          </div>
+        )}
+      </main>
+
+      {/* --- Right Column: AI Tutor (3/10 width) --- */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={content} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+  const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
+  const qs = relevantQs.length > 0 ? relevantQs : [];
+  const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
+  const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
+  useEffect(() => { setAnswers([]); setRevealed(false); }, [activeTitle]);
+  return (
+    <div className="space-y-4">
+      {qs.length === 0 ? <p className="text-neutral-400 text-sm">No quiz questions available for this subtopic.</p> :
+      <ul className="space-y-6">
+        {qs.map((q, i) => (
+          <li key={q.prompt} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o: string, j: number) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
+                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed}>{o}</button>;
+              })}
+            </div>
+            {revealed && q.explanation && <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">{q.explanation}</div>}
+          </li>
+        ))}
+      </ul>}
+      <div className="flex items-center gap-4 pt-4">
+        <button onClick={check} disabled={revealed || qs.length === 0} className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50">Check Answer</button>
+      </div>
+    </div>
+  );
+}
+
+
+  const handleCreatePersistentLecture = async () => {
+    if (loading) return;
+    const text = input.trim();
+    const fileInput = null; // You can extend to capture dropped file if you track it in state.
+    try {
+      setLoading(true);
+      setError(undefined);
+      if (text) {
+        const { lectureId } = await createLectureFromText(text);
+        window.location.href = `/learn/${lectureId}`;
+        return;
+      }
+      // Fallback: ask user to pick a PDF if no text pasted
+      alert('Please paste text first (or wire a file input to create from PDF).');
+    } catch (e: any) {
+      setError(e.message || 'Failed to create lecture.');
+    } finally {
+      setLoading(false);
+    }
+  };
+</file>
+
+<file path="src/components/LearnView.tsx.bak2">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI store based on mastered subtopics
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Explanations cache per subtopic (client-side only; default to server cached explanation string)
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  // Ensure unlocked index remains aligned if server-side mastery changes on reload
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* Left: Outline */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+        <div className="mb-2">
+          <div className="text-sm uppercase text-neutral-400">Title</div>
+          <div className="font-semibold text-lg">{initial.title}</div>
+        </div>
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() =>
+                  canSelect(i) && ui.setState({ currentIndex: i })
+                }
+                disabled={!canSelect(i)}
+                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                    ? 'bg-neutral-800 text-white font-semibold'
+                    : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                <span className="text-sm font-medium text-neutral-400">Style:</span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="border-neutral-800 my-6" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
+                    });
+                  } catch (e) {
+                    // Silent for now or add toast
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                    ? 'border-red-500 bg-red-900/30'
+                    : isSelected
+                    ? 'border-blue-500 bg-blue-900/20'
+                    : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/LearnView.tsx.bak3">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX
+  const [savedHint, setSavedHint] = useState<string | null>(null);
+
+  // Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* Left: Outline */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="flex-1 rounded-md bg-neutral-900 p-2 outline-none ring-1 ring-neutral-700"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-black text-sm font-medium disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        {/* Save to Dashboard */}
+        <button
+          onClick={handleSaveToDashboard}
+          className="w-full rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900"
+          title="This lecture is stored in your account; click for confirmation."
+        >
+          Save to Dashboard
+        </button>
+        {savedHint && <div className="text-xs text-green-400">{savedHint}</div>}
+
+        <div className="mb-2">
+          <div className="text-sm uppercase text-neutral-400">Title</div>
+          <div className="font-semibold text-lg">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() =>
+                  canSelect(i) && ui.setState({ currentIndex: i })
+                }
+                disabled={!canSelect(i)}
+                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                    ? 'bg-neutral-800 text-white font-semibold'
+                    : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                <span className="text-sm font-medium text-neutral-400">Style:</span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="border-neutral-800 my-6" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                    ? 'border-red-500 bg-red-900/30'
+                    : isSelected
+                    ? 'border-blue-500 bg-blue-900/20'
+                    : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/lib/client/learn-ui-store.ts">
+import { create } from 'zustand';
+
+type UIState = {
+  currentIndex: number;
+  unlockedIndex: number;
+  setCurrentIndex: (i: number) => void;
+  setUnlockedIndex: (i: number) => void;
+};
+
+export const createLearnUIStore = (initial: {
+  currentIndex: number;
+  unlockedIndex: number;
+}) =>
+  create<UIState>((set) => ({
+    currentIndex: initial.currentIndex,
+    unlockedIndex: initial.unlockedIndex,
+    setCurrentIndex: (i) => set({ currentIndex: i }),
+    setUnlockedIndex: (i) => set({ unlockedIndex: i }),
+  }));
+</file>
+
+<file path="src/lib/client/rename-lecture.ts">
+export async function renameLecture(lectureId: string, title: string) {
+  const res = await fetch(`/api/lectures/${lectureId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed (${res.status})`);
+  }
+  return res.json() as Promise<{
+    ok: true;
+    lecture: { id: string; title: string };
+  }>;
+}
+</file>
+
+<file path="src/lib/shared/learn-types.ts">
+export type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+};
+
+export type LearnSubtopic = {
+  id: string;
+  order: number;
+  title: string;
+  importance: string;
+  difficulty: number;
+  overview: string;
+  explanation: string;
+  mastered: boolean;
+  questions: QuizQuestion[];
+};
+
+export type LearnLecture = {
+  id: string;
+  title: string;
+  originalContent: string;
+  subtopics: LearnSubtopic[];
+};
+
+export function deriveUnlockedIndex(subtopics: LearnSubtopic[]): number {
+  // Highest mastered index + 1 (at least 0)
+  const lastMastered = subtopics.reduce((acc, s, i) => (s.mastered ? i : acc), -1);
+  return Math.min(lastMastered + 1, Math.max(0, subtopics.length - 1));
+}
+</file>
+
+<file path="PHASE5_NOTES.md">
+Phase 5 — Persistent-first state
+
+What changed:
+- Client-side LearnView now derives unlockedIndex from mastered subtopics returned by the server.
+- UI-only state (currentIndex, unlockedIndex) lives in a tiny Zustand store created per page mount.
+- On quiz pass, the client calls /api/mastery to persist mastery, then locally unlocks the next subtopic.
+
+What you can remove/stop using:
+- src/lib/learn-store.ts (old in-memory topic/subtopic/quiz store driving the entire Learn flow)
+- src/lib/store.ts for global "progress" numbers; use real values from DB on server pages instead.
+
+Next steps to complete removal:
+1) Remove imports/usages of useLearnStore and useProgressStore from client components.
+2) On the Dashboard, read stats from DB directly (already implemented in Phase 4 server page).
+3) If you still need per-session UI (like toasts, toggles), create tiny local Zustand stores colocated with those components.
+
+Optional enhancements:
+- Refetch lecture data after mastery to reflect new mastered state from DB (SWR/React Query) or navigate refresh.
+- Add optimistic UI badge "Mastered" on subtopic list after pass.
+</file>
+
+<file path="prisma/migrations/20250807100731_init/migration.sql">
+-- CreateTable
+CREATE TABLE "public"."Account" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "providerAccountId" TEXT NOT NULL,
+    "refresh_token" TEXT,
+    "access_token" TEXT,
+    "expires_at" INTEGER,
+    "token_type" TEXT,
+    "scope" TEXT,
+    "id_token" TEXT,
+    "session_state" TEXT,
+
+    CONSTRAINT "Account_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Session" (
+    "id" TEXT NOT NULL,
+    "sessionToken" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "expires" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."VerificationToken" (
+    "identifier" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "expires" TIMESTAMP(3) NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "public"."User" (
+    "id" TEXT NOT NULL,
+    "name" TEXT,
+    "email" TEXT,
+    "emailVerified" TIMESTAMP(3),
+    "image" TEXT,
+    "elo" INTEGER NOT NULL DEFAULT 1000,
+    "streak" INTEGER NOT NULL DEFAULT 0,
+    "lastStudiedAt" TIMESTAMP(3),
+
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Lecture" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "originalContent" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+
+    CONSTRAINT "Lecture_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Subtopic" (
+    "id" TEXT NOT NULL,
+    "order" INTEGER NOT NULL,
+    "title" TEXT NOT NULL,
+    "importance" TEXT NOT NULL,
+    "difficulty" INTEGER NOT NULL,
+    "overview" TEXT NOT NULL,
+    "explanation" TEXT,
+    "lectureId" TEXT NOT NULL,
+
+    CONSTRAINT "Subtopic_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."QuizQuestion" (
+    "id" TEXT NOT NULL,
+    "prompt" TEXT NOT NULL,
+    "options" JSONB NOT NULL,
+    "answerIndex" INTEGER NOT NULL,
+    "explanation" TEXT NOT NULL,
+    "subtopicId" TEXT NOT NULL,
+
+    CONSTRAINT "QuizQuestion_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."UserMastery" (
+    "id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    "subtopicId" TEXT NOT NULL,
+
+    CONSTRAINT "UserMastery_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "public"."Account"("provider", "providerAccountId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Session_sessionToken_key" ON "public"."Session"("sessionToken");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VerificationToken_token_key" ON "public"."VerificationToken"("token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VerificationToken_identifier_token_key" ON "public"."VerificationToken"("identifier", "token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "public"."User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Subtopic_lectureId_order_key" ON "public"."Subtopic"("lectureId", "order");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "UserMastery_userId_subtopicId_key" ON "public"."UserMastery"("userId", "subtopicId");
+</file>
+
+<file path="prisma/migrations/migration_lock.toml">
+# Please do not edit this file manually
+# It should be added in your version-control system (e.g., Git)
+provider = "postgresql"
+</file>
 
 <file path="prisma/schema.prisma">
 // Schema generated by setup script from the migration plan.
@@ -203,135 +1386,6 @@ model UserMastery {
 }
 </file>
 
-<file path="phase1_test.mjs">
-import fs from 'fs';
-import path from 'path';
-import { PrismaClient } from '@prisma/client';
-
-// --- Test Configuration ---
-const REQUIRED_FILES = ['.env', 'prisma/schema.prisma'];
-const REQUIRED_ENV_VARS = [
-  'POSTGRES_URL',
-  'POSTGRES_URL_NON_POOLING',
-  'POSTGRES_SHADOW_URL',
-];
-const REQUIRED_TABLES = [
-  'User',
-  'Account',
-  'Session',
-  'Lecture',
-  'Subtopic',
-  'QuizQuestion',
-  'UserMastery',
-  'VerificationToken',
-];
-
-// --- Color Helpers ---
-const C = {
-  RESET: '\x1b[0m',
-  BOLD: '\x1b[1m',
-  GREEN: '\x1b[32m',
-  RED: '\x1b[31m',
-  YELLOW: '\x1b[33m',
-  CYAN: '\x1b[36m',
-};
-
-// --- Test Runner ---
-let failures = 0;
-const test = (description, testFn) => {
-  try {
-    const result = testFn();
-    if (result === false) throw new Error('Assertion failed');
-    console.log(`${C.GREEN}✔ PASS:${C.RESET} ${description}`);
-  } catch (error) {
-    console.log(`${C.RED}✖ FAIL:${C.RESET} ${description}`);
-    console.log(`     ${C.YELLOW}└> ${error.message}${C.RESET}`);
-    failures++;
-  }
-};
-
-const asyncTest = async (description, testFn) => {
-  try {
-    await testFn();
-    console.log(`${C.GREEN}✔ PASS:${C.RESET} ${description}`);
-  } catch (error) {
-    console.log(`${C.RED}✖ FAIL:${C.RESET} ${description}`);
-    console.log(`     ${C.YELLOW}└> ${error.message}${C.RESET}`);
-    failures++;
-  }
-};
-
-// --- Test Suite ---
-async function runTests() {
-  console.log(`\n${C.BOLD}${C.CYAN}🔬 Running Phase 1 Verification Tests...${C.RESET}\n`);
-
-  // Test 1: File Existence
-  test('Required project files exist', () => {
-    for (const file of REQUIRED_FILES) {
-      if (!fs.existsSync(path.resolve(process.cwd(), file))) {
-        throw new Error(`File not found: ${file}`);
-      }
-    }
-  });
-
-  // Test 2: Environment Variables
-  test('Required environment variables are set in .env file', () => {
-    const envContent = fs.readFileSync('.env', 'utf-8');
-    for (const v of REQUIRED_ENV_VARS) {
-      if (!envContent.includes(`${v}=`)) {
-        throw new Error(`Variable not found in .env file: ${v}`);
-      }
-    }
-  });
-
-  // Test 3: Database Connection
-  const prisma = new PrismaClient();
-  await asyncTest('Successfully connects to the database', async () => {
-    try {
-      // $queryRaw is a good way to test a raw, authenticated connection.
-      await prisma.$queryRaw`SELECT 1`;
-    } catch (e) {
-      throw new Error(
-        `Database connection failed. Check your POSTGRES_URL. Error: ${e.message}`
-      );
-    }
-  });
-
-  // Test 4: Schema & Table Verification
-  await asyncTest('All required tables exist in the database', async () => {
-    for (const table of REQUIRED_TABLES) {
-      try {
-        // We test this by trying to count 0 records from the table.
-        // If the table doesn't exist, this query will throw an error.
-        await prisma[table.toLowerCase()].count();
-      } catch (error) {
-        if (error.code === 'P2021' || error.message.includes('does not exist')) {
-            throw new Error(`Table "${table}" does not exist in the database schema.`);
-        }
-        throw new Error(`An unexpected error occurred while checking table "${table}": ${error.message}`);
-      }
-    }
-  });
-  
-  await prisma.$disconnect();
-
-  // --- Final Report ---
-  console.log(`\n${C.BOLD}------------- TEST SUMMARY -------------${C.RESET}`);
-  if (failures === 0) {
-    console.log(
-      `${C.GREEN}${C.BOLD}🎉 All tests passed! Phase 1 is successfully completed.${C.RESET}\n`
-    );
-  } else {
-    console.log(
-      `${C.RED}${C.BOLD}🚨 ${failures} test(s) failed. Please review the errors above.${C.RESET}\n`
-    );
-    process.exit(1); // Exit with an error code if tests fail
-  }
-}
-
-runTests();
-</file>
-
 <file path="public/file.svg">
 <svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
 </file>
@@ -433,6 +1487,304 @@ export async function POST(req: NextRequest) {
 }
 </file>
 
+<file path="src/app/api/explain-db/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { requireSession } from '@/lib/auth';
+import { generateText } from '@/lib/ai';
+
+export type ExplanationStyle = 'default' | 'simplified' | 'detailed' | 'example';
+
+export async function POST(req: NextRequest) {
+  try {
+    await requireSession();
+    const { subtopicId, style = 'default' } = (await req.json()) as {
+      subtopicId: string;
+      style?: ExplanationStyle;
+    };
+
+    if (!subtopicId) {
+      return NextResponse.json(
+        { error: 'subtopicId is required.' },
+        { status: 400 }
+      );
+    }
+
+    const subtopic = await prisma.subtopic.findUnique({
+      where: { id: subtopicId },
+    });
+    if (!subtopic) {
+      return NextResponse.json({ error: 'Subtopic not found.' }, { status: 404 });
+    }
+
+    // If already cached, return it
+    if (subtopic.explanation && style === 'default') {
+      return NextResponse.json({ explanation: subtopic.explanation });
+    }
+
+    let styleInstruction = '';
+    switch (style) {
+      case 'simplified':
+        styleInstruction =
+          'Explain in very simple terms, as if for a first-year student.';
+        break;
+      case 'detailed':
+        styleInstruction =
+          'Provide a detailed, in-depth explanation suitable for a post-graduate student, covering nuances and complexities.';
+        break;
+      case 'example':
+        styleInstruction =
+          'Focus on a concrete, real-world example; keep theory brief, emphasize practical application.';
+        break;
+      default:
+        styleInstruction =
+          'Provide a clear and comprehensive explanation suitable for a university undergraduate.';
+        break;
+    }
+
+    const prompt = `
+      You are a University Professor creating a study guide about "${subtopic.title}".
+      ${styleInstruction}
+      Use clean Markdown with headings (###, ####), lists, and code blocks where helpful.
+      Base the explanation on the following lecture text for context:
+      ---
+      ${subtopic.overview || ''}
+    `;
+
+    const markdownExplanation = await generateText(prompt);
+
+    // Save fresh explanation for default style
+    if (style === 'default') {
+      await prisma.subtopic.update({
+        where: { id: subtopicId },
+        data: { explanation: markdownExplanation },
+      });
+    }
+
+    return NextResponse.json({ explanation: markdownExplanation });
+  } catch (error: any) {
+    const status = error?.status || 500;
+    console.error('EXPLAIN_DB_API_ERROR:', error?.stack || error?.message || error);
+    return NextResponse.json({ error: error.message }, { status });
+  }
+}
+</file>
+
+<file path="src/app/api/lectures/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import pdf from 'pdf-extraction';
+import prisma from '@/lib/prisma';
+import { requireSession } from '@/lib/auth';
+import { generateJSON } from '@/lib/ai';
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+type Breakdown = {
+  topic: string;
+  subtopics: Array<{
+    title: string;
+    importance: string;
+    difficulty: number;
+    overview?: string;
+  }>;
+};
+
+type QuizOut = {
+  questions: Array<{
+    prompt: string;
+    options: string[];
+    answerIndex: number;
+    explanation: string;
+    subtopicTitle?: string;
+  }>;
+};
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await requireSession();
+    const userId = (session.user as any).id as string;
+
+    const contentType = req.headers.get('content-type') || '';
+    let text = '';
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await req.formData();
+      const file = form.get('file');
+      if (!file || !(file instanceof File)) {
+        return NextResponse.json(
+          { error: 'No file provided. Please upload a single PDF.' },
+          { status: 400 }
+        );
+      }
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        return NextResponse.json(
+          { error: 'Invalid file type. Only PDF files are accepted.' },
+          { status: 400 }
+        );
+      }
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const data = await pdf(buffer);
+      text = (data.text || '').replace(/\s{2,}/g, ' ').trim();
+      if (!text) {
+        return NextResponse.json(
+          {
+            error:
+              'Could not extract text from the PDF. The file may only contain images.',
+          },
+          { status: 422 }
+        );
+      }
+    } else if (contentType.includes('application/json')) {
+      const body = await req.json();
+      text = (body?.content || '').toString();
+      if (!text?.trim()) {
+        return NextResponse.json(
+          { error: 'Content is required.' },
+          { status: 400 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: 'Unsupported content type.' },
+        { status: 415 }
+      );
+    }
+
+    // Ask AI once for breakdown
+    const breakdownPrompt = `
+      As an expert instructional designer, analyze the following text and break it down into a structured learning path.
+      Output JSON with keys: "topic" and "subtopics".
+      Each subtopic: { "title", "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string }.
+      ---
+      ${text}
+    `;
+    const bd = (await generateJSON(breakdownPrompt)) as Breakdown;
+
+    // Ask AI for quiz from subtopics
+    const quizPrompt = `
+      You are an expert in educational assessments. Generate a quiz based on the subtopics.
+      Response MUST be a single JSON object with key "questions".
+      For each subtopic, create exactly one multiple-choice question:
+      { "prompt", "options": [4 strings], "answerIndex": 0-3, "explanation", "subtopicTitle" }.
+      ---
+      ${JSON.stringify(bd.subtopics, null, 2)}
+      ---
+    `;
+    const qz = (await generateJSON(quizPrompt)) as QuizOut;
+
+    // Persist everything in one transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const lecture = await tx.lecture.create({
+        data: {
+          title: bd.topic || 'Untitled',
+          originalContent: text,
+          userId,
+        },
+      });
+
+      // Create subtopics with order
+      const subtopics = await Promise.all(
+        bd.subtopics.map((s, idx) =>
+          tx.subtopic.create({
+            data: {
+              order: idx,
+              title: s.title,
+              importance: s.importance,
+              difficulty: s.difficulty,
+              overview: s.overview || '',
+              lectureId: lecture.id,
+            },
+          })
+        )
+      );
+
+      // Index subtopics by title (case-insensitive) for linking questions
+      const byTitle = new Map<string, string>();
+      for (const st of subtopics) {
+        byTitle.set(st.title.trim().toLowerCase(), st.id);
+      }
+
+      // Create quiz questions
+      for (const q of qz.questions || []) {
+        const matchTitle = (q.subtopicTitle || '').trim().toLowerCase();
+        const subtopicId =
+          byTitle.get(matchTitle) ??
+          // fallback: try contains
+          Array.from(byTitle.entries()).find(([t]) => t.includes(matchTitle))
+            ?.[1] ??
+          subtopics[0]?.id; // last resort: first subtopic
+
+        if (!subtopicId) continue;
+
+        await tx.quizQuestion.create({
+          data: {
+            prompt: q.prompt,
+            options: q.options as unknown as any, // Prisma Json
+            answerIndex: q.answerIndex,
+            explanation: q.explanation,
+            subtopicId,
+          },
+        });
+      }
+
+      return lecture;
+    });
+
+    return NextResponse.json({ lectureId: result.id }, { status: 201 });
+  } catch (e: any) {
+    const status = e?.status || 500;
+    console.error('LECTURES_API_ERROR:', e?.stack || e?.message || e);
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status });
+  }
+}
+</file>
+
+<file path="src/app/api/mastery/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { requireSession } from '@/lib/auth';
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await requireSession();
+    const userId = (session.user as any).id as string;
+
+    const { subtopicId, eloDelta = 5 } = (await req.json()) as {
+      subtopicId: string;
+      eloDelta?: number;
+    };
+
+    if (!subtopicId) {
+      return NextResponse.json(
+        { error: 'subtopicId is required.' },
+        { status: 400 }
+      );
+    }
+
+    // Create mastery; ignore if already exists
+    await prisma.userMastery.upsert({
+      where: { userId_subtopicId: { userId, subtopicId } },
+      update: {},
+      create: { userId, subtopicId },
+    });
+
+    // Update ELO
+    await prisma.user.update({
+      where: { id: userId },
+      data: { elo: { increment: eloDelta } },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    const status = e?.status || 500;
+    console.error('MASTERY_API_ERROR:', e?.stack || e?.message || e);
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status });
+  }
+}
+</file>
+
 <file path="src/app/api/upload-pdf/route.ts">
 import { NextRequest, NextResponse } from 'next/server';
 import pdf from 'pdf-extraction';
@@ -491,6 +1843,510 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Failed to process PDF: ${errorMessage}` }, { status: 500 });
   }
 }
+</file>
+
+<file path="src/app/api/whoami/route.ts">
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  return NextResponse.json({
+    ok: true,
+    hasSession: !!session,
+    user: session?.user ?? null,
+  });
+}
+</file>
+
+<file path="src/app/learn/[lectureId]/page.tsx">
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { notFound, redirect } from 'next/navigation';
+import LearnView from '@/components/LearnView';
+
+export default async function LearnPage({
+  params,
+}: {
+  params: { lectureId: string };
+}) {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user || !(session.user as any).id) {
+    redirect('/api/auth/signin');
+  }
+  const userId = (session.user as any).id as string;
+
+  const lecture = await prisma.lecture.findFirst({
+    where: { id: params.lectureId, userId },
+    include: {
+      subtopics: {
+        orderBy: { order: 'asc' },
+        include: {
+          questions: true,
+          masteredBy: { where: { userId } },
+        },
+      },
+    },
+  });
+
+  if (!lecture) {
+    notFound();
+  }
+
+  // Normalize data for the client component
+  const initial = {
+    id: lecture.id,
+    title: lecture.title,
+    originalContent: lecture.originalContent,
+    subtopics: lecture.subtopics.map((s) => ({
+      id: s.id,
+      order: s.order,
+      title: s.title,
+      importance: s.importance,
+      difficulty: s.difficulty,
+      overview: s.overview,
+      explanation: s.explanation || '',
+      mastered: s.masteredBy.length > 0,
+      questions: s.questions.map((q) => ({
+        id: q.id,
+        prompt: q.prompt,
+        options: q.options as unknown as string[],
+        answerIndex: q.answerIndex,
+        explanation: q.explanation,
+      })),
+    })),
+  };
+
+  return <LearnView initial={initial} />;
+}
+</file>
+
+<file path="src/components/AuthProvider.tsx">
+'use client';
+
+import { SessionProvider } from 'next-auth/react';
+
+export default function AuthProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <SessionProvider>{children}</SessionProvider>;
+}
+</file>
+
+<file path="src/components/ClientBoundary.tsx">
+'use client';
+
+import SignInOut from '@/components/SignInOut';
+
+export default function ClientBoundary() {
+  return <SignInOut />;
+}
+</file>
+
+<file path="src/components/LearnView.tsx">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX
+  const [savedHint, setSavedHint] = useState<string | null>(null);
+
+  // Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* Left: Outline */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="flex-1 rounded-md bg-neutral-900 p-2 outline-none ring-1 ring-neutral-700"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-black text-sm font-medium disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        {/* Save to Dashboard */}
+        <button
+          onClick={handleSaveToDashboard}
+          className="w-full rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900"
+          title="This lecture is stored in your account; click for confirmation."
+        >
+          Save to Dashboard
+        </button>
+        {savedHint && <div className="text-xs text-green-400">{savedHint}</div>}
+
+        <div className="mb-2">
+          <div className="text-sm uppercase text-neutral-400">Title</div>
+          <div className="font-semibold text-lg">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() =>
+                  canSelect(i) && ui.setState({ currentIndex: i })
+                }
+                disabled={!canSelect(i)}
+                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                    ? 'bg-neutral-800 text-white font-semibold'
+                    : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                <span className="text-sm font-medium text-neutral-400">Style:</span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="border-neutral-800 my-6" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                    ? 'border-red-500 bg-red-900/30'
+                    : isSelected
+                    ? 'border-blue-500 bg-blue-900/20'
+                    : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/lib/client/lectures.ts">
+export async function createLectureFromText(
+  content: string
+): Promise<{ lectureId: string }> {
+  const res = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createLectureFromPdf(
+  file: File
+): Promise<{ lectureId: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/lectures', { method: 'POST', body: form });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+</file>
+
+<file path="src/lib/auth.ts">
+import type { NextAuthOptions } from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
+import { PrismaAdapter } from '@auth/prisma-adapter';
+import prisma from '@/lib/prisma';
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      allowDangerousEmailAccountLinking: true,
+    }),
+  ],
+  session: { strategy: 'jwt' },
+  callbacks: {
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        (session.user as any).id = token.sub;
+      }
+      return session;
+    },
+  },
+};
 </file>
 
 <file path="src/lib/learn-store.ts">
@@ -578,6 +2434,22 @@ export const useLearnStore = create<State>((set, get) => ({
 }));
 </file>
 
+<file path="src/lib/prisma.ts">
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    // log: ['query'], // enable for debugging
+  });
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+export default prisma;
+</file>
+
 <file path="src/lib/store.ts">
 import { create } from 'zustand';
 
@@ -659,53 +2531,6 @@ export const useProgressStore = create<State>((set) => ({
 }));
 </file>
 
-<file path=".gitignore">
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-.env*.local
-
-/src/generated/prisma
-</file>
-
 <file path=".prettierignore">
 .next
 node_modules
@@ -775,6 +2600,15 @@ export default eslintConfig;
 }
 </file>
 
+<file path="src/app/api/auth/[...nextauth]/route.ts">
+import NextAuth from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+const handler = NextAuth(authOptions);
+
+export { handler as GET, handler as POST };
+</file>
+
 <file path="src/app/api/quiz/route.ts">
 import { NextRequest, NextResponse } from 'next/server';
 import { generateJSON } from '@/lib/ai';
@@ -816,94 +2650,6 @@ export async function POST(req: NextRequest) {
     console.error("Error in quiz API:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-</file>
-
-<file path="src/app/dashboard/page.tsx">
-'use client';
-
-import Link from 'next/link';
-import { useProgressStore } from '@/lib/store';
-import { BookOpen, Target, BrainCircuit, Flame } from 'lucide-react';
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-  color: string;
-}) {
-  return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <span className="text-neutral-400">{label}</span>
-        <Icon className={`w-6 h-6 ${color}`} />
-      </div>
-      <p className="text-4xl font-bold">{value}</p>
-    </div>
-  );
-}
-
-function RecentTopicCard({ topic }: { topic: { title: string; lastStudied: string } }) {
-  return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex items-center justify-between hover:bg-neutral-800/50 transition-colors">
-      <div>
-        <h4 className="font-semibold">{topic.title}</h4>
-        <p className="text-sm text-neutral-400">Last studied: {topic.lastStudied}</p>
-      </div>
-      <Link href="/learn" className="text-sm font-medium text-white hover:underline">
-        Review
-      </Link>
-    </div>
-  );
-}
-
-export default function Dashboard() {
-  const { progress } = useProgressStore();
-  const recentTopics = [
-    { title: 'Introduction to Sorting Algorithms', lastStudied: 'Yesterday' },
-    { title: 'Data Structures: Trees and Graphs', lastStudied: '3 days ago' },
-  ];
-
-  return (
-    <div className="container-narrow space-y-12">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight">Your Dashboard</h1>
-        <p className="text-neutral-400 mt-2">
-          Welcome back! Here's a summary of your learning journey.
-        </p>
-      </header>
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <StatCard label="Lectures Completed" value={progress.completedLectures} icon={BookOpen} color="text-blue-400" />
-          <StatCard label="Subtopics Mastered" value={progress.masteredSubtopics} icon={Target} color="text-green-400" />
-          <StatCard label="Learning Elo" value={progress.elo} icon={BrainCircuit} color="text-purple-400" />
-          <StatCard label="Current Streak" value={`${progress.streak} days`} icon={Flame} color="text-orange-400" />
-        </div>
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col items-center justify-center text-center gap-4">
-          <h3 className="text-xl font-semibold">Ready to Learn?</h3>
-          <p className="text-neutral-400 text-sm">
-            Dive into your next topic or upload new material to get started.
-          </p>
-          <Link href="/learn" className="w-full rounded-md bg-white px-6 py-3 text-black font-semibold shadow-md transition-transform hover:scale-105">
-            Go to Workspace
-          </Link>
-        </div>
-      </section>
-      <section>
-        <h2 className="text-2xl font-semibold">Recent Topics</h2>
-        <div className="mt-6 space-y-4">
-          {recentTopics.map((topic, index) => (
-            <RecentTopicCard key={index} topic={topic} />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
 }
 </file>
 
@@ -1031,6 +2777,91 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
     </div>
   );
 }
+</file>
+
+<file path="src/components/SignInOut.tsx">
+'use client';
+
+import { useSession, signIn, signOut } from 'next-auth/react';
+import Link from 'next/link';
+
+export default function SignInOut() {
+  const { data: session, status } = useSession();
+
+  if (status === 'loading') {
+    return <span className="text-sm text-neutral-400">Loading...</span>;
+  }
+
+  if (!session) {
+    return (
+      <button
+        onClick={() => signIn('google')}
+        className="rounded-md bg-white px-3 py-1.5 text-black text-sm font-medium"
+      >
+        Sign In
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+   
+      <button
+        onClick={() => signOut()}
+        className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm"
+      >
+        Sign Out
+      </button>
+    </div>
+  );
+}
+</file>
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+.env*.local
+
+/src/generated/prisma
 </file>
 
 <file path="next.config.ts">
@@ -1166,6 +2997,143 @@ const config: Config = {
 export default config
 </file>
 
+<file path="src/app/dashboard/page.tsx">
+import Link from 'next/link';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+import { BookOpen, Target, BrainCircuit, Flame } from 'lucide-react';
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string | number;
+  color: string;
+}) {
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <span className="text-neutral-400">{label}</span>
+        <Icon className={`w-6 h-6 ${color}`} />
+      </div>
+      <p className="text-4xl font-bold">{value}</p>
+    </div>
+  );
+}
+
+async function getData() {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user || !(session.user as any).id) {
+    redirect('/api/auth/signin');
+  }
+  const userId = (session.user as any).id as string;
+
+  const [user, lectures] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId } }),
+    prisma.lecture.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { subtopics: true } },
+      },
+    }),
+  ]);
+
+  return { user, lectures };
+}
+
+export default async function Dashboard() {
+  const { user, lectures } = await getData();
+
+  return (
+    <div className="container-narrow space-y-12">
+      <header>
+        <h1 className="text-3xl font-bold tracking-tight">Your Dashboard</h1>
+        <p className="text-neutral-400 mt-2">
+          Welcome back{user?.name ? `, ${user.name}` : ''}! Here&apos;s a summary of your learning journey.
+        </p>
+      </header>
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <StatCard
+            label="Lectures Created"
+            value={lectures.length}
+            icon={BookOpen}
+            color="text-blue-400"
+          />
+          <StatCard
+            label="Subtopics Mastered"
+            value={user?.masteredSubtopics ? user.masteredSubtopics.length : 0}
+            icon={Target}
+            color="text-green-400"
+          />
+          <StatCard
+            label="Learning Elo"
+            value={user?.elo ?? 1000}
+            icon={BrainCircuit}
+            color="text-purple-400"
+          />
+          <StatCard
+            label="Current Streak"
+            value={`${user?.streak ?? 0} days`}
+            icon={Flame}
+            color="text-orange-400"
+          />
+        </div>
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col items-center justify-center text-center gap-4">
+          <h3 className="text-xl font-semibold">Ready to Learn?</h3>
+          <p className="text-neutral-400 text-sm">
+            Create a lecture from text or PDF in the Learn Workspace.
+          </p>
+          <Link
+            href="/learn"
+            className="w-full rounded-md bg-white px-6 py-3 text-black font-semibold shadow-md transition-transform hover:scale-105"
+          >
+            Go to Workspace
+          </Link>
+        </div>
+      </section>
+      <section>
+        <h2 className="text-2xl font-semibold">Your Lectures</h2>
+        <div className="mt-6 space-y-4">
+          {lectures.length === 0 && (
+            <div className="text-neutral-400 text-sm">
+              No lectures yet. Create one in the Learn Workspace.
+            </div>
+          )}
+          {lectures.map((lec) => (
+            <div
+              key={lec.id}
+              className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
+            >
+              <div>
+                <h4 className="font-semibold">{lec.title}</h4>
+                <p className="text-sm text-neutral-400">
+                  {new Date(lec.createdAt).toLocaleString()} • {lec._count.subtopics}{' '}
+                  subtopics
+                </p>
+              </div>
+              <Link
+                href={`/learn/${lec.id}`}
+                className="text-sm font-medium text-white hover:underline"
+              >
+                Open
+              </Link>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+</file>
+
 <file path="postcss.config.mjs">
 /** Tailwind CSS v4 with official PostCSS plugin */
 export default {
@@ -1173,167 +3141,6 @@ export default {
     '@tailwindcss/postcss': {},
   },
 };
-</file>
-
-<file path="script.sh">
-#!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status.
-
-# --- Color Definitions ---
-C_BLUE='\033[0;34m'
-C_GREEN='\033[0;32m'
-C_YELLOW='\033[0;33m'
-C_RED='\033[0;31m'
-C_BOLD='\033[1m'
-C_RESET='\033[0m'
-
-# --- Helper Functions ---
-log_step() {
-    echo -e "\n${C_BLUE}${C_BOLD}>>> $1${C_RESET}"
-}
-log_success() {
-    echo -e "${C_GREEN}✔ $1${C_RESET}"
-}
-
-echo -e "${C_BOLD}🚀 Applying Final 'relationMode' Fix and Migrating 🚀${C_RESET}"
-
-# --- Step 1: Define the complete and correct schema content ---
-log_step "Step 1: Preparing the full, correct schema with 'relationMode' fix..."
-
-# This version has the two critical fixes:
-# 1. provider = "postgresql" (as a string)
-# 2. relationMode = "prisma" (to solve the shadow DB error)
-FULL_SCHEMA_CONTENT=$(cat <<'EOF'
-// Schema generated by setup script from the migration plan.
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider          = "postgresql"
-  url               = env("POSTGRES_URL")
-  directUrl         = env("POSTGRES_URL_NON_POOLING")
-  shadowDatabaseUrl = env("POSTGRES_SHADOW_URL")
-  relationMode      = "prisma"
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
-
-model User {
-  id                String        @id @default(cuid())
-  name              String?
-  email             String?       @unique
-  emailVerified     DateTime?
-  image             String?
-  elo               Int           @default(1000)
-  streak            Int           @default(0)
-  lastStudiedAt     DateTime?
-  accounts          Account[]
-  sessions          Session[]
-  lectures          Lecture[]
-  masteredSubtopics UserMastery[]
-}
-
-model Lecture {
-  id              String   @id @default(cuid())
-  title           String
-  originalContent String   @db.Text
-  createdAt       DateTime @default(now())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subtopics       Subtopic[]
-}
-
-model Subtopic {
-  id          String         @id @default(cuid())
-  order       Int
-  title       String
-  importance  String
-  difficulty  Int
-  overview    String
-  explanation String?        @db.Text
-  lectureId   String
-  lecture     Lecture        @relation(fields: [lectureId], references: [id], onDelete: Cascade)
-  questions   QuizQuestion[]
-  masteredBy  UserMastery[]
-
-  @@unique([lectureId, order])
-}
-
-model QuizQuestion {
-  id          String   @id @default(cuid())
-  prompt      String
-  options     Json
-  answerIndex Int
-  explanation String
-  subtopicId  String
-  subtopic    Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-}
-
-model UserMastery {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subtopicId String
-  subtopic   Subtopic @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, subtopicId])
-}
-EOF
-)
-
-# --- Step 2: Overwrite the schema.prisma file ---
-log_step "Step 2: Overwriting 'prisma/schema.prisma'..."
-echo "$FULL_SCHEMA_CONTENT" > prisma/schema.prisma
-log_success "prisma/schema.prisma has been overwritten with the correct version."
-
-# --- Step 3: Run prisma migrate reset ---
-log_step "Step 3: Resetting the database and applying migrations..."
-npx prisma migrate reset --force
-log_success "Database reset and migrations applied successfully."
-
-# --- Step 4: Run the Verification Tests ---
-log_step "Step 4: Running Phase 1 verification test suite..."
-# THE BULLETPROOF FIX: This command exports the variables from .env 
-# into the shell's environment before running the node script.
-export $(grep -v '^#' .env | xargs) && node phase1_test.mjs
-
-# --- Completion ---
-log_success "Script finished. Please review the test summary above."
 </file>
 
 <file path="src/app/globals.css">
@@ -1600,54 +3407,6 @@ body {
 /* END markdown-typography (Tailwind v4 safe) */
 </file>
 
-<file path="src/app/layout.tsx">
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'LearnMax — Your AI Study Companion',
-  description: 'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',
-};
-
-const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/learn', label: 'Learn' },
-];
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
-        <header className="py-8 border-b border-neutral-900">
-          <div className="container-narrow flex items-center justify-between">
-            <Link href="/" className="text-2xl font-semibold tracking-tight hover:text-white transition-colors">
-              LearnMax
-            </Link>
-            <nav className="flex items-center gap-4 text-sm text-neutral-300">
-              {navLinks.map((link, index) => (
-                <Link key={index} href={link.href} className="hover:text-white transition-colors">
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-        </header>
-        <main className="py-10">{children}</main>
-        <footer className="py-12 text-center text-sm text-neutral-500">
-          Built with Next.js, Tailwind CSS, and Google Gemini.
-        </footer>
-      </body>
-    </html>
-  );
-}
-</file>
-
 <file path="src/app/api/explain/route.ts">
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText } from '@/lib/ai';
@@ -1716,6 +3475,72 @@ export async function POST(req: NextRequest) {
 }
 </file>
 
+<file path="src/app/layout.tsx">
+import type { Metadata } from 'next';
+import ClientBoundary from '@/components/ClientBoundary';
+import AuthProvider from '@/components/AuthProvider';
+import Link from 'next/link';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'LearnMax — Your AI Study Companion',
+  description: 'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',
+};
+
+const navLinks = [
+  { href: '/', label: 'Home' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/learn', label: 'Learn' },
+];
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
+        <AuthProvider>
+        <header className="py-8 border-b border-neutral-900">
+          <div className="container-narrow flex items-center justify-between">
+            <Link href="/" className="text-2xl font-semibold tracking-tight hover:text-white transition-colors">
+              LearnMax
+            </Link>
+            <nav className="flex items-center gap-4 text-sm text-neutral-300">
+              {navLinks.map((link, index) => (
+                <Link key={index} href={link.href} className="hover:text-white transition-colors">
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+            <ClientBoundary/>
+          </div>
+        </header>
+        <main className="py-10">{children}</main>
+        <footer className="py-12 text-center text-sm text-neutral-500">
+          Built with Next.js, Tailwind CSS, and Google Gemini.
+        </footer>
+              </AuthProvider>
+      </body>
+    </html>
+  );
+}
+</file>
+
+<file path="src/app/learn/page.tsx">
+import { redirect } from 'next/navigation';
+
+// This page previously hosted a client-only "workspace" that may have lost
+// its default export or returned something invalid for Next.js 15 App Router.
+// We now make it a simple server component that redirects users to Dashboard,
+// where they can open/create persistent lectures. Adjust as needed.
+
+export default function LearnRedirectPage() {
+  redirect('/dashboard');
+}
+</file>
+
 <file path="src/app/page.tsx">
 'use client';
 
@@ -1755,14 +3580,15 @@ export default function HomePage() {
           <p className="mt-4 max-w-3xl mx-auto text-base md:text-lg text-neutral-300">
             Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science to build a hyper-efficient study path, ensuring you master every concept with minimal time and effort.
           </p>
-          <div className="mt-8">
-            <Link
-              href="/learn"
-              className="inline-flex items-center gap-3 rounded-md bg-white px-6 py-3 text-base text-black font-semibold shadow-lg transition-transform hover:scale-105"
-            >
-              Optimize Your First Lecture
-            </Link>
-          </div>
+          <div className="mt-8 flex items-center justify-center gap-3">
+    <Link
+      href="/learn"
+      className="inline-flex items-center gap-3 rounded-md bg-white px-6 py-3 text-base text-black font-semibold shadow-lg transition-transform hover:scale-105"
+    >
+      Optimize Your First Lecture
+    </Link>
+   
+  </div>
         </div>
         <div className="w-full mt-12">
           <div className="grid gap-5 md:grid-cols-3">
@@ -1777,279 +3603,6 @@ export default function HomePage() {
             </PillarCard>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-</file>
-
-<file path="package.json">
-{
-  "name": "learnmax",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "@auth/prisma-adapter": "^2.10.0",
-    "@google/generative-ai": "^0.24.1",
-    "@prisma/client": "^6.13.0",
-    "lucide-react": "^0.536.0",
-    "next": "15.4.5",
-    "next-auth": "^4.24.11",
-    "pdf-extraction": "^1.0.2",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "zustand": "^5.0.7"
-  },
-  "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4.1.11",
-    "@tailwindcss/typography": "^0.5.16",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "autoprefixer": "^10.4.21",
-    "eslint": "^9",
-    "eslint-config-next": "15.4.5",
-    "prettier": "^3.6.2",
-    "prettier-plugin-tailwindcss": "^0.6.14",
-    "prisma": "^6.13.0",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  }
-}
-</file>
-
-<file path="src/app/learn/page.tsx">
-'use client';
-
-import { useState, useEffect, useCallback } from 'react';
-import { useLearnStore } from '@/lib/learn-store';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { ExplanationStyle } from '@/app/api/explain/route';
-import { Loader2, Wand2 } from 'lucide-react';
-import ChatPanel from '@/components/ChatPanel';
-
-async function postJSON<T>(url: string, body: any): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
-  return res.json();
-}
-async function postForm<T>(url: string, form: FormData): Promise<T> {
-  const res = await fetch(url, { method: 'POST', body: form });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: `); }
-  return res.json();
-}
-
-const TopicProgressBar = ({ current, total }: { current: number, total: number }) => {
-  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-baseline text-sm">
-        <span className="font-medium text-neutral-300">Topic Progress</span>
-        <span className="text-neutral-400">{current} / {total} Mastered</span>
-      </div>
-      <div className="w-full bg-neutral-800 rounded-full h-2.5">
-        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
-      </div>
-    </div>
-  );
-};
-
-export default function Learn() {
-  const [input, setInput] = useState('');
-  const {
-    topic, subtopics, unlockedIndex, currentIndex, content, explanation, quiz, loading, error,
-    setContent, setBreakdown, setExplanation, setQuiz, setLoading, setError, selectIndex, unlockNext, resetAll,
-  } = useLearnStore();
-
-  const currentSubtopic = subtopics[currentIndex];
-  const isSubtopicActive = currentSubtopic != null;
-
-  const performAnalysis = async (text: string) => {
-    try {
-      setContent(text);
-      setBreakdown('Analyzing, please wait...', []);
-      const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
-      setBreakdown(bd.topic, bd.subtopics);
-      const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
-      setQuiz(qz.questions);
-    } catch (e: any) {
-      setError(e.message || 'Failed to analyze content.');
-      setBreakdown('Analysis Failed', []);
-    }
-  };
-
-  const handleTextAnalysis = async () => {
-    if (!input.trim() || loading) return;
-    setLoading(true);
-    setError(undefined);
-    resetAll();
-    try {
-      await performAnalysis(input);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePdfUpload = async (file: File) => {
-    if (loading) return;
-    setLoading(true);
-    setError(undefined);
-    resetAll();
-    setInput('');
-    setBreakdown(`Processing ${file.name}...`, []);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
-      await performAnalysis(res.content);
-    } catch (e: any) {
-      setError(e.message || 'Failed to upload PDF');
-      setBreakdown('PDF Upload Failed', []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
-    if (!currentSubtopic || !content) return;
-    setExplanation('Crafting your learning module...');
-    try {
-      const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
-      // No longer need the client-side parser. Trusting the new prompt.
-      setExplanation(res.explanation);
-    } catch (e: any) {
-      setExplanation('Could not generate explanation. ' + e.message);
-    }
-  }, [content, currentSubtopic, setExplanation]);
-  
-  useEffect(() => {
-    if (currentSubtopic) {
-      fetchExplanation('default');
-    }
-  }, [currentIndex, currentSubtopic, fetchExplanation]);
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
-      {/* --- Left Column: Workspace (2/10 width) --- */}
-      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
-        <h2 className="text-xl font-semibold">Learn Workspace</h2>
-        <div 
-          className="relative"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
-        >
-          <textarea
-              className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 disabled:opacity-60"
-              placeholder="Paste notes or drop a PDF..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={loading}
-          />
-        </div>
-        <div className="flex gap-2">
-            <button onClick={handleTextAnalysis} disabled={loading || !input.trim()} className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-              {loading ? ( <> <Loader2 className="w-4 h-4 animate-spin" /> Analyzing... </> ) : ( <> <Wand2 className="w-4 h-4" /> Analyze </> )}
-            </button>
-            <button onClick={() => { resetAll(); setInput(''); }} disabled={loading} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50">Reset</button>
-        </div>
-        {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
-        <hr className="border-neutral-800" />
-        <div>
-            <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
-            {subtopics.length > 0 && ( <div className="my-4"> <TopicProgressBar current={unlockedIndex} total={subtopics.length} /> </div> )}
-            {subtopics.length > 0 && (
-                <ul className="space-y-1">{subtopics.map((s, i) => (
-                    <li key={i}>
-                      <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
-                        {i + 1}. {s.title}
-                      </button>
-                    </li>
-                ))}</ul>
-            )}
-        </div>
-      </aside>
-
-      {/* --- Center Column: Main Content (5/10 width) --- */}
-      <main className="lg:col-span-5">
-        {isSubtopicActive ? (
-          <div className="space-y-8">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-                <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
-                  <span>Importance: {currentSubtopic.importance}</span> <span>•</span> <span>Difficulty: {currentSubtopic.difficulty}</span>
-                </div>
-                <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-400">Style:</span>
-                  <button onClick={() => fetchExplanation('default')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Default</button>
-                  <button onClick={() => fetchExplanation('simplified')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Simplified</button>
-                  <button onClick={() => fetchExplanation('detailed')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Detailed</button>
-                  <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
-                </div>
-                <hr className="border-neutral-800 my-6" />
-                <div className="markdown">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
-                </div>
-            </div>
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-                <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
-                <QuizPanel key={currentIndex} quiz={quiz} onPassed={unlockNext} activeTitle={currentSubtopic.title} />
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
-            <p>{loading ? 'Analyzing...' : 'Analyze some content to begin learning'}</p>
-          </div>
-        )}
-      </main>
-
-      {/* --- Right Column: AI Tutor (3/10 width) --- */}
-      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
-        <ChatPanel documentContent={content} />
-      </aside>
-    </div>
-  );
-}
-
-function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
-  const [answers, setAnswers] = useState<number[]>([]);
-  const [revealed, setRevealed] = useState(false);
-  const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
-  const qs = relevantQs.length > 0 ? relevantQs : [];
-  const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
-  const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
-  useEffect(() => { setAnswers([]); setRevealed(false); }, [activeTitle]);
-  return (
-    <div className="space-y-4">
-      {qs.length === 0 ? <p className="text-neutral-400 text-sm">No quiz questions available for this subtopic.</p> :
-      <ul className="space-y-6">
-        {qs.map((q, i) => (
-          <li key={q.prompt} className="space-y-3">
-            <div className="font-medium text-neutral-200">{q.prompt}</div>
-            <div className="grid gap-2">
-              {q.options.map((o: string, j: number) => {
-                const isSelected = answers[i] === j;
-                const isCorrect = revealed && j === q.answerIndex;
-                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
-                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
-                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed}>{o}</button>;
-              })}
-            </div>
-            {revealed && q.explanation && <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">{q.explanation}</div>}
-          </li>
-        ))}
-      </ul>}
-      <div className="flex items-center gap-4 pt-4">
-        <button onClick={check} disabled={revealed || qs.length === 0} className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50">Check Answer</button>
       </div>
     </div>
   );
@@ -2121,6 +3674,50 @@ export async function generateText(prompt: string): Promise<string> {
       console.error("Failed to generate text from AI response:", e.message);
       throw new Error("The AI failed to generate a valid text response. Please try again.");
     }
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "learnmax",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.10.0",
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^6.13.0",
+    "lucide-react": "^0.536.0",
+    "next": "15.4.5",
+    "next-auth": "^4.24.11",
+    "pdf-extraction": "^1.0.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.7"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@tailwindcss/typography": "^0.5.16",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.5",
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.6.14",
+    "prisma": "^6.13.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
 }
 </file>
 

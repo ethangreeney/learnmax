@@ -1,0 +1,10 @@
+import { redirect } from 'next/navigation';
+
+// This page previously hosted a client-only "workspace" that may have lost
+// its default export or returned something invalid for Next.js 15 App Router.
+// We now make it a simple server component that redirects users to Dashboard,
+// where they can open/create persistent lectures. Adjust as needed.
+
+export default function LearnRedirectPage() {
+  redirect('/dashboard');
+}
