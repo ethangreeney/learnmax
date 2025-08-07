@@ -1,27 +1,23 @@
-// NOTE: Auto-fixed by fix-next15-types.sh
+import { isSessionWithUser } from '@/lib/session-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-// Keep the 2nd arg loosely typed and narrow safely to avoid Next 15 typing issues.
 type Params = { lectureId: string };
 
 export async function PATCH(req: NextRequest, ctx: unknown) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    if (!isSessionWithUser(session)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { params } = (ctx as { params: Params }) || {
-      params: { lectureId: '' },
-    };
+    const { params } = (ctx as { params: Params }) || { params: { lectureId: '' } };
     const { lectureId } = params;
+    const userId = session.user.id;
 
-    const userId = (session.user as any).id as string;
     const { title } = await req.json();
-
     if (!title || typeof title !== 'string' || title.trim().length < 3) {
       return NextResponse.json(
         { error: 'Title must be at least 3 characters' },

@@ -10,10 +10,10 @@ export default async function LearnPage({
   params: { lectureId: string };
 }) {
   const session = await getServerSession(authOptions);
-  if (!session || !session.user || !(session.user as any).id) {
+  if (!session || !session.user || !(session as SessionWithUser).user.id) {
     redirect('/api/auth/signin');
   }
-  const userId = (session.user as any).id as string;
+  const userId = (session as SessionWithUser).user.id as string;
 
   const lecture = await prisma.lecture.findFirst({
     where: { id: params.lectureId, userId },

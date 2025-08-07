@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { BookOpen, Target, BrainCircuit, Flame } from 'lucide-react';
+import { isSessionWithUser } from '@/lib/session-utils';
 
 function StatCard({
   icon: Icon,
@@ -29,13 +30,18 @@ function StatCard({
 
 async function getData() {
   const session = await getServerSession(authOptions);
-  if (!session || !session.user || !(session.user as any).id) {
+  if (!isSessionWithUser(session)) {
     redirect('/api/auth/signin');
   }
-  const userId = (session.user as any).id as string;
+  const userId = session.user.id;
 
   const [user, lectures] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        masteredSubtopics: true, // ensure this relation is loaded
+      },
+    }),
     prisma.lecture.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -50,6 +56,7 @@ async function getData() {
 
 export default async function Dashboard() {
   const { user, lectures } = await getData();
+  type LectureItem = typeof lectures[number];
 
   return (
     <div className="container-narrow space-y-12">
@@ -107,7 +114,7 @@ export default async function Dashboard() {
               No lectures yet. Create one in the Learn Workspace.
             </div>
           )}
-          {lectures.map((lec) => (
+          {lectures.map((lec: LectureItem) => (
             <div
               key={lec.id}
               className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
@@ -115,8 +122,7 @@ export default async function Dashboard() {
               <div>
                 <h4 className="font-semibold">{lec.title}</h4>
                 <p className="text-sm text-neutral-400">
-                  {new Date(lec.createdAt).toLocaleString()} • {lec._count.subtopics}{' '}
-                  subtopics
+                  {new Date(lec.createdAt).toLocaleString()} • {lec._count.subtopics} subtopics
                 </p>
               </div>
               <Link
