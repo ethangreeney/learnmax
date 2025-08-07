@@ -5,13 +5,15 @@ import { authOptions } from '@/lib/auth';
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { lectureId: string } }
+  context: { params: { lectureId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user)
+    if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
+    const { lectureId } = context.params;
     const userId = (session.user as any).id as string;
     const { title } = await req.json();
 
@@ -23,13 +25,15 @@ export async function PATCH(
     }
 
     const owned = await prisma.lecture.findFirst({
-      where: { id: params.lectureId, userId },
+      where: { id: lectureId, userId },
       select: { id: true },
     });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!owned) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
     const updated = await prisma.lecture.update({
-      where: { id: params.lectureId },
+      where: { id: lectureId },
       data: { title: title.trim() },
       select: { id: true, title: true },
     });
