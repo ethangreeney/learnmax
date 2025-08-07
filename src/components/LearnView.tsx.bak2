@@ -213,7 +213,6 @@ function QuizPanel({
 
   const check = () => {
     setRevealed(true);
-    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
     if (allCorrect) setTimeout(onPassed, 900);
   };
 
@@ -251,7 +250,7 @@ function QuizPanel({
                     key={j}
                     onClick={() => setAns(i, j)}
                     className={buttonClass}
-                    disabled={revealed}
+                    disabled={revealed && allCorrect}
                   >
                     {o}
                   </button>

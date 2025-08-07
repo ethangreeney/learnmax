@@ -84,6 +84,8 @@ src/
       [lectureId]/
         page.tsx
       page.tsx
+      page.tsx.bak_1754565157
+      page.tsx.bak_placeholder_1754565535
       page.tsx.bak_save_open
     globals.css
     layout.tsx
@@ -93,6 +95,12 @@ src/
     ChatPanel.tsx
     ClientBoundary.tsx
     LearnView.tsx
+    LearnView.tsx.bak_fixmerge_1754565868
+    LearnView.tsx.bak_fixsyntax_1754565820
+    LearnView.tsx.bak_mergeSave_1754565785
+    LearnView.tsx.bak_sidebar_1754565963
+    LearnView.tsx.bak_sidebar_1754565969
+    LearnView.tsx.bak_spacing_1754565674
     LearnView.tsx.bak2
     LearnView.tsx.bak3
     SignInOut.tsx
@@ -124,590 +132,93 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/app/api/lectures/[lectureId]/route.ts">
-import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { lectureId: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const userId = (session.user as any).id as string;
-    const { title } = await req.json();
-
-    if (!title || typeof title !== 'string' || title.trim().length < 3) {
-      return NextResponse.json(
-        { error: 'Title must be at least 3 characters' },
-        { status: 400 }
-      );
-    }
-
-    const owned = await prisma.lecture.findFirst({
-      where: { id: params.lectureId, userId },
-      select: { id: true },
-    });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    const updated = await prisma.lecture.update({
-      where: { id: params.lectureId },
-      data: { title: title.trim() },
-      select: { id: true, title: true },
-    });
-
-    return NextResponse.json({ ok: true, lecture: updated });
-  } catch (e: any) {
-    console.error('LECTURE_PATCH_ERROR', e);
-    return NextResponse.json(
-      { error: e.message || 'Server error' },
-      { status: 500 }
-    );
-  }
-}
-</file>
-
-<file path="src/app/learn/page.tsx.bak_save_open">
+<file path="src/app/learn/page.tsx.bak_placeholder_1754565535">
+// 'use client' makes this a valid client component with a default export.
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { createLectureFromText, createLectureFromPdf } from '@/lib/client/lectures';
-import { useLearnStore } from '@/lib/learn-store';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { ExplanationStyle } from '@/app/api/explain/route';
-import { Loader2, Wand2 } from 'lucide-react';
-import ChatPanel from '@/components/ChatPanel';
+import { useState } from 'react';
 
-async function postJSON<T>(url: string, body: any): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
-  return res.json();
-}
-async function postForm<T>(url: string, form: FormData): Promise<T> {
-  const res = await fetch(url, { method: 'POST', body: form });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: `); }
+async function createLectureFromText(
+  content: string
+): Promise<{ lectureId: string }> {
+  const res = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
   return res.json();
 }
 
-const TopicProgressBar = ({ current, total }: { current: number, total: number }) => {
-  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-baseline text-sm">
-        <span className="font-medium text-neutral-300">Topic Progress</span>
-        <span className="text-neutral-400">{current} / {total} Mastered</span>
-      </div>
-      <div className="w-full bg-neutral-800 rounded-full h-2.5">
-        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
-      </div>
-    </div>
-  );
-};
-
-export default function Learn() {
+export default function LearnWorkspacePage() {
   const [input, setInput] = useState('');
-  const {
-    topic, subtopics, unlockedIndex, currentIndex, content, explanation, quiz, loading, error,
-    setContent, setBreakdown, setExplanation, setQuiz, setLoading, setError, selectIndex, unlockNext, resetAll,
-  } = useLearnStore();
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  const currentSubtopic = subtopics[currentIndex];
-  const isSubtopicActive = currentSubtopic != null;
-
-  const performAnalysis = async (text: string) => {
-    try {
-      setContent(text);
-      setBreakdown('Analyzing, please wait...', []);
-      const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
-      setBreakdown(bd.topic, bd.subtopics);
-      const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
-      setQuiz(qz.questions);
-    } catch (e: any) {
-      setError(e.message || 'Failed to analyze content.');
-      setBreakdown('Analysis Failed', []);
-    }
-  };
-
-  const handleTextAnalysis = async () => {
-    if (!input.trim() || loading) return;
-    setLoading(true);
-    setError(undefined);
-    resetAll();
-    try {
-      await performAnalysis(input);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePdfUpload = async (file: File) => {
-    if (loading) return;
-    setLoading(true);
-    setError(undefined);
-    resetAll();
-    setInput('');
-    setBreakdown(`Processing ${file.name}...`, []);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
-      await performAnalysis(res.content);
-    } catch (e: any) {
-      setError(e.message || 'Failed to upload PDF');
-      setBreakdown('PDF Upload Failed', []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
-    if (!currentSubtopic || !content) return;
-    setExplanation('Crafting your learning module...');
-    try {
-      const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
-      // No longer need the client-side parser. Trusting the new prompt.
-      setExplanation(res.explanation);
-    } catch (e: any) {
-      setExplanation('Could not generate explanation. ' + e.message);
-    }
-  }, [content, currentSubtopic, setExplanation]);
-  
-  useEffect(() => {
-    if (currentSubtopic) {
-      fetchExplanation('default');
-    }
-  }, [currentIndex, currentSubtopic, fetchExplanation]);
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
-      {/* --- Left Column: Workspace (2/10 width) --- */}
-      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
-        <h2 className="text-xl font-semibold">Learn Workspace</h2>
-        <div 
-          className="relative"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
-        >
-          <textarea
-              className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 disabled:opacity-60"
-              placeholder="Paste notes or drop a PDF..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={loading}
-          />
-        </div>
-        <div className="flex gap-2">
-            <button onClick={handleTextAnalysis} disabled={loading || !input.trim()} className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-              {loading ? ( <> <Loader2 className="w-4 h-4 animate-spin" /> Analyzing... </> ) : ( <> <Wand2 className="w-4 h-4" /> Analyze </> )}
-            </button>
-            <button onClick={() => { resetAll(); setInput(''); }} disabled={loading} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50">Reset</button>
-        </div>
-        {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
-        <hr className="border-neutral-800" />
-        <div>
-            <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
-            {subtopics.length > 0 && ( <div className="my-4"> <TopicProgressBar current={unlockedIndex} total={subtopics.length} /> </div> )}
-            {subtopics.length > 0 && (
-                <ul className="space-y-1">{subtopics.map((s, i) => (
-                    <li key={i}>
-                      <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
-                        {i + 1}. {s.title}
-                      </button>
-                    </li>
-                ))}</ul>
-            )}
-        </div>
-      </aside>
-
-      {/* --- Center Column: Main Content (5/10 width) --- */}
-      <main className="lg:col-span-5">
-        {isSubtopicActive ? (
-          <div className="space-y-8">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-                <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
-                  <span>Importance: {currentSubtopic.importance}</span> <span>•</span> <span>Difficulty: {currentSubtopic.difficulty}</span>
-                </div>
-                <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-400">Style:</span>
-                  <button onClick={() => fetchExplanation('default')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Default</button>
-                  <button onClick={() => fetchExplanation('simplified')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Simplified</button>
-                  <button onClick={() => fetchExplanation('detailed')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Detailed</button>
-                  <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
-                </div>
-                <hr className="border-neutral-800 my-6" />
-                <div className="markdown">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
-                </div>
-            </div>
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-                <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
-                <QuizPanel key={currentIndex} quiz={quiz} onPassed={unlockNext} activeTitle={currentSubtopic.title} />
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
-            <p>{loading ? 'Analyzing...' : 'Analyze some content to begin learning'}</p>
-          </div>
-        )}
-      </main>
-
-      {/* --- Right Column: AI Tutor (3/10 width) --- */}
-      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
-        <ChatPanel documentContent={content} />
-      </aside>
-    </div>
-  );
-}
-
-function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
-  const [answers, setAnswers] = useState<number[]>([]);
-  const [revealed, setRevealed] = useState(false);
-  const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
-  const qs = relevantQs.length > 0 ? relevantQs : [];
-  const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
-  const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
-  useEffect(() => { setAnswers([]); setRevealed(false); }, [activeTitle]);
-  return (
-    <div className="space-y-4">
-      {qs.length === 0 ? <p className="text-neutral-400 text-sm">No quiz questions available for this subtopic.</p> :
-      <ul className="space-y-6">
-        {qs.map((q, i) => (
-          <li key={q.prompt} className="space-y-3">
-            <div className="font-medium text-neutral-200">{q.prompt}</div>
-            <div className="grid gap-2">
-              {q.options.map((o: string, j: number) => {
-                const isSelected = answers[i] === j;
-                const isCorrect = revealed && j === q.answerIndex;
-                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
-                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
-                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed}>{o}</button>;
-              })}
-            </div>
-            {revealed && q.explanation && <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">{q.explanation}</div>}
-          </li>
-        ))}
-      </ul>}
-      <div className="flex items-center gap-4 pt-4">
-        <button onClick={check} disabled={revealed || qs.length === 0} className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50">Check Answer</button>
-      </div>
-    </div>
-  );
-}
-
-
-  const handleCreatePersistentLecture = async () => {
-    if (loading) return;
+  const handleCreate = async () => {
     const text = input.trim();
-    const fileInput = null; // You can extend to capture dropped file if you track it in state.
+    if (!text || loading) return;
+    setLoading(true);
+    setErr(null);
     try {
-      setLoading(true);
-      setError(undefined);
-      if (text) {
-        const { lectureId } = await createLectureFromText(text);
-        window.location.href = `/learn/${lectureId}`;
-        return;
-      }
-      // Fallback: ask user to pick a PDF if no text pasted
-      alert('Please paste text first (or wire a file input to create from PDF).');
+      const { lectureId } = await createLectureFromText(text);
+      window.location.href = `/learn/${lectureId}`;
     } catch (e: any) {
-      setError(e.message || 'Failed to create lecture.');
+      setErr(e.message || 'Failed to create lecture.');
     } finally {
       setLoading(false);
     }
   };
-</file>
-
-<file path="src/components/LearnView.tsx.bak2">
-'use client';
-
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import ChatPanel from '@/components/ChatPanel';
-import {
-  deriveUnlockedIndex,
-  type LearnLecture,
-  type LearnSubtopic,
-  type QuizQuestion,
-} from '@/lib/shared/learn-types';
-import { createLearnUIStore } from '@/lib/client/learn-ui-store';
-
-export default function LearnView({ initial }: { initial: LearnLecture }) {
-  // Initialize UI store based on mastered subtopics
-  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
-  const storeRef = useRef(
-    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
-  );
-  const ui = storeRef.current;
-
-  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
-
-  // Explanations cache per subtopic (client-side only; default to server cached explanation string)
-  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
-    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
-  );
-
-  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
-
-  // Ensure unlocked index remains aligned if server-side mastery changes on reload
-  useEffect(() => {
-    const u = deriveUnlockedIndex(initial.subtopics);
-    ui.setState((s) => ({
-      ...s,
-      unlockedIndex: Math.max(u, s.unlockedIndex),
-      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
-
-  const fetchExplanation = useCallback(
-    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
-      const s = currentSubtopic;
-      if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
-      try {
-        const res = await fetch('/api/explain-db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subtopicId: s.id, style }),
-        });
-        if (!res.ok) {
-          const e = await res.json().catch(() => ({}));
-          throw new Error(e.error || `HTTP ${res.status}`);
-        }
-        const data = (await res.json()) as { explanation: string };
-        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
-      } catch (e: any) {
-        setExplanations((ex) => ({
-          ...ex,
-          [s.id]: 'Could not generate explanation. ' + e.message,
-        }));
-      }
-    },
-    [currentSubtopic]
-  );
-
-  useEffect(() => {
-    const s = currentSubtopic;
-    if (s && !explanations[s.id]) {
-      fetchExplanation('default');
-    }
-  }, [currentSubtopic, explanations, fetchExplanation]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
-      {/* Left: Outline */}
-      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
-        <h2 className="text-xl font-semibold">Lecture</h2>
-        <div className="mb-2">
-          <div className="text-sm uppercase text-neutral-400">Title</div>
-          <div className="font-semibold text-lg">{initial.title}</div>
+    <div className="container-narrow space-y-6">
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight">Learn Workspace</h1>
+        <p className="text-sm text-neutral-400">
+          Paste text and create a persistent lecture. You’ll be redirected to
+          the lecture page with explanations and quizzes.
+        </p>
+      </header>
+
+      <div className="space-y-4 rounded-lg border border-neutral-800 p-4">
+        <textarea
+          className="min-h-[160px] w-full rounded-md bg-neutral-900 p-3 ring-1 ring-neutral-700 outline-none"
+          placeholder="What do you want to learn about? paste any study notes or PDF lecture slides here"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={loading}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreate}
+            disabled={loading || !input.trim()}
+            className="rounded-md bg-white px-4 py-2 font-medium text-black disabled:opacity-50"
+          >
+            {loading ? 'Creating…' : 'Create Lecture'}
+          </button>
+          <button
+            onClick={() => setInput('')}
+            disabled={loading}
+            className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50"
+          >
+            Reset
+          </button>
         </div>
-        <ul className="space-y-1">
-          {initial.subtopics.map((s, i) => (
-            <li key={s.id}>
-              <button
-                onClick={() =>
-                  canSelect(i) && ui.setState({ currentIndex: i })
-                }
-                disabled={!canSelect(i)}
-                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
-                  i > ui.getState().unlockedIndex
-                    ? 'text-neutral-600'
-                    : i === ui.getState().currentIndex
-                    ? 'bg-neutral-800 text-white font-semibold'
-                    : 'text-neutral-300 hover:bg-neutral-900'
-                }`}
-              >
-                {i + 1}. {s.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
-      {/* Center: Explanation + Quiz */}
-      <main className="lg:col-span-5">
-        {currentSubtopic ? (
-          <div className="space-y-8">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-              <h3 className="text-3xl font-bold tracking-tight">
-                {currentSubtopic.title}
-              </h3>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
-                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
-                <span>Difficulty: {currentSubtopic.difficulty}</span>
-              </div>
-              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
-                <span className="text-sm font-medium text-neutral-400">Style:</span>
-                <button
-                  onClick={() => fetchExplanation('default')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
-                >
-                  Default
-                </button>
-                <button
-                  onClick={() => fetchExplanation('simplified')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
-                >
-                  Simplified
-                </button>
-                <button
-                  onClick={() => fetchExplanation('detailed')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
-                >
-                  Detailed
-                </button>
-                <button
-                  onClick={() => fetchExplanation('example')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
-                >
-                  Example
-                </button>
-              </div>
-              <hr className="border-neutral-800 my-6" />
-              <div className="markdown">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {explanations[currentSubtopic.id] || 'Loading...'}
-                </ReactMarkdown>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
-              <QuizPanel
-                key={currentSubtopic.id}
-                questions={currentSubtopic.questions}
-                onPassed={async () => {
-                  try {
-                    const res = await fetch('/api/mastery', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
-                    });
-                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
-                    // Unlock next subtopic locally
-                    const idx = ui.getState().currentIndex;
-                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
-                    ui.setState({
-                      currentIndex: next,
-                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
-                    });
-                  } catch (e) {
-                    // Silent for now or add toast
-                  }
-                }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
-            <p>Select a subtopic to begin</p>
+        {err && (
+          <div className="text-sm text-red-400" role="alert">
+            {err}
           </div>
         )}
-      </main>
-
-      {/* Right: AI Tutor */}
-      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
-        <ChatPanel documentContent={initial.originalContent} />
-      </aside>
-    </div>
-  );
-}
-
-function QuizPanel({
-  questions,
-  onPassed,
-}: {
-  questions: QuizQuestion[];
-  onPassed: () => void;
-}) {
-  const [answers, setAnswers] = useState<number[]>([]);
-  const [revealed, setRevealed] = useState(false);
-
-  const setAns = (qIndex: number, ansIndex: number) => {
-    const next = [...answers];
-    next[qIndex] = ansIndex;
-    setAnswers(next);
-  };
-
-  const check = () => {
-    setRevealed(true);
-    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
-    if (allCorrect) setTimeout(onPassed, 900);
-  };
-
-  useEffect(() => {
-    setAnswers([]);
-    setRevealed(false);
-  }, [questions.map((q) => q.id).join('|')]);
-
-  if (!questions || questions.length === 0) {
-    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      <ul className="space-y-6">
-        {questions.map((q, i) => (
-          <li key={q.id} className="space-y-3">
-            <div className="font-medium text-neutral-200">{q.prompt}</div>
-            <div className="grid gap-2">
-              {q.options.map((o, j) => {
-                const isSelected = answers[i] === j;
-                const isCorrect = revealed && j === q.answerIndex;
-                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
-                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
-                  isCorrect
-                    ? 'border-green-500 bg-green-900/30'
-                    : isIncorrect
-                    ? 'border-red-500 bg-red-900/30'
-                    : isSelected
-                    ? 'border-blue-500 bg-blue-900/20'
-                    : 'border-neutral-700 hover:bg-neutral-800'
-                }`;
-                return (
-                  <button
-                    key={j}
-                    onClick={() => setAns(i, j)}
-                    className={buttonClass}
-                    disabled={revealed}
-                  >
-                    {o}
-                  </button>
-                );
-              })}
-            </div>
-            {revealed && q.explanation && (
-              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
-                {q.explanation}
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-center gap-4 pt-4">
-        <button
-          onClick={check}
-          disabled={revealed || questions.length === 0}
-          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
-        >
-          Check Answer
-        </button>
       </div>
     </div>
   );
 }
 </file>
 
-<file path="src/components/LearnView.tsx.bak3">
+<file path="src/components/LearnView.tsx.bak_fixmerge_1754565868">
 'use client';
 
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
@@ -727,7 +238,10 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   // Initialize UI-only store
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
   const storeRef = useRef(
-    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
   );
   const ui = storeRef.current;
 
@@ -738,12 +252,11 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX
-  const [savedHint, setSavedHint] = useState<string | null>(null);
-
-  // Explanations cache per subtopic
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX// Explanations cache per subtopic
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
-    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
   );
 
   const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
@@ -753,13 +266,18 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     ui.setState((s) => ({
       ...s,
       unlockedIndex: Math.max(u, s.unlockedIndex),
-      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.subtopics.map((s) => s.mastered).join('|')]);
 
   const fetchExplanation = useCallback(
-    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
       const s = currentSubtopic;
       if (!s) return;
       setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
@@ -817,58 +335,48 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
       {/* Left: Outline */}
-      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
         <h2 className="text-xl font-semibold">Lecture</h2>
 
         {/* Rename row */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="flex-1 rounded-md bg-neutral-900 p-2 outline-none ring-1 ring-neutral-700"
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
             aria-label="Lecture title"
           />
           <button
             onClick={handleRename}
             disabled={isSavingTitle || title.trim().length < 3}
-            className="rounded-md bg-white px-3 py-2 text-black text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
           >
             {isSavingTitle ? 'Saving...' : 'Save'}
           </button>
         </div>
-        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>
 
-        {/* Save to Dashboard */}
-        <button
-          onClick={handleSaveToDashboard}
-          className="w-full rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900"
-          title="This lecture is stored in your account; click for confirmation."
-        >
-          Save to Dashboard
-        </button>
-        {savedHint && <div className="text-xs text-green-400">{savedHint}</div>}
+        
 
-        <div className="mb-2">
-          <div className="text-sm uppercase text-neutral-400">Title</div>
-          <div className="font-semibold text-lg">{title}</div>
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
         </div>
 
         <ul className="space-y-1">
           {initial.subtopics.map((s, i) => (
             <li key={s.id}>
               <button
-                onClick={() =>
-                  canSelect(i) && ui.setState({ currentIndex: i })
-                }
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
                 disabled={!canSelect(i)}
-                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
                   i > ui.getState().unlockedIndex
                     ? 'text-neutral-600'
                     : i === ui.getState().currentIndex
-                    ? 'bg-neutral-800 text-white font-semibold'
-                    : 'text-neutral-300 hover:bg-neutral-900'
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
                 }`}
               >
                 {i + 1}. {s.title}
@@ -886,38 +394,41 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
               <h3 className="text-3xl font-bold tracking-tight">
                 {currentSubtopic.title}
               </h3>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
-                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
                 <span>Difficulty: {currentSubtopic.difficulty}</span>
               </div>
-              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
-                <span className="text-sm font-medium text-neutral-400">Style:</span>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
                 <button
                   onClick={() => fetchExplanation('default')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
                 >
                   Default
                 </button>
                 <button
                   onClick={() => fetchExplanation('simplified')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
                 >
                   Simplified
                 </button>
                 <button
                   onClick={() => fetchExplanation('detailed')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
                 >
                   Detailed
                 </button>
                 <button
                   onClick={() => fetchExplanation('example')}
-                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
                 >
                   Example
                 </button>
               </div>
-              <hr className="border-neutral-800 my-6" />
+              <hr className="my-6 border-neutral-800" />
               <div className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {explanations[currentSubtopic.id] || 'Loading...'}
@@ -926,7 +437,9 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
             </div>
 
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
-              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
               <QuizPanel
                 key={currentSubtopic.id}
                 questions={currentSubtopic.questions}
@@ -937,13 +450,20 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ subtopicId: currentSubtopic.id }),
                     });
-                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
                     // Unlock next subtopic locally
                     const idx = ui.getState().currentIndex;
-                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
                     ui.setState({
                       currentIndex: next,
-                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
                     });
                   } catch (e) {
                     // silent
@@ -953,14 +473,14 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
             </div>
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
             <p>Select a subtopic to begin</p>
           </div>
         )}
       </main>
 
       {/* Right: AI Tutor */}
-      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
         <ChatPanel documentContent={initial.originalContent} />
       </aside>
     </div>
@@ -995,7 +515,11 @@ function QuizPanel({
   }, [questions.map((q) => q.id).join('|')]);
 
   if (!questions || questions.length === 0) {
-    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
   }
 
   return (
@@ -1008,15 +532,16 @@ function QuizPanel({
               {q.options.map((o, j) => {
                 const isSelected = answers[i] === j;
                 const isCorrect = revealed && j === q.answerIndex;
-                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
                 const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
                   isCorrect
                     ? 'border-green-500 bg-green-900/30'
                     : isIncorrect
-                    ? 'border-red-500 bg-red-900/30'
-                    : isSelected
-                    ? 'border-blue-500 bg-blue-900/20'
-                    : 'border-neutral-700 hover:bg-neutral-800'
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
                 }`;
                 return (
                   <button
@@ -1031,7 +556,7 @@ function QuizPanel({
               })}
             </div>
             {revealed && q.explanation && (
-              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
                 {q.explanation}
               </div>
             )}
@@ -1042,7 +567,7 @@ function QuizPanel({
         <button
           onClick={check}
           disabled={revealed || questions.length === 0}
-          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
         >
           Check Answer
         </button>
@@ -1052,101 +577,1821 @@ function QuizPanel({
 }
 </file>
 
-<file path="src/lib/client/learn-ui-store.ts">
-import { create } from 'zustand';
+<file path="src/components/LearnView.tsx.bak_fixsyntax_1754565820">
+'use client';
 
-type UIState = {
-  currentIndex: number;
-  unlockedIndex: number;
-  setCurrentIndex: (i: number) => void;
-  setUnlockedIndex: (i: number) => void;
-};
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
 
-export const createLearnUIStore = (initial: {
-  currentIndex: number;
-  unlockedIndex: number;
-}) =>
-  create<UIState>((set) => ({
-    currentIndex: initial.currentIndex,
-    unlockedIndex: initial.unlockedIndex,
-    setCurrentIndex: (i) => set({ currentIndex: i }),
-    setUnlockedIndex: (i) => set({ unlockedIndex: i }),
-  }));
-</file>
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
 
-<file path="src/lib/client/rename-lecture.ts">
-export async function renameLecture(lectureId: string, title: string) {
-  const res = await fetch(`/api/lectures/${lectureId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e.error || `Failed (${res.status})`);
-  }
-  return res.json() as Promise<{
-    ok: true;
-    lecture: { id: string; title: string };
-  }>;
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX// Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        {/* Save to Dashboard */}</div>}
+
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
 }
-</file>
 
-<file path="src/lib/shared/learn-types.ts">
-export type QuizQuestion = {
-  id: string;
-  prompt: string;
-  options: string[];
-  answerIndex: number;
-  explanation: string;
-};
-
-export type LearnSubtopic = {
-  id: string;
-  order: number;
-  title: string;
-  importance: string;
-  difficulty: number;
-  overview: string;
-  explanation: string;
-  mastered: boolean;
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
   questions: QuizQuestion[];
-};
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
 
-export type LearnLecture = {
-  id: string;
-  title: string;
-  originalContent: string;
-  subtopics: LearnSubtopic[];
-};
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
 
-export function deriveUnlockedIndex(subtopics: LearnSubtopic[]): number {
-  // Highest mastered index + 1 (at least 0)
-  const lastMastered = subtopics.reduce((acc, s, i) => (s.mastered ? i : acc), -1);
-  return Math.min(lastMastered + 1, Math.max(0, subtopics.length - 1));
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
 }
 </file>
 
-<file path="PHASE5_NOTES.md">
-Phase 5 — Persistent-first state
+<file path="src/components/LearnView.tsx.bak_mergeSave_1754565785">
+'use client';
 
-What changed:
-- Client-side LearnView now derives unlockedIndex from mastered subtopics returned by the server.
-- UI-only state (currentIndex, unlockedIndex) lives in a tiny Zustand store created per page mount.
-- On quiz pass, the client calls /api/mastery to persist mastery, then locally unlocks the next subtopic.
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
 
-What you can remove/stop using:
-- src/lib/learn-store.ts (old in-memory topic/subtopic/quiz store driving the entire Learn flow)
-- src/lib/store.ts for global "progress" numbers; use real values from DB on server pages instead.
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
 
-Next steps to complete removal:
-1) Remove imports/usages of useLearnStore and useProgressStore from client components.
-2) On the Dashboard, read stats from DB directly (already implemented in Phase 4 server page).
-3) If you still need per-session UI (like toasts, toggles), create tiny local Zustand stores colocated with those components.
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
 
-Optional enhancements:
-- Refetch lecture data after mastery to reflect new mastered state from DB (SWR/React Query) or navigate refresh.
-- Add optimistic UI badge "Mastered" on subtopic list after pass.
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX
+  const [savedHint, setSavedHint] = useState<string | null>(null);
+
+  // Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        {/* Save to Dashboard */}
+        <button
+          onClick={handleSaveToDashboard}
+          className="mt-2 w-full rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900"
+          title="This lecture is stored in your account; click for confirmation."
+        >
+          Save to Dashboard
+        </button>
+        {savedHint && <div className="text-xs text-green-400">{savedHint}</div>}
+
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/LearnView.tsx.bak_sidebar_1754565963">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX// Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>
+
+        
+
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/LearnView.tsx.bak_sidebar_1754565969">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX// Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>
+
+        
+
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/LearnView.tsx.bak_spacing_1754565674">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX
+  const [savedHint, setSavedHint] = useState<string | null>(null);
+
+  // Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-4 self-start rounded-lg border border-neutral-800 p-4 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Rename row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={handleRename}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="rounded-md bg-white px-3 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        {/* Save to Dashboard */}
+        <button
+          onClick={handleSaveToDashboard}
+          className="mt-2 w-full rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900"
+          title="This lecture is stored in your account; click for confirmation."
+        >
+          Save to Dashboard
+        </button>
+        {savedHint && <div className="text-xs text-green-400">{savedHint}</div>}
+
+        <div className="mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
 </file>
 
 <file path="prisma/migrations/20250807100731_init/migration.sql">
@@ -1570,6 +2815,54 @@ export async function POST(req: NextRequest) {
 }
 </file>
 
+<file path="src/app/api/lectures/[lectureId]/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { lectureId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const userId = (session.user as any).id as string;
+    const { title } = await req.json();
+
+    if (!title || typeof title !== 'string' || title.trim().length < 3) {
+      return NextResponse.json(
+        { error: 'Title must be at least 3 characters' },
+        { status: 400 }
+      );
+    }
+
+    const owned = await prisma.lecture.findFirst({
+      where: { id: params.lectureId, userId },
+      select: { id: true },
+    });
+    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const updated = await prisma.lecture.update({
+      where: { id: params.lectureId },
+      data: { title: title.trim() },
+      select: { id: true, title: true },
+    });
+
+    return NextResponse.json({ ok: true, lecture: updated });
+  } catch (e: any) {
+    console.error('LECTURE_PATCH_ERROR', e);
+    return NextResponse.json(
+      { error: e.message || 'Server error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
 <file path="src/app/api/lectures/route.ts">
 import { NextRequest, NextResponse } from 'next/server';
 import pdf from 'pdf-extraction';
@@ -1923,6 +3216,273 @@ export default async function LearnPage({
 }
 </file>
 
+<file path="src/app/learn/page.tsx.bak_1754565157">
+import { redirect } from 'next/navigation';
+
+// This page previously hosted a client-only "workspace" that may have lost
+// its default export or returned something invalid for Next.js 15 App Router.
+// We now make it a simple server component that redirects users to Dashboard,
+// where they can open/create persistent lectures. Adjust as needed.
+
+export default function LearnRedirectPage() {
+  redirect('/dashboard');
+}
+</file>
+
+<file path="src/app/learn/page.tsx.bak_save_open">
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { createLectureFromText, createLectureFromPdf } from '@/lib/client/lectures';
+import { useLearnStore } from '@/lib/learn-store';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { ExplanationStyle } from '@/app/api/explain/route';
+import { Loader2, Wand2 } from 'lucide-react';
+import ChatPanel from '@/components/ChatPanel';
+
+async function postJSON<T>(url: string, body: any): Promise<T> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: ${res.status}`); }
+  return res.json();
+}
+async function postForm<T>(url: string, form: FormData): Promise<T> {
+  const res = await fetch(url, { method: 'POST', body: form });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Request failed: `); }
+  return res.json();
+}
+
+const TopicProgressBar = ({ current, total }: { current: number, total: number }) => {
+  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-baseline text-sm">
+        <span className="font-medium text-neutral-300">Topic Progress</span>
+        <span className="text-neutral-400">{current} / {total} Mastered</span>
+      </div>
+      <div className="w-full bg-neutral-800 rounded-full h-2.5">
+        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+      </div>
+    </div>
+  );
+};
+
+export default function Learn() {
+  const [input, setInput] = useState('');
+  const {
+    topic, subtopics, unlockedIndex, currentIndex, content, explanation, quiz, loading, error,
+    setContent, setBreakdown, setExplanation, setQuiz, setLoading, setError, selectIndex, unlockNext, resetAll,
+  } = useLearnStore();
+
+  const currentSubtopic = subtopics[currentIndex];
+  const isSubtopicActive = currentSubtopic != null;
+
+  const performAnalysis = async (text: string) => {
+    try {
+      setContent(text);
+      setBreakdown('Analyzing, please wait...', []);
+      const bd = await postJSON<{ topic: string; subtopics: any[] }>('/api/breakdown', { content: text });
+      setBreakdown(bd.topic, bd.subtopics);
+      const qz = await postJSON<{ questions: any[] }>('api/quiz', { subtopics: bd.subtopics });
+      setQuiz(qz.questions);
+    } catch (e: any) {
+      setError(e.message || 'Failed to analyze content.');
+      setBreakdown('Analysis Failed', []);
+    }
+  };
+
+  const handleTextAnalysis = async () => {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    try {
+      await performAnalysis(input);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePdfUpload = async (file: File) => {
+    if (loading) return;
+    setLoading(true);
+    setError(undefined);
+    resetAll();
+    setInput('');
+    setBreakdown(`Processing ${file.name}...`, []);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await postForm<{ content: string }>('/api/upload-pdf', form);
+      await performAnalysis(res.content);
+    } catch (e: any) {
+      setError(e.message || 'Failed to upload PDF');
+      setBreakdown('PDF Upload Failed', []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchExplanation = useCallback(async (style: ExplanationStyle = 'default') => {
+    if (!currentSubtopic || !content) return;
+    setExplanation('Crafting your learning module...');
+    try {
+      const res = await postJSON<{ explanation: string }>('/api/explain', { content, subtopicTitle: currentSubtopic.title, style });
+      // No longer need the client-side parser. Trusting the new prompt.
+      setExplanation(res.explanation);
+    } catch (e: any) {
+      setExplanation('Could not generate explanation. ' + e.message);
+    }
+  }, [content, currentSubtopic, setExplanation]);
+  
+  useEffect(() => {
+    if (currentSubtopic) {
+      fetchExplanation('default');
+    }
+  }, [currentIndex, currentSubtopic, fetchExplanation]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* --- Left Column: Workspace (2/10 width) --- */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Learn Workspace</h2>
+        <div 
+          className="relative"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) handlePdfUpload(file); }}
+        >
+          <textarea
+              className="w-full min-h-[120px] rounded-md bg-neutral-900 p-3 outline-none ring-1 ring-neutral-700 disabled:opacity-60"
+              placeholder="Paste notes or drop a PDF..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={loading}
+          />
+        </div>
+        <div className="flex gap-2">
+            <button onClick={handleTextAnalysis} disabled={loading || !input.trim()} className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? ( <> <Loader2 className="w-4 h-4 animate-spin" /> Analyzing... </> ) : ( <> <Wand2 className="w-4 h-4" /> Analyze </> )}
+            </button>
+            <button onClick={() => { resetAll(); setInput(''); }} disabled={loading} className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50">Reset</button>
+        </div>
+        {error && (<div className="text-sm text-red-400" role="alert">{error}</div>)}
+        <hr className="border-neutral-800" />
+        <div>
+            <div className="mb-2"><div className="text-sm uppercase text-neutral-400">Topic</div><div className="font-semibold text-lg">{topic}</div></div>
+            {subtopics.length > 0 && ( <div className="my-4"> <TopicProgressBar current={unlockedIndex} total={subtopics.length} /> </div> )}
+            {subtopics.length > 0 && (
+                <ul className="space-y-1">{subtopics.map((s, i) => (
+                    <li key={i}>
+                      <button onClick={() => selectIndex(i)} disabled={i > unlockedIndex} className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${i > unlockedIndex ? 'text-neutral-600' : i === currentIndex ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'}`}>
+                        {i + 1}. {s.title}
+                      </button>
+                    </li>
+                ))}</ul>
+            )}
+        </div>
+      </aside>
+
+      {/* --- Center Column: Main Content (5/10 width) --- */}
+      <main className="lg:col-span-5">
+        {isSubtopicActive ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+                <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                  <span>Importance: {currentSubtopic.importance}</span> <span>•</span> <span>Difficulty: {currentSubtopic.difficulty}</span>
+                </div>
+                <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-400">Style:</span>
+                  <button onClick={() => fetchExplanation('default')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Default</button>
+                  <button onClick={() => fetchExplanation('simplified')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Simplified</button>
+                  <button onClick={() => fetchExplanation('detailed')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Detailed</button>
+                  <button onClick={() => fetchExplanation('example')} className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700">Example</button>
+                </div>
+                <hr className="border-neutral-800 my-6" />
+                <div className="markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{explanation}</ReactMarkdown>
+                </div>
+            </div>
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+                <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+                <QuizPanel key={currentIndex} quiz={quiz} onPassed={unlockNext} activeTitle={currentSubtopic.title} />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>{loading ? 'Analyzing...' : 'Analyze some content to begin learning'}</p>
+          </div>
+        )}
+      </main>
+
+      {/* --- Right Column: AI Tutor (3/10 width) --- */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={content} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+  
+  const allCorrect = qs.length > 0 && qs.every((q, i) => answers[i] === q.answerIndex);
+const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
+  const qs = relevantQs.length > 0 ? relevantQs : [];
+  const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
+  const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
+  useEffect(() => { setAnswers([]); setRevealed(false); }, [activeTitle]);
+  return (
+    <div className="space-y-4">
+      {qs.length === 0 ? <p className="text-neutral-400 text-sm">No quiz questions available for this subtopic.</p> :
+      <ul className="space-y-6">
+        {qs.map((q, i) => (
+          <li key={q.prompt} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o: string, j: number) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
+                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed && qs.every((q, i) => answers[i] === q.answerIndex)}>{o}</button>;
+              })}
+            </div>
+            {revealed && q.explanation && <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">{q.explanation}</div>}
+          </li>
+        ))}
+      </ul>}
+      <div className="flex items-center gap-4 pt-4">
+        <button onClick={check} disabled={revealed || qs.length === 0} className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50">Check Answer</button>
+      </div>
+    </div>
+  );
+}
+
+
+  const handleCreatePersistentLecture = async () => {
+    if (loading) return;
+    const text = input.trim();
+    const fileInput = null; // You can extend to capture dropped file if you track it in state.
+    try {
+      setLoading(true);
+      setError(undefined);
+      if (text) {
+        const { lectureId } = await createLectureFromText(text);
+        window.location.href = `/learn/${lectureId}`;
+        return;
+      }
+      // Fallback: ask user to pick a PDF if no text pasted
+      alert('Please paste text first (or wire a file input to create from PDF).');
+    } catch (e: any) {
+      setError(e.message || 'Failed to create lecture.');
+    } finally {
+      setLoading(false);
+    }
+  };
+</file>
+
 <file path="src/components/AuthProvider.tsx">
 'use client';
 
@@ -1947,7 +3507,289 @@ export default function ClientBoundary() {
 }
 </file>
 
-<file path="src/components/LearnView.tsx">
+<file path="src/components/LearnView.tsx.bak2">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI store based on mastered subtopics
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({ currentIndex: initialUnlocked, unlockedIndex: initialUnlocked })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Explanations cache per subtopic (client-side only; default to server cached explanation string)
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  // Ensure unlocked index remains aligned if server-side mastery changes on reload
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 px-4">
+      {/* Left: Outline */}
+      <aside className="lg:col-span-2 rounded-lg border border-neutral-800 p-4 space-y-4 self-start">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+        <div className="mb-2">
+          <div className="text-sm uppercase text-neutral-400">Title</div>
+          <div className="font-semibold text-lg">{initial.title}</div>
+        </div>
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() =>
+                  canSelect(i) && ui.setState({ currentIndex: i })
+                }
+                disabled={!canSelect(i)}
+                className={`w-full text-left rounded-md px-3 py-2.5 text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                    ? 'bg-neutral-800 text-white font-semibold'
+                    : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400 mt-2">
+                <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 pt-4 border-t border-neutral-800/50 flex items-center gap-2">
+                <span className="text-sm font-medium text-neutral-400">Style:</span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="text-sm rounded-md px-3 py-1 bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="border-neutral-800 my-6" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-2xl font-bold tracking-tight mb-6">Mastery Check</h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(idx + 1, initial.subtopics.length - 1);
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(ui.getState().unlockedIndex, next),
+                    });
+                  } catch (e) {
+                    // Silent for now or add toast
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500 min-h-[60vh]">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="lg:col-span-3 h-[calc(100vh-8rem)] self-start sticky top-24">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return <p className="text-neutral-400 text-sm">No quiz questions for this subtopic.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect = revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                    ? 'border-red-500 bg-red-900/30'
+                    : isSelected
+                    ? 'border-blue-500 bg-blue-900/20'
+                    : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed && allCorrect}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 text-black font-semibold disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/LearnView.tsx.bak3">
 'use client';
 
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
@@ -2225,7 +4067,6 @@ function QuizPanel({
 
   const check = () => {
     setRevealed(true);
-    const allCorrect = questions.every((q, i) => answers[i] === q.answerIndex);
     if (allCorrect) setTimeout(onPassed, 900);
   };
 
@@ -2263,7 +4104,7 @@ function QuizPanel({
                     key={j}
                     onClick={() => setAns(i, j)}
                     className={buttonClass}
-                    disabled={revealed}
+                    disabled={revealed && allCorrect}
                   >
                     {o}
                   </button>
@@ -2292,61 +4133,79 @@ function QuizPanel({
 }
 </file>
 
-<file path="src/lib/client/lectures.ts">
-export async function createLectureFromText(
-  content: string
-): Promise<{ lectureId: string }> {
-  const res = await fetch('/api/lectures', {
-    method: 'POST',
+<file path="src/lib/client/learn-ui-store.ts">
+import { create } from 'zustand';
+
+type UIState = {
+  currentIndex: number;
+  unlockedIndex: number;
+  setCurrentIndex: (i: number) => void;
+  setUnlockedIndex: (i: number) => void;
+};
+
+export const createLearnUIStore = (initial: {
+  currentIndex: number;
+  unlockedIndex: number;
+}) =>
+  create<UIState>((set) => ({
+    currentIndex: initial.currentIndex,
+    unlockedIndex: initial.unlockedIndex,
+    setCurrentIndex: (i) => set({ currentIndex: i }),
+    setUnlockedIndex: (i) => set({ unlockedIndex: i }),
+  }));
+</file>
+
+<file path="src/lib/client/rename-lecture.ts">
+export async function renameLecture(lectureId: string, title: string) {
+  const res = await fetch(`/api/lectures/${lectureId}`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ title }),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e.error || `Failed: ${res.status}`);
+    throw new Error(e.error || `Failed (${res.status})`);
   }
-  return res.json();
-}
-
-export async function createLectureFromPdf(
-  file: File
-): Promise<{ lectureId: string }> {
-  const form = new FormData();
-  form.append('file', file);
-  const res = await fetch('/api/lectures', { method: 'POST', body: form });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e.error || `Failed: ${res.status}`);
-  }
-  return res.json();
+  return res.json() as Promise<{
+    ok: true;
+    lecture: { id: string; title: string };
+  }>;
 }
 </file>
 
-<file path="src/lib/auth.ts">
-import type { NextAuthOptions } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
-import { PrismaAdapter } from '@auth/prisma-adapter';
-import prisma from '@/lib/prisma';
-
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      allowDangerousEmailAccountLinking: true,
-    }),
-  ],
-  session: { strategy: 'jwt' },
-  callbacks: {
-    async session({ session, token }) {
-      if (session.user && token.sub) {
-        (session.user as any).id = token.sub;
-      }
-      return session;
-    },
-  },
+<file path="src/lib/shared/learn-types.ts">
+export type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
 };
+
+export type LearnSubtopic = {
+  id: string;
+  order: number;
+  title: string;
+  importance: string;
+  difficulty: number;
+  overview: string;
+  explanation: string;
+  mastered: boolean;
+  questions: QuizQuestion[];
+};
+
+export type LearnLecture = {
+  id: string;
+  title: string;
+  originalContent: string;
+  subtopics: LearnSubtopic[];
+};
+
+export function deriveUnlockedIndex(subtopics: LearnSubtopic[]): number {
+  // Highest mastered index + 1 (at least 0)
+  const lastMastered = subtopics.reduce((acc, s, i) => (s.mastered ? i : acc), -1);
+  return Math.min(lastMastered + 1, Math.max(0, subtopics.length - 1));
+}
 </file>
 
 <file path="src/lib/learn-store.ts">
@@ -2570,6 +4429,28 @@ const eslintConfig = [
 export default eslintConfig;
 </file>
 
+<file path="PHASE5_NOTES.md">
+Phase 5 — Persistent-first state
+
+What changed:
+- Client-side LearnView now derives unlockedIndex from mastered subtopics returned by the server.
+- UI-only state (currentIndex, unlockedIndex) lives in a tiny Zustand store created per page mount.
+- On quiz pass, the client calls /api/mastery to persist mastery, then locally unlocks the next subtopic.
+
+What you can remove/stop using:
+- src/lib/learn-store.ts (old in-memory topic/subtopic/quiz store driving the entire Learn flow)
+- src/lib/store.ts for global "progress" numbers; use real values from DB on server pages instead.
+
+Next steps to complete removal:
+1) Remove imports/usages of useLearnStore and useProgressStore from client components.
+2) On the Dashboard, read stats from DB directly (already implemented in Phase 4 server page).
+3) If you still need per-session UI (like toasts, toggles), create tiny local Zustand stores colocated with those components.
+
+Optional enhancements:
+- Refetch lecture data after mastery to reflect new mastered state from DB (SWR/React Query) or navigate refresh.
+- Add optimistic UI badge "Mastered" on subtopic list after pass.
+</file>
+
 <file path="tsconfig.json">
 {
   "compilerOptions": {
@@ -2779,6 +4660,381 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
 }
 </file>
 
+<file path="src/components/LearnView.tsx">
+'use client';
+
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import ChatPanel from '@/components/ChatPanel';
+import {
+  deriveUnlockedIndex,
+  type LearnLecture,
+  type LearnSubtopic,
+  type QuizQuestion,
+} from '@/lib/shared/learn-types';
+import { createLearnUIStore } from '@/lib/client/learn-ui-store';
+import { renameLecture } from '@/lib/client/rename-lecture';
+
+export default function LearnView({ initial }: { initial: LearnLecture }) {
+  // Initialize UI-only store
+  const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
+  const storeRef = useRef(
+    createLearnUIStore({
+      currentIndex: initialUnlocked,
+      unlockedIndex: initialUnlocked,
+    })
+  );
+  const ui = storeRef.current;
+
+  const currentSubtopic = initial.subtopics[ui.getState().currentIndex];
+
+  // Local title editing state
+  const [title, setTitle] = useState(initial.title);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // "Saved to Dashboard" is inherent once lecture exists in DB; we just expose a button for UX// Explanations cache per subtopic
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation || ''])
+    )
+  );
+
+  const canSelect = (i: number) => i <= ui.getState().unlockedIndex;
+
+  useEffect(() => {
+    const u = deriveUnlockedIndex(initial.subtopics);
+    ui.setState((s) => ({
+      ...s,
+      unlockedIndex: Math.max(u, s.unlockedIndex),
+      currentIndex: Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.subtopics.map((s) => s.mastered).join('|')]);
+
+  const fetchExplanation = useCallback(
+    async (
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default'
+    ) => {
+      const s = currentSubtopic;
+      if (!s) return;
+      setExplanations((e) => ({ ...e, [s.id]: 'Loading...' }));
+      try {
+        const res = await fetch('/api/explain-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtopicId: s.id, style }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { explanation: string };
+        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+      } catch (e: any) {
+        setExplanations((ex) => ({
+          ...ex,
+          [s.id]: 'Could not generate explanation. ' + e.message,
+        }));
+      }
+    },
+    [currentSubtopic]
+  );
+
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (s && !explanations[s.id]) {
+      fetchExplanation('default');
+    }
+  }, [currentSubtopic, explanations, fetchExplanation]);
+
+  const handleRename = async () => {
+    if (!title.trim() || title.trim().length < 3) {
+      setSaveMsg('Title must be at least 3 characters.');
+      return;
+    }
+    try {
+      setIsSavingTitle(true);
+      setSaveMsg(null);
+      const res = await renameLecture(initial.id, title.trim());
+      setSaveMsg('Lecture title saved.');
+    } catch (e: any) {
+      setSaveMsg(e.message || 'Failed to save title.');
+    } finally {
+      setIsSavingTitle(false);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  };
+
+  const handleSaveToDashboard = async () => {
+    // The lecture already exists in DB; we simply give user feedback and a quick link.
+    setSavedHint('Saved! You can access this lecture on your Dashboard.');
+    setTimeout(() => setSavedHint(null), 2500);
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-8 px-4 lg:grid-cols-10">
+      {/* Left: Outline */}
+      <aside className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:col-span-2">
+        <h2 className="text-xl font-semibold">Lecture</h2>
+
+        <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
+            aria-label="Lecture title"
+          />
+          <button
+            onClick={async () => {
+              const newTitle = title.trim();
+              if (!newTitle || newTitle.length < 3) {
+                setSaveMsg('Title must be at least 3 characters.');
+                return;
+              }
+              try {
+                setIsSavingTitle(true);
+                setSaveMsg(null);
+                // Only call rename when changed
+                if (newTitle !== initial.title) {
+                  await renameLecture(initial.id, newTitle);
+                }
+                setSaveMsg('Saved!');
+              } catch (e: any) {
+                setSaveMsg(e.message || 'Failed to save.');
+              } finally {
+                setIsSavingTitle(false);
+                setTimeout(() => setSaveMsg(null), 2000);
+              }
+            }}
+            disabled={isSavingTitle || title.trim().length < 3}
+            className="mt-2 rounded-md bg-white px-4 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50 sm:mt-0 sm:ml-2"
+          >
+            {isSavingTitle ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+
+        <div className="mt-4 mb-2">
+          <div className="text-sm text-neutral-400 uppercase">Title</div>
+          <div className="text-lg font-semibold">{title}</div>
+        </div>
+
+        <ul className="space-y-1">
+          {initial.subtopics.map((s, i) => (
+            <li key={s.id}>
+              <button
+                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                disabled={!canSelect(i)}
+                className={`w-full rounded-md px-3.5 py-3 text-left text-sm leading-snug transition-colors ${
+                  i > ui.getState().unlockedIndex
+                    ? 'text-neutral-600'
+                    : i === ui.getState().currentIndex
+                      ? 'bg-neutral-800 font-semibold text-white'
+                      : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Center: Explanation + Quiz */}
+      <main className="lg:col-span-5">
+        {currentSubtopic ? (
+          <div className="space-y-8">
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="text-3xl font-bold tracking-tight">
+                {currentSubtopic.title}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
+                <span>Importance: {currentSubtopic.importance}</span>{' '}
+                <span>•</span>{' '}
+                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                <span className="text-sm font-medium text-neutral-400">
+                  Style:
+                </span>
+                <button
+                  onClick={() => fetchExplanation('default')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => fetchExplanation('simplified')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Simplified
+                </button>
+                <button
+                  onClick={() => fetchExplanation('detailed')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Detailed
+                </button>
+                <button
+                  onClick={() => fetchExplanation('example')}
+                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                >
+                  Example
+                </button>
+              </div>
+              <hr className="my-6 border-neutral-800" />
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {explanations[currentSubtopic.id] || 'Loading...'}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8">
+              <h3 className="mb-6 text-2xl font-bold tracking-tight">
+                Mastery Check
+              </h3>
+              <QuizPanel
+                key={currentSubtopic.id}
+                questions={currentSubtopic.questions}
+                onPassed={async () => {
+                  try {
+                    const res = await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                    if (!res.ok)
+                      throw new Error((await res.json()).error || 'HTTP');
+                    // Unlock next subtopic locally
+                    const idx = ui.getState().currentIndex;
+                    const next = Math.min(
+                      idx + 1,
+                      initial.subtopics.length - 1
+                    );
+                    ui.setState({
+                      currentIndex: next,
+                      unlockedIndex: Math.max(
+                        ui.getState().unlockedIndex,
+                        next
+                      ),
+                    });
+                  } catch (e) {
+                    // silent
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
+            <p>Select a subtopic to begin</p>
+          </div>
+        )}
+      </main>
+
+      {/* Right: AI Tutor */}
+      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <ChatPanel documentContent={initial.originalContent} />
+      </aside>
+    </div>
+  );
+}
+
+function QuizPanel({
+  questions,
+  onPassed,
+}: {
+  questions: QuizQuestion[];
+  onPassed: () => void;
+}) {
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [revealed, setRevealed] = useState(false);
+
+  const setAns = (qIndex: number, ansIndex: number) => {
+    const next = [...answers];
+    next[qIndex] = ansIndex;
+    setAnswers(next);
+  };
+
+  const check = () => {
+    setRevealed(true);
+    if (allCorrect) setTimeout(onPassed, 900);
+  };
+
+  useEffect(() => {
+    setAnswers([]);
+    setRevealed(false);
+  }, [questions.map((q) => q.id).join('|')]);
+
+  if (!questions || questions.length === 0) {
+    return (
+      <p className="text-sm text-neutral-400">
+        No quiz questions for this subtopic.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ul className="space-y-6">
+        {questions.map((q, i) => (
+          <li key={q.id} className="space-y-3">
+            <div className="font-medium text-neutral-200">{q.prompt}</div>
+            <div className="grid gap-2">
+              {q.options.map((o, j) => {
+                const isSelected = answers[i] === j;
+                const isCorrect = revealed && j === q.answerIndex;
+                const isIncorrect =
+                  revealed && isSelected && j !== q.answerIndex;
+                const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
+                  isCorrect
+                    ? 'border-green-500 bg-green-900/30'
+                    : isIncorrect
+                      ? 'border-red-500 bg-red-900/30'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-900/20'
+                        : 'border-neutral-700 hover:bg-neutral-800'
+                }`;
+                return (
+                  <button
+                    key={j}
+                    onClick={() => setAns(i, j)}
+                    className={buttonClass}
+                    disabled={revealed && allCorrect}
+                  >
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+            {revealed && q.explanation && (
+              <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                {q.explanation}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-4 pt-4">
+        <button
+          onClick={check}
+          disabled={revealed || questions.length === 0}
+          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
 <file path="src/components/SignInOut.tsx">
 'use client';
 
@@ -2814,6 +5070,73 @@ export default function SignInOut() {
       </button>
     </div>
   );
+}
+</file>
+
+<file path="src/lib/client/lectures.ts">
+export async function createLectureFromText(
+  content: string
+): Promise<{ lectureId: string }> {
+  const res = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createLectureFromPdf(
+  file: File
+): Promise<{ lectureId: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/lectures', { method: 'POST', body: form });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+</file>
+
+<file path="src/lib/auth.ts">
+import type { NextAuthOptions } from 'next-auth';
+import { getServerSession } from "next-auth";
+import GoogleProvider from 'next-auth/providers/google';
+import { PrismaAdapter } from '@auth/prisma-adapter';
+import prisma from '@/lib/prisma';
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      allowDangerousEmailAccountLinking: true,
+    }),
+  ],
+  session: { strategy: 'jwt' },
+  callbacks: {
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        (session.user as any).id = token.sub;
+      }
+      return session;
+    },
+  },
+};
+export async function requireSession() {
+  const session = await getServerSession(authOptions as any);
+  if (!session || !session.user) {
+    const err: any = new Error('Unauthorized');
+    err.status = 401;
+    throw err;
+  }
+  return session;
 }
 </file>
 
@@ -3528,19 +5851,6 @@ export default function RootLayout({
 }
 </file>
 
-<file path="src/app/learn/page.tsx">
-import { redirect } from 'next/navigation';
-
-// This page previously hosted a client-only "workspace" that may have lost
-// its default export or returned something invalid for Next.js 15 App Router.
-// We now make it a simple server component that redirects users to Dashboard,
-// where they can open/create persistent lectures. Adjust as needed.
-
-export default function LearnRedirectPage() {
-  redirect('/dashboard');
-}
-</file>
-
 <file path="src/app/page.tsx">
 'use client';
 
@@ -3718,6 +6028,92 @@ export async function generateText(prompt: string): Promise<string> {
     "tailwindcss": "^4",
     "typescript": "^5"
   }
+}
+</file>
+
+<file path="src/app/learn/page.tsx">
+// 'use client' makes this a valid client component with a default export.
+'use client';
+
+import { useState } from 'react';
+
+async function createLectureFromText(
+  content: string
+): Promise<{ lectureId: string }> {
+  const res = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export default function LearnWorkspacePage() {
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const { lectureId } = await createLectureFromText(text);
+      window.location.href = `/learn/${lectureId}`;
+    } catch (e: any) {
+      setErr(e.message || 'Failed to create lecture.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="container-narrow space-y-6">
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight">Learn Workspace</h1>
+        <p className="text-sm text-neutral-400">
+          Paste text and create a persistent lecture. You’ll be redirected to
+          the lecture page with explanations and quizzes.
+        </p>
+      </header>
+
+      <div className="space-y-4 rounded-lg border border-neutral-800 p-4">
+        <textarea
+          className="min-h-[160px] w-full rounded-md bg-neutral-900 p-3 ring-1 ring-neutral-700 outline-none"
+          placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={loading}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreate}
+            disabled={loading || !input.trim()}
+            className="rounded-md bg-white px-4 py-2 font-medium text-black disabled:opacity-50"
+          >
+            {loading ? 'Creating…' : 'Create Lecture'}
+          </button>
+          <button
+            onClick={() => setInput('')}
+            disabled={loading}
+            className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50"
+          >
+            Reset
+          </button>
+        </div>
+        {err && (
+          <div className="text-sm text-red-400" role="alert">
+            {err}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 </file>
 

@@ -194,7 +194,9 @@ export default function Learn() {
 function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () => void, activeTitle?: string }) {
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
-  const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
+  
+  const allCorrect = qs.length > 0 && qs.every((q, i) => answers[i] === q.answerIndex);
+const relevantQs = activeTitle ? quiz.filter(q => q.subtopicTitle && q.subtopicTitle.toLowerCase().includes(activeTitle.toLowerCase())) : [];
   const qs = relevantQs.length > 0 ? relevantQs : [];
   const setAns = (qIndex: number, ansIndex: number) => { const next = [...answers]; next[qIndex] = ansIndex; setAnswers(next); };
   const check = () => { setRevealed(true); const allCorrect = qs.every((q, i) => answers[i] === q.answerIndex); if (allCorrect) setTimeout(onPassed, 1200); };
@@ -212,7 +214,7 @@ function QuizPanel({ quiz, onPassed, activeTitle }: { quiz: any[], onPassed: () 
                 const isCorrect = revealed && j === q.answerIndex;
                 const isIncorrect = revealed && isSelected && j !== q.answerIndex;
                 const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${ isCorrect ? 'border-green-500 bg-green-900/30' : isIncorrect ? 'border-red-500 bg-red-900/30' : isSelected ? 'border-blue-500 bg-blue-900/20' : 'border-neutral-700 hover:bg-neutral-800' }`;
-                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed}>{o}</button>;
+                return <button key={j} onClick={() => setAns(i, j)} className={buttonClass} disabled={revealed && qs.every((q, i) => answers[i] === q.answerIndex)}>{o}</button>;
               })}
             </div>
             {revealed && q.explanation && <div className="text-sm text-neutral-400 pt-3 border-t border-neutral-800 mt-4">{q.explanation}</div>}

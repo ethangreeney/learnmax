@@ -51,7 +51,7 @@ export default function LearnWorkspacePage() {
       <div className="space-y-4 rounded-lg border border-neutral-800 p-4">
         <textarea
           className="min-h-[160px] w-full rounded-md bg-neutral-900 p-3 ring-1 ring-neutral-700 outline-none"
-          placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
+          placeholder="What do you want to learn about? paste any study notes or PDF lecture slides here"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={loading}
