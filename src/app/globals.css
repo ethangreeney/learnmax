@@ -273,8 +273,8 @@ body:not([data-content="ready"]) .quiz-panel { display: none; }
 
 /* quiz gate */
 body:not([data-content="ready"]) .quiz-panel { display: none; }
-body[data-content="ready"] .quiz-panel { display: block; }
+body[data-content="ready"] .quiz-panel { display: block !important; }
 
 /* quiz gate */
 body:not([data-content="ready"]) .quiz-panel { display: none; }
-body[data-content="ready"] .quiz-panel { display: block; }
+body[data-content="ready"] .quiz-panel { display: block !important; }
