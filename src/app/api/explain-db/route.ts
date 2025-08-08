@@ -1,106 +1,73 @@
-import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { requireSession } from '@/lib/auth';
-import { generateText } from '@/lib/ai';
+// src/app/api/explain-db/route.ts
+import { NextResponse } from 'next/server';
+import { generateText, PRIMARY_MODEL } from '@/lib/ai';
 
-export type ExplanationStyle = 'default' | 'simplified' | 'detailed' | 'example';
-
-export async function POST(req: NextRequest) {
-  try {
-    await requireSession();
-    const { subtopicId, style = 'default' } = (await req.json()) as {
-      subtopicId: string;
-      style?: ExplanationStyle;
-    };
-
-    if (!subtopicId) {
-      return NextResponse.json(
-        { error: 'subtopicId is required.' },
-        { status: 400 }
-      );
-    }
-
-    const subtopic = await prisma.subtopic.findUnique({
-      where: { id: subtopicId },
-    });
-    if (!subtopic) {
-      return NextResponse.json({ error: 'Subtopic not found.' }, { status: 404 });
-    }
-
-    // If already cached, return it
-    if (subtopic.explanation && style === 'default') {
-      return NextResponse.json({ explanation: subtopic.explanation });
-    }
-
-    let styleInstruction = '';
-    switch (style) {
-      case 'simplified':
-        styleInstruction =
-          'Explain in very simple terms, as if for a first-year student.';
-        break;
-      case 'detailed':
-        styleInstruction =
-          'Provide a detailed, in-depth explanation suitable for a post-graduate student, covering nuances and complexities.';
-        break;
-      case 'example':
-        styleInstruction =
-          'Focus on a concrete, real-world example; keep theory brief, emphasize practical application.';
-        break;
-      default:
-        styleInstruction =
-          'Provide a clear and comprehensive explanation suitable for a university undergraduate.';
-        break;
-    }
-
-    const prompt = `
-You are writing a short **subsection** for an existing university lecture. Topic: "${subtopic.title}".
-
-${styleInstruction}
-
-Constraints (important):
-- This is a CONTINUATION of a lecture. **Do NOT** add preambles like "Here is a study guide", "This guide provides…", "In this section/lesson…", greetings, or meta-commentary.
-- **Do NOT** add an H1/H2 title at the top; start immediately with content.
-- Use clean Markdown; `####` subheadings OK, brief bullets encouraged.
-- 250–450 words. Keep examples short.
-
-Base the explanation ONLY on this lecture text for context:
----
-${subtopic.overview || ''}
----
-`;
-
-    const markdownExplanation = await generateText(prompt);
+const L = process.env.LOG_EXPLAIN === '1';
+const log = (...a: any[]) => { if (L) console.log('[explain-db]', ...a); };
+const err = (...a: any[]) => { if (L) console.error('[explain-db]', ...a); };
 
 function stripPreamble(md: string): string {
-  if (!md) return md;
-  let out = md.trimStart();
-
-  // Drop a leading H1/H2 like "Study Guide", "Introduction", "Overview"
-  out = out.replace(/^(#{1,3})\s*(?:study guide.*|introduction|overview)\s*\n+/i, '');
-
-  // Drop an opening meta paragraph: "This guide provides…", "In this section…", "Here is a study guide…", "We will explore…"
-  // (only removes the *first* such paragraph)
-  out = out.replace(
-    /^\s*(?:>.*\n)?(?:(?:here is (?:a )?(?:study )?guide)|(?:this\s+(?:guide|section|lesson))|(?:in\s+this\s+(?:guide|section|lesson))|(?:we\s+(?:will|\'ll)\s+(?:explore|cover|discuss))).*?\n\s*\n/si,
-    ''
-  );
-
-  return out.trimStart();
+  let out = (md || '').trim();
+  out = out.replace(/^(of course|sure\,?|here (?:is|are)|crafting learning module\.\.\.)[^\n]*\n*/i, '');
+  out = out.replace(/^# .+\n+/m, ''); // drop leading H1 if any
+  return out.trim() || (md || '').trim();
 }
 
+export async function POST(req: Request) {
+  const t0 = Date.now();
+  try {
+    const body = await req.json().catch(() => ({} as any));
+    const subtopicIn = typeof body?.subtopic === 'string' ? body.subtopic.trim() : '';
+    const titleIn =
+      typeof body?.lectureTitle === 'string' && body.lectureTitle.trim()
+        ? body.lectureTitle.trim()
+        : typeof body?.title === 'string' && body.title.trim()
+        ? body.title.trim()
+        : 'Lecture';
+    const styleIn =
+      typeof body?.style === 'string' && body.style.trim()
+        ? body.style.trim().toLowerCase()
+        : 'default';
 
-    // Save fresh explanation for default style
-    if (style === 'default') {
-      await prisma.subtopic.update({
-        where: { id: subtopicId },
-        data: { explanation: stripPreamble(markdownExplanation) },
-      });
+    const subtopic = subtopicIn || 'Overview';
+    const lectureTitle = titleIn;
+
+    const styleHint =
+      styleIn === 'simplified' ? 'Explain as simply as possible for a beginner.'
+      : styleIn === 'detailed' ? 'Go a bit deeper on nuances and edge cases.'
+      : styleIn === 'example' ? 'Center the explanation around a concrete, realistic example.'
+      : 'Use a balanced, concise explanation.';
+
+    log('IN', { lectureTitle, subtopic, style: styleIn, model: PRIMARY_MODEL });
+
+    const prompt = [
+      `You are writing ONE section of an in-progress lecture.`,
+      `Lecture title: "${lectureTitle}"`,
+      `Subtopic: "${subtopic}"`,
+      `Style: ${styleHint}`,
+      `Write 300–600 words of clean Markdown.`,
+      `Start directly with content. No preamble (e.g., "Of course", "Here is", etc.).`,
+      `Do NOT number subtopics. Do NOT add a standalone H1.`,
+      `Keep the tone concise and instructional; use short paragraphs, bullet lists, or small inline examples when useful.`,
+    ].join('\n');
+
+    const raw = await generateText(prompt);
+    const markdown = stripPreamble(raw);
+    const ms = Date.now() - t0;
+
+    log('OUT', { ok: !!markdown, chars: markdown.length, ms });
+
+    if (!markdown) {
+      return NextResponse.json({ error: 'empty' }, { status: 502 });
     }
-
-    return NextResponse.json({ explanation: stripPreamble(markdownExplanation) });
-  } catch (error: any) {
-    const status = error?.status || 500;
-    console.error('EXPLAIN_DB_API_ERROR:', error?.stack || error?.message || error);
-    return NextResponse.json({ error: error.message }, { status });
+    // Return both keys so callers can pick either.
+    return NextResponse.json({ markdown, explanation: markdown });
+  } catch (e: any) {
+    const ms = Date.now() - t0;
+    err('ERR', { ms, message: e?.message });
+    return NextResponse.json(
+      { error: e?.message || 'internal error' },
+      { status: 500 },
+    );
   }
 }

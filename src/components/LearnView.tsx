@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +12,7 @@ import {
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
 import { renameLecture } from '@/lib/client/rename-lecture';
+import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 
 /** Normalize model output so it never renders as one giant code block. */
 function sanitizeMarkdown(md: string): string {
@@ -26,7 +28,6 @@ function sanitizeMarkdown(md: string): string {
     if (anyFence) {
       const lang = (anyFence[1] || '').toLowerCase();
       const inner = anyFence[2];
-      // If it looks like prose markdown (headings/lists/blank paras), unwrap it.
       if (
         lang === '' ||
         lang === 'markdown' ||
@@ -55,16 +56,6 @@ function sanitizeMarkdown(md: string): string {
   return t;
 }
 
-
-const stripPreamble = (md: string) => {
-  if (!md) return md;
-  // If there's a Markdown heading, drop everything before it.
-  const m = md.search(/^\s*#{1,6}\s/m);
-  if (m >= 0) return md.slice(m).trimStart();
-  // Fallback: remove common chatty openers.
-  return md.replace(/^\s*(Of course[,!]?|Sure[,!]?|Here(?:\s+is|\'s)|As an AI[, ]+).*?\n+/i, '').trimStart();
-};
-
 export default function LearnView({ initial }: { initial: LearnLecture }) {
   // UI-only store per page mount
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
@@ -76,10 +67,8 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   );
   const ui = storeRef.current;
 
-  // Use the zustand hook returned by create()
   const currentIndex = ui((s) => s.currentIndex);
   const unlockedIndex = ui((s) => s.unlockedIndex);
-
   const currentSubtopic = initial.subtopics[currentIndex];
 
   // Scroll to top of main panel on subtopic change
@@ -95,6 +84,9 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
 
   // Title editing
   const [title, setTitle] = useState(initial.title);
+  const router = useRouter();
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [showSparkle, setShowSparkle] = useState(false);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -109,7 +101,13 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   const initialMastered = initial.subtopics.filter((s) => s.mastered).length;
   const totalCount = initial.subtopics.length;
   const [masteredCount, setMasteredCount] = useState<number>(initialMastered);
+// NEW: track which subtopics are already counted to avoid double-increment
+const countedIdsRef = useRef<Set<string>>(
+  new Set(initial.subtopics.filter(s => s.mastered).map(s => s.id))
+);
+
   const progressPct = Math.round((masteredCount / Math.max(1, totalCount)) * 100);
+  const progressPctSafe = isCompleted ? 100 : progressPct;
 
   const canSelect = (i: number) => i <= unlockedIndex;
 
@@ -130,22 +128,27 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       if (!s) return;
       setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
       try {
+        // Our API expects lectureTitle + subtopic and returns { markdown }
         const res = await fetch('/api/explain-db', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subtopicId: s.id, style }),
+          body: JSON.stringify({
+            lectureTitle: title || initial.title,
+            subtopic: s.title,
+          }),
         });
         if (!res.ok) {
           const e = await res.json().catch(() => ({}));
           throw new Error(e.error || `HTTP ${res.status}`);
         }
-        const data = (await res.json()) as { explanation: string };
-        setExplanations((e) => ({ ...e, [s.id]: sanitizeMarkdown(data.explanation) }));
+        const data = (await res.json()) as { markdown?: string };
+        const md = sanitizeMarkdown(data.markdown || '');
+        setExplanations((e) => ({ ...e, [s.id]: md || 'No content generated.' }));
       } catch (e: any) {
-        setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + e.message }));
+        setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + (e?.message || '') }));
       }
     },
-    [currentSubtopic]
+    [currentSubtopic, title, initial.title]
   );
 
   // On subtopic change: fetch explanation once and scroll to top
@@ -196,7 +199,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
           <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
             <span>Progress</span>
             <span>
-              {masteredCount}/{totalCount} ({progressPct}%)
+              {masteredCount}/{totalCount} ({progressPctSafe}%)
             </span>
           </div>
 
@@ -205,12 +208,12 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
             <div className="h-2 w-full rounded-full bg-neutral-800 overflow-hidden">
               <div
                 className="h-full bg-green-600 rounded-full transition-[width] duration-500"
-                style={{ width: `${progressPct}%` }}
+                style={{ width: `${progressPctSafe}%` }}
               />
             </div>
             <div
               className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 z-20"
-              style={{ width: `${progressPct}%` }}
+              style={{ width: `${progressPctSafe}%` }}
             >
               <div className="h-4 w-full rounded-full blur-[10px] bg-green-400/40 mix-blend-screen" />
             </div>
@@ -253,7 +256,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                       : 'text-neutral-300 hover:bg-neutral-900'
                 }`}
               >
-                {i + 1}. {s.title}
+                {s.title}
               </button>
             </li>
           ))}
@@ -298,22 +301,50 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                 </button>
               </div>
               <hr className="my-6 border-neutral-800" />
-              <div className="markdown">
+              <div id="lesson-markdown" data-lesson="markdown" className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {explanations[currentSubtopic.id] || 'Crafting learning module...'}
                 </ReactMarkdown>
               </div>
             </div>
 
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
+            <div className="quiz-panel rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
               <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
               <QuizPanel
                 key={currentSubtopic.id}
                 subtopicId={currentSubtopic.id}
                 subtopicTitle={currentSubtopic.title}
-                hasLesson={Boolean(explanations[currentSubtopic.id])}
+                hasLesson={Boolean((explanations[currentSubtopic.id] || '').trim().length >= 50)}
+                lessonMd={(explanations[currentSubtopic.id] || '').trim()}
                 questions={currentSubtopic.questions}
                 onPassed={async () => {
+  const id = currentSubtopic.id;
+  if (!countedIdsRef.current.has(id)) {
+    countedIdsRef.current.add(id);
+    setMasteredCount((m) => Math.min(totalCount, m + 1));
+  }
+
+                  /* END-OF-LECTURE */
+                  const isLast = currentIndex === initial.subtopics.length - 1;
+                  // Persist mastery for this subtopic
+                  try {
+                    await fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    });
+                  } catch {}
+
+                  if (isLast) {
+                    setIsCompleted(true);
+                    setShowSparkle(true);
+                    setTimeout(() => setShowSparkle(false), 1200);
+                    // Let the bar finish animating, then go to completion screen
+                    setTimeout(() => {
+                      try { router.push(`/learn/${initial.id}/complete`); } catch {}
+                    }, 900);
+                    return;
+                  }
                   // Optimistic advance
                   const idx = currentIndex;
                   const next = Math.min(idx + 1, initial.subtopics.length - 1);
@@ -323,7 +354,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
                   });
                   scrollToMainTop();
 
-                  // Persist mastery
+                  // Persist mastery (duplicate call tolerated)
                   try {
                     const res = await fetch('/api/mastery', {
                       method: 'POST',
@@ -355,29 +386,33 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   );
 }
 
+/* ------------------------------ QuizPanel --------------------------------- */
+
 function QuizPanel({
   subtopicId,
   subtopicTitle,
   hasLesson,
+  lessonMd,
   questions,
   onPassed,
 }: {
   subtopicId: string;
   subtopicTitle: string;
   hasLesson: boolean;
+  lessonMd?: string;
   questions: QuizQuestion[];
   onPassed: () => void;
 }) {
-    const stripABCD = (str: string) =>
+  const stripABCD = (str: string) =>
     (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
 
-const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
+  const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [loadingAnother, setLoadingAnother] = useState(false);
   const [hardLoaded, setHardLoaded] = useState(false);
 
-  // Reset when subtopic changes
+  // Reset when subtopic questions change
   useEffect(() => {
     setItems(questions || []);
     setAnswers([]);
@@ -397,47 +432,54 @@ const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
   const check = () => setRevealed(true);
   const tryAgain = () => setRevealed(false);
 
-// AUTO HARD QUESTION EFFECT: once the lesson exists, replace with a harder, lesson-based question
-useEffect(() => {
-  if (!hasLesson || hardLoaded) return;
-  (async () => {
-    try {
-      const res = await fetch('/api/quiz', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtopicIds: [subtopicId] }),
-      });
-      if (res.status === 409) return; // lesson not ready
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = (await res.json()) as {
-        questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-      };
-      const q = data.questions?.[0];
-      if (!q) return;
-      const newQ: QuizQuestion = {
-        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `q-${Date.now()}`,
-        prompt: q.prompt,
-        options: q.options,
-        answerIndex: q.answerIndex,
-        explanation: q.explanation,
-      };
-      setItems([newQ]);
-      setAnswers([]);
-      setRevealed(false);
-      setHardLoaded(true);
-    } catch {
-      // ignore and keep seed question
-    }
-  })();
-}, [hasLesson, subtopicId, hardLoaded]);
+  // Once lesson content exists, fetch a harder question that uses it.
+  useEffect(() => {
+    if (!hasLesson || hardLoaded) return;
+    const payload = (lessonMd || '').trim();
+    if (payload.length < 50) return;
+
+    (async () => {
+      try {
+        const res = await fetch('/api/quiz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lessonMd: payload, difficulty: 'hard' }),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = (await res.json()) as {
+          questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+        };
+        const q = data.questions?.[0];
+        if (!q) return;
+        const newQ: QuizQuestion = {
+          id:
+            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+              ? (crypto as any).randomUUID()
+              : `q-${Date.now()}`,
+          prompt: q.prompt,
+          options: q.options,
+          answerIndex: q.answerIndex,
+          explanation: q.explanation,
+        };
+        setItems([newQ]);
+        setAnswers([]);
+        setRevealed(false);
+        setHardLoaded(true);
+      } catch {
+        // Keep seed question if API fails
+      }
+    })();
+  }, [hasLesson, lessonMd, hardLoaded]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
     try {
+      const payload = (lessonMd || '').trim();
+      if (payload.length < 50) throw new Error('lesson too short');
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtopicIds: [subtopicId] }),
+        body: JSON.stringify({ lessonMd: payload, difficulty: 'hard' }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
@@ -519,7 +561,9 @@ useEffect(() => {
                       onClick={() => setAns(i, j)}
                       className={buttonClass}
                       disabled={revealed && isAllCorrect}
-                    >{stripABCD(o)}</button>
+                    >
+                      {stripABCD(o)}
+                    </button>
                   );
                 })}
               </div>
@@ -534,7 +578,6 @@ useEffect(() => {
       </ul>
 
       <div className="flex flex-wrap items-center gap-4 pt-4">
-        {/* Hide Check Answer after everything is correct */}
         {!revealed && (
           <button
             onClick={check}

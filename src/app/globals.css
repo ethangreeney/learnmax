@@ -264,3 +264,17 @@ body {
 .container-wide {
   @apply mx-auto max-w-[1600px] px-6 md:px-8;
 }
+
+/* learnmax-quiz-gate */
+/* learnmax-quiz-gate */
+
+/* learnmax-quiz-gate (fixed) */
+body:not([data-content="ready"]) .quiz-panel { display: none; }
+
+/* quiz gate */
+body:not([data-content="ready"]) .quiz-panel { display: none; }
+body[data-content="ready"] .quiz-panel { display: block; }
+
+/* quiz gate */
+body:not([data-content="ready"]) .quiz-panel { display: none; }
+body[data-content="ready"] .quiz-panel { display: block; }

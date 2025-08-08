@@ -1,20 +1,18 @@
 import type { Metadata } from 'next';
+import ContentGate from "@/components/ContentGate";
 import ClientBoundary from '@/components/ClientBoundary';
 import AuthProvider from '@/components/AuthProvider';
 import Link from 'next/link';
 import './globals.css';
-
 export const metadata: Metadata = {
   title: 'LearnMax — Your AI Study Companion',
   description: 'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',
 };
-
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/learn', label: 'Learn' },
 ];
-
 export default function RootLayout({
   children,
 }: {
@@ -44,7 +42,8 @@ export default function RootLayout({
           Built with Next.js, Tailwind CSS, and Google Gemini.
         </footer>
               </AuthProvider>
-      </body>
+      <ContentGate />
+    </body>
     </html>
   );
 }
