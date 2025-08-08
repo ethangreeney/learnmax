@@ -640,18 +640,6 @@ import SignInOut from '@/components/SignInOut';
 export default function ClientBoundary()
 </file>
 
-<file path="src/components/ContentGate.tsx">
-// src/components/ContentGate.tsx
-⋮----
-import { useEffect } from 'react';
-⋮----
-export default function ContentGate()
-⋮----
-const markQuizContainer = () =>
-⋮----
-const updateStateFromLesson = () =>
-</file>
-
 <file path="src/hooks/useBodyScrollLock.ts">
 import { useEffect } from 'react';
 ⋮----
@@ -848,6 +836,19 @@ import { requireSession } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 ⋮----
 export async function POST(req: NextRequest)
+</file>
+
+<file path="src/components/ContentGate.tsx">
+// src/components/ContentGate.tsx
+⋮----
+import { useEffect } from 'react';
+⋮----
+/**
+ * The CSS hides .quiz-panel unless <body data-content="ready">.
+ * On some navigations/subtopic changes that flag was lost, hiding the quiz.
+ * We set it once on mount and never remove it.
+ */
+export default function ContentGate()
 </file>
 
 <file path="src/components/SignInOut.tsx">
@@ -1324,6 +1325,26 @@ import LearnView from '@/components/LearnView';
 export default async function LearnPage(
 </file>
 
+<file path="src/app/layout.tsx">
+import type { Metadata } from 'next';
+import ContentGate from "@/components/ContentGate";
+import ClientBoundary from '@/components/ClientBoundary';
+import AuthProvider from '@/components/AuthProvider';
+import Link from 'next/link';
+</file>
+
+<file path="src/app/api/lectures/[lectureId]/route.ts">
+import { isSessionWithUser } from '@/lib/session-utils';
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+⋮----
+type Params = { lectureId: string };
+⋮----
+export async function PATCH(req: NextRequest, ctx: unknown)
+</file>
+
 <file path="src/app/globals.css">
 :root {
 ⋮----
@@ -1365,27 +1386,7 @@ body:not([data-content="ready"]) .quiz-panel { display: none; }
 ⋮----
 /* quiz gate */
 ⋮----
-body[data-content="ready"] .quiz-panel { display: block; }
-</file>
-
-<file path="src/app/layout.tsx">
-import type { Metadata } from 'next';
-import ContentGate from "@/components/ContentGate";
-import ClientBoundary from '@/components/ClientBoundary';
-import AuthProvider from '@/components/AuthProvider';
-import Link from 'next/link';
-</file>
-
-<file path="src/app/api/lectures/[lectureId]/route.ts">
-import { isSessionWithUser } from '@/lib/session-utils';
-import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-⋮----
-type Params = { lectureId: string };
-⋮----
-export async function PATCH(req: NextRequest, ctx: unknown)
+body[data-content="ready"] .quiz-panel { display: block !important; }
 </file>
 
 <file path="src/app/page.tsx">
