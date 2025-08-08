@@ -197,36 +197,28 @@ export async function POST(req: NextRequest) {
 
     // 2) Quiz (robust)
     const quizPrompt = `
-You are an expert assessment writer. Create exactly ONE multiple-choice question per subtopic, grounded ONLY in the DOCUMENT CONTENT below.
+      You are an expert in educational assessments. Generate a quiz based on the subtopics.
 
-DOMAIN: computer science / graph theory data structures.
-STRICTLY DO NOT write about plants/botany (no fruit, flowers, trunks, leaves, shrubs, tropical, etc.).
+      CRITICAL:
+      - Answer with ONLY one JSON object.
+      - Shape:
+        {
+          "questions": [
+            {
+              "prompt": "string",
+              "options": ["A","B","C","D"],
+              "answerIndex": 0,
+              "explanation": "string",
+              "subtopicTitle": "string"
+            }
+          ]
+        }
+      - Exactly ONE question per subtopic below.
+      - Do NOT prefix options with letters or numbers; each "options" item must be only the answer text.
 
-Return ONLY ONE JSON object:
-{
-  "questions": [
-    {
-      "prompt": "string",
-      "options": ["A","B","C","D"],
-      "answerIndex": 0,
-      "explanation": "string",
-      "subtopicTitle": "string"
-    }
-  ]
-}
-
-Rules:
-- The explanation MUST include one short DIRECT quote (6–12 words) from the document in "double quotes".
-- Exactly four options, no letter/number prefixes.
-- Each "subtopicTitle" must EXACTLY match a title below.
-- No facts beyond the document.
-
-DOCUMENT CONTENT (truncated for safety):
-${clip(text, 5000)}
-
-SUBTOPICS (use each overview to focus the question):
-${JSON.stringify(bd.subtopics.map(s => ({ title: s.title, overview: s.overview })), null, 2)}
-`.trim();
+      Subtopics:
+      ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title })), null, 2)}
+    `;
     const qzRaw = await generateJSON(quizPrompt);
     const qz = sanitizeQuiz(qzRaw, bd.subtopics);
 

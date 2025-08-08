@@ -527,10 +527,6 @@ function QuizPanel({
       setLoadingAnother(false);
     }
   };
-  if (hasLesson && !hardLoaded) {
-    return <p className="text-sm text-neutral-400">Generating a question from the lesson…</p>;
-  }
-
 
   if (!items || items.length === 0) {
     return <p className="text-sm text-neutral-400">No quiz questions for this subtopic.</p>;
