@@ -1,44 +1,55 @@
-# LearnMax - Your Personal AI Study Companion
+# LearnMax 🧠✨
 
-[![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js-black?logo=next.js)](https://nextjs.org)
-[![Powered by Google Gemini](https://img.shields.io/badge/Powered%20by-Gemini%20AI-blue?logo=google)](https://ai.google.com/)
-[![Styled with Tailwind CSS](https://img.shields.io/badge/Styled%20with-Tailwind%20CSS-38B2AC?logo=tailwind-css)](https://tailwindcss.com)
+**The Science of Learning, Perfected by AI.**
 
-LearnMax is a web application designed to accelerate learning and improve comprehension. By leveraging the power of Google's Gemini AI, it transforms raw text or PDF study materials into a structured, interactive learning path.
+LearnMax is a full-stack web application built with Next.js that revolutionizes studying. Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science principles, powered by the Google Gemini API, to deconstruct complex materials, generate focused learning modules, and verify your understanding every step of the way.
 
-## How It Works
+ <!-- It's highly recommended to add a screenshot of your app's dashboard or learn page -->
 
-1.  **Provide Content**: Paste text directly or upload a PDF of your lecture notes, an article, or any other study material into the Learn Workspace.
-2.  **AI Analysis**: The application sends the content to the Gemini API, which analyzes the text and breaks it down into a logical sequence of subtopics.
-3.  **Guided Learning**: For each subtopic, the AI generates a detailed explanation.
-4.  **Mastery Check**: After studying a subtopic, take a quiz. You can only proceed to the next subtopic after you've passed the quiz, ensuring you've understood the concept.
+---
 
-## Features
+## 🚀 About The Project
 
--   **PDF & Text Upload**: Easily input your study materials.
--   **AI-Powered Topic Breakdown**: Automatically structures your content into a step-by-step learning plan.
--   **Detailed Explanations**: Get clear, AI-generated explanations for each subtopic.
--   **Mastery Quizzes**: Reinforce learning and ensure comprehension before moving on.
--   **Learning Dashboard**: Track your progress.
--   **Responsive Design**: Fully usable on desktop and mobile.
+This application is designed to create a hyper-efficient study path from any text-based content, like lecture notes or PDF slides. It breaks down the material, explains each part, and quizzes you to ensure you've mastered the concept before moving on.
 
-## Tech Stack
+### Core Features
 
--   **Framework**: [Next.js](https://nextjs.org/)
--   **AI**: [Google Gemini API](https://ai.google.dev/)
--   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
--   **State Management**: [Zustand](https://github.com/pmndrs/zustand)
--   **Deployment**: Vercel
+*   **📚 AI Content Deconstruction**: Upload a PDF or paste raw text. The AI analyzes the material and structures it into a logical learning path of subtopics, ordered by importance and difficulty.
+*   **💡 Guided Mastery Learning**: Tackle one core concept at a time. The app provides AI-generated explanations in various styles (simplified, detailed, or with examples) to prevent cognitive overload and embed knowledge effectively.
+*   **🎯 Verified Comprehension**: Before advancing, pass a targeted, AI-generated quiz to prove you've mastered the current concept. This guarantees a rock-solid foundation for lasting knowledge.
+*   **💬 Interactive AI Tutor**: Have a question? An AI tutor is available in a side panel, ready to answer questions about the source material or related general knowledge topics.
+*   **📊 Personalized Dashboard**: Keep track of your learning journey. View stats like your total lectures, mastered subtopics, and even a "Learning Elo" score that reflects your progress.
+*   **🔐 Secure Authentication**: User accounts and sessions are securely managed using NextAuth.js with Google as an OAuth provider.
 
-## Getting Started
+---
+
+## 🛠️ Built With
+
+This project leverages a modern, powerful tech stack:
+
+*   **Framework**: [Next.js](https://nextjs.org/) (v15) with App Router
+*   **Language**: [TypeScript](https://www.typescriptlang.org/)
+*   **AI**: [Google Gemini API](https://ai.google.dev/)
+*   **Database**: [PostgreSQL](https://www.postgresql.org/)
+*   **ORM**: [Prisma](https://www.prisma.io/)
+*   **Authentication**: [NextAuth.js](https://next-auth.js.org/)
+*   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+*   **Client-side State**: [Zustand](https://github.com/pmndrs/zustand)
+*   **Icons**: [Lucide React](https://lucide.dev/)
+
+---
+
+## 🏁 Getting Started
+
+To get a local copy up and running, follow these simple steps.
 
 ### Prerequisites
 
--   Node.js (v18 or later recommended)
--   A package manager like `npm`.
--   A Google AI API Key.
+*   **Node.js**: v20.x or higher
+*   **pnpm**: `npm install -g pnpm`
+*   **PostgreSQL**: A running instance of PostgreSQL.
 
-### Installation
+### Installation & Setup
 
 1.  **Clone the repository:**
     ```sh
@@ -48,24 +59,66 @@ LearnMax is a web application designed to accelerate learning and improve compre
 
 2.  **Install dependencies:**
     ```sh
-    npm install
+    pnpm install
     ```
 
-3.  **Set up your environment variables:**
-    -   Create a new file named `.env.local` in the root of the project.
-    -   Copy the contents of `.env.example` into it.
-    -   Get your API key from the [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into `.env.local`:
+3.  **Set up environment variables:**
+    Create a `.env.local` file in the root of your project and add the following variables.
+
     ```env
-    GOOGLE_API_KEY=your_super_secret_api_key
+    # Google AI API Key (for Gemini)
+    GOOGLE_API_KEY="your_google_api_key"
+
+    # PostgreSQL Connection URLs (get from your provider)
+    # Used by Prisma for migrations and the app
+    POSTGRES_URL="postgresql://user:password@host:port/database"
+    # Direct connection for Prisma Migrate/Studio
+    POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database"
+    # Shadow database for development migrations
+    POSTGRES_SHADOW_URL="postgresql://user:password@host:port/database_shadow"
+
+    # NextAuth.js Configuration
+    # Generate a secret with: openssl rand -base64 32
+    NEXTAUTH_SECRET="your_nextauth_secret"
+    # Google OAuth credentials
+    GOOGLE_CLIENT_ID="your_google_client_id"
+    GOOGLE_CLIENT_SECRET="your_google_client_secret"
     ```
 
-4.  **Run the development server:**
+4.  **Run database migrations:**
+    This will sync the Prisma schema with your PostgreSQL database.
     ```sh
-    npm run dev
+    pnpm prisma migrate dev
     ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5.  **Run the development server:**
+    ```sh
+    pnpm dev
+    ```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result!
+
+---
+
+## 📁 Project Structure
+
+The codebase is organized to be clean and maintainable:
+
+*   `prisma/`: Contains the database `schema.prisma` and migration files.
+*   `public/`: Static assets like images and SVGs.
+*   `src/app/`: The core of the Next.js application, using the App Router.
+    *   `(pages)/`: Main routes like `/`, `/dashboard`, and `/learn`.
+    *   `api/`: All backend API endpoints, organized by resource.
+*   `src/components/`: Shared, reusable React components used across the application.
+*   `src/lib/`: Essential logic and utilities.
+    *   `ai.ts`: Functions for interacting with the Google Gemini API.
+    *   `auth.ts`: NextAuth.js configuration.
+    *   `prisma.ts`: Prisma client instance.
+    *   `client/`: Client-side specific helpers and state stores (Zustand).
+*   `src/types/`: TypeScript type definitions.
+
+---
 
 ## License
 
-This project is available under the [MIT License](LICENSE).
+Distributed under the MIT License. See `LICENSE` for more information.

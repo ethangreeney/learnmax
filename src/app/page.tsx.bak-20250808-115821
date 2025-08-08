@@ -30,7 +30,7 @@ export default function HomePage() {
     <div className="container-narrow">
       <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-180px)] max-w-6xl mx-auto">
         <div className="w-full">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-200 to-neutral-400 leading-[1.18] md:leading-[1.14] lg:leading-[1.12] pb-1.5">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white to-neutral-300">
             The Science of Learning, Perfected by AI.
           </h1>
           <p className="mt-4 max-w-3xl mx-auto text-base md:text-lg text-neutral-300">
