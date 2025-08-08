@@ -1,41 +1,102 @@
 import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { requireSession } from '@/lib/auth';
 import { generateJSON } from '@/lib/ai';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const { subtopics } = await req.json();
+    await requireSession();
+    const body = (await req.json()) as { subtopicIds?: string[] };
+    const subtopicIds = Array.isArray(body?.subtopicIds) ? body.subtopicIds : [];
 
-    if (!subtopics || !Array.isArray(subtopics) || subtopics.length === 0) {
-      return NextResponse.json({ error: 'A list of subtopics is required.' }, { status: 400 });
+    if (subtopicIds.length === 0) {
+      return NextResponse.json({ error: 'subtopicIds is required (string[])' }, { status: 400 });
     }
 
-    // This prompt instructs the AI to create a mastery check quiz based on the subtopics.
+    const subs = await prisma.subtopic.findMany({
+      where: { id: { in: subtopicIds } },
+      select: { id: true, title: true, overview: true, explanation: true },
+      orderBy: { id: 'asc' },
+    });
+
+    if (subs.length === 0) {
+      return NextResponse.json({ error: 'Subtopics not found.' }, { status: 404 });
+    }
+
+    // Only generate questions AFTER lesson content (explanation) exists.
+    if (subs.some(s => !s.explanation || !s.explanation.trim())) {
+      return NextResponse.json(
+        { error: 'Lesson not ready for one or more subtopics.' },
+        { status: 409 }
+      );
+    }
+
+    const lessons = subs.map(s => ({
+      title: s.title,
+      lesson: `${s.overview || ''}
+
+${s.explanation || ''}`.trim(),
+    }));
+
     const prompt = `
-      You are an expert in creating educational assessments. Your task is to generate a quiz based on the provided list of subtopics.
+You are an expert assessment writer. Create **hard mastery** questions *strictly* from the LESSON text for each subtopic.
 
-      **CRITICAL INSTRUCTIONS:**
-      1. Your entire response MUST be a single, raw JSON object. Do not include any text, commentary, or markdown formatting like \`\`\`json before or after the JSON object.
-      2. The root of the JSON object must be a key named "questions", which is an array of question objects.
-      3. For each subtopic provided, create exactly one multiple-choice question.
+Rules:
+- Bloom level: application/analysis/evaluation (no recall-only).
+- Scenario-based or multi-step reasoning, require inference from the LESSON.
+- Distractors must be plausible and grounded in the LESSON (no external trivia).
+- Do NOT add option letters like "A.", "B.", etc. — just the option strings.
+- Exactly ONE question per input subtopic.
+- Output ONLY this JSON:
 
-      **Each question object in the "questions" array must have these exact keys:**
-      - "prompt": The question text.
-      - "options": An array of 4 strings representing the possible answers.
-      - "answerIndex": The 0-based index of the correct answer in the "options" array.
-      - "explanation": A brief explanation of why the correct answer is right.
-      - "subtopicTitle": The title of the subtopic this question relates to.
+{
+  "questions": [
+    {
+      "prompt": "string",
+      "options": ["string","string","string","string"],
+      "answerIndex": 0,
+      "explanation": "short rationale grounded in the LESSON",
+      "subtopicTitle": "the subtopic title"
+    }
+  ]
+}
 
-      **Subtopics to use:**
-      ---
-      ${JSON.stringify(subtopics, null, 2)}
-      ---
-    `;
+LESSONS:
+${JSON.stringify(lessons, null, 2)}
+`;
 
-    const aiResponse = await generateJSON(prompt);
-    return NextResponse.json(aiResponse);
+    const ai = await generateJSON(prompt);
+    if (!ai || !Array.isArray(ai.questions)) {
+      return NextResponse.json({ error: 'Bad AI output' }, { status: 502 });
+    }
 
-  } catch (error: any)    {
-    console.error("Error in quiz API:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const out = {
+      questions: ai.questions
+        .filter((q: any) =>
+          q &&
+          typeof q.prompt === 'string' &&
+          Array.isArray(q.options) && q.options.length === 4 &&
+          Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < 4 &&
+          typeof q.explanation === 'string'
+        )
+        .map((q: any) => ({
+          prompt: String(q.prompt),
+          options: q.options.map((o: any) => String(o)),
+          answerIndex: q.answerIndex,
+          explanation: String(q.explanation),
+          subtopicTitle: String(q.subtopicTitle || subs[0]?.title || 'Subtopic'),
+        })),
+    };
+
+    if (out.questions.length === 0) {
+      return NextResponse.json({ error: 'No questions generated' }, { status: 502 });
+    }
+
+    return NextResponse.json(out);
+  } catch (err: any) {
+    console.error('HARD_QUIZ_API_ERROR:', err?.stack || err?.message || err);
+    return NextResponse.json({ error: err?.message || 'Server error' }, { status: err?.status || 500 });
   }
 }

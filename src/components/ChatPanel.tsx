@@ -5,6 +5,34 @@ import { Send, Loader2, User, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+
+// Normalize to avoid whole-message fenced blocks.
+function sanitizeMd(md: string): string {
+  if (!md) return md;
+  let t = md.trim();
+  const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
+  if (exactFence) t = exactFence[1].trim();
+  else {
+    const m = t.match(/^```([A-Za-z0-9+_.-]*)\s*\n([\s\S]*?)\n```$/);
+    if (m) {
+      const lang = (m[1] || "").toLowerCase();
+      const inner = m[2];
+      if (lang === "" || lang === "markdown" || lang === "md" || /^(#{1,6}\s|[-*]\s|\d+\.\s)/m.test(inner) || /\n\n/.test(inner)) {
+        t = inner.trim();
+      }
+    }
+  }
+  const lines = t.split("\n");
+  const nonEmpty = lines.filter(l => l.trim() !== "");
+  if (nonEmpty.length && nonEmpty.every(l => /^ {4,}|\t/.test(l))) {
+    t = lines.map(l => l.replace(/^ {4}/, "")).join("\n").trim();
+  }
+  const ticks = (t.match(/```/g) || []).length;
+  if (ticks === 1) t = t.replace(/```/g, "");
+  return t;
+}
+
+
 type Message = {
   sender: 'user' | 'ai';
   text: string;
@@ -53,7 +81,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
         userQuestion: input,
         documentContent,
       });
-      const aiMessage: Message = { sender: 'ai', text: res.response };
+      const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
       setHistory(prev => [...prev, aiMessage]);
     } catch (error) {
       const errorMessage: Message = { sender: 'ai', text: 'Sorry, I ran into an error. Please try again.' };

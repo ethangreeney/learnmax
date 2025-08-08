@@ -53,25 +53,51 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = `
-      You are a University Professor creating a study guide about "${subtopic.title}".
-      ${styleInstruction}
-      Use clean Markdown with headings (###, ####), lists, and code blocks where helpful.
-      Base the explanation on the following lecture text for context:
-      ---
-      ${subtopic.overview || ''}
-    `;
+You are writing a short **subsection** for an existing university lecture. Topic: "${subtopic.title}".
+
+${styleInstruction}
+
+Constraints (important):
+- This is a CONTINUATION of a lecture. **Do NOT** add preambles like "Here is a study guide", "This guide provides…", "In this section/lesson…", greetings, or meta-commentary.
+- **Do NOT** add an H1/H2 title at the top; start immediately with content.
+- Use clean Markdown; `####` subheadings OK, brief bullets encouraged.
+- 250–450 words. Keep examples short.
+
+Base the explanation ONLY on this lecture text for context:
+---
+${subtopic.overview || ''}
+---
+`;
 
     const markdownExplanation = await generateText(prompt);
+
+function stripPreamble(md: string): string {
+  if (!md) return md;
+  let out = md.trimStart();
+
+  // Drop a leading H1/H2 like "Study Guide", "Introduction", "Overview"
+  out = out.replace(/^(#{1,3})\s*(?:study guide.*|introduction|overview)\s*\n+/i, '');
+
+  // Drop an opening meta paragraph: "This guide provides…", "In this section…", "Here is a study guide…", "We will explore…"
+  // (only removes the *first* such paragraph)
+  out = out.replace(
+    /^\s*(?:>.*\n)?(?:(?:here is (?:a )?(?:study )?guide)|(?:this\s+(?:guide|section|lesson))|(?:in\s+this\s+(?:guide|section|lesson))|(?:we\s+(?:will|\'ll)\s+(?:explore|cover|discuss))).*?\n\s*\n/si,
+    ''
+  );
+
+  return out.trimStart();
+}
+
 
     // Save fresh explanation for default style
     if (style === 'default') {
       await prisma.subtopic.update({
         where: { id: subtopicId },
-        data: { explanation: markdownExplanation },
+        data: { explanation: stripPreamble(markdownExplanation) },
       });
     }
 
-    return NextResponse.json({ explanation: markdownExplanation });
+    return NextResponse.json({ explanation: stripPreamble(markdownExplanation) });
   } catch (error: any) {
     const status = error?.status || 500;
     console.error('EXPLAIN_DB_API_ERROR:', error?.stack || error?.message || error);

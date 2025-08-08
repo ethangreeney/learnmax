@@ -214,6 +214,7 @@ export async function POST(req: NextRequest) {
           ]
         }
       - Exactly ONE question per subtopic below.
+      - Do NOT prefix options with letters or numbers; each "options" item must be only the answer text.
 
       Subtopics:
       ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title })), null, 2)}

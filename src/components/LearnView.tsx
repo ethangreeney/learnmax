@@ -12,6 +12,59 @@ import {
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
 import { renameLecture } from '@/lib/client/rename-lecture';
 
+/** Normalize model output so it never renders as one giant code block. */
+function sanitizeMarkdown(md: string): string {
+  if (!md) return md;
+  let t = md.trim();
+
+  // 1) Unwrap a single full-document fenced block (```md / ```markdown / ``` / any)
+  const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
+  if (exactFence) {
+    t = exactFence[1].trim();
+  } else {
+    const anyFence = t.match(/^```([A-Za-z0-9+_.-]*)\s*\n([\s\S]*?)\n```$/);
+    if (anyFence) {
+      const lang = (anyFence[1] || '').toLowerCase();
+      const inner = anyFence[2];
+      // If it looks like prose markdown (headings/lists/blank paras), unwrap it.
+      if (
+        lang === '' ||
+        lang === 'markdown' ||
+        lang === 'md' ||
+        /^(#{1,6}\s|[-*]\s|\d+\.\s)/m.test(inner) ||
+        /\n\n/.test(inner)
+      ) {
+        t = inner.trim();
+      }
+    }
+  }
+
+  // 2) If every non-empty line starts with >=4 spaces or a tab, de-indent once (was treated as code)
+  const lines = t.split('\n');
+  const nonEmpty = lines.filter((l) => l.trim() !== '');
+  if (nonEmpty.length && nonEmpty.every((l) => /^ {4,}|\t/.test(l))) {
+    t = lines.map((l) => l.replace(/^ {4}/, '')).join('\n').trim();
+  }
+
+  // 3) If there is a stray unmatched ``` fence, strip it.
+  const tickCount = (t.match(/```/g) || []).length;
+  if (tickCount === 1) {
+    t = t.replace(/```/g, '');
+  }
+
+  return t;
+}
+
+
+const stripPreamble = (md: string) => {
+  if (!md) return md;
+  // If there's a Markdown heading, drop everything before it.
+  const m = md.search(/^\s*#{1,6}\s/m);
+  if (m >= 0) return md.slice(m).trimStart();
+  // Fallback: remove common chatty openers.
+  return md.replace(/^\s*(Of course[,!]?|Sure[,!]?|Here(?:\s+is|\'s)|As an AI[, ]+).*?\n+/i, '').trimStart();
+};
+
 export default function LearnView({ initial }: { initial: LearnLecture }) {
   // UI-only store per page mount
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
@@ -45,10 +98,18 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  // Explanations cache
-  const [explanations, setExplanations] = useState<Record<string, string>>(
-    () => Object.fromEntries(initial.subtopics.map((s) => [s.id, s.explanation || '']))
+  // Explanations cache (sanitized)
+  const [explanations, setExplanations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      initial.subtopics.map((s) => [s.id, s.explanation ? sanitizeMarkdown(s.explanation) : ''])
+    )
   );
+
+  // Progress state (green progress bar in left sidebar)
+  const initialMastered = initial.subtopics.filter((s) => s.mastered).length;
+  const totalCount = initial.subtopics.length;
+  const [masteredCount, setMasteredCount] = useState<number>(initialMastered);
+  const progressPct = Math.round((masteredCount / Math.max(1, totalCount)) * 100);
 
   const canSelect = (i: number) => i <= unlockedIndex;
 
@@ -79,7 +140,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
           throw new Error(e.error || `HTTP ${res.status}`);
         }
         const data = (await res.json()) as { explanation: string };
-        setExplanations((e) => ({ ...e, [s.id]: data.explanation }));
+        setExplanations((e) => ({ ...e, [s.id]: sanitizeMarkdown(data.explanation) }));
       } catch (e: any) {
         setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + e.message }));
       }
@@ -129,6 +190,32 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       {/* Left: Outline */}
       <aside className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:p-7 xl:p-8 lg:col-span-3">
         <h2 className="text-xl font-semibold">Lecture</h2>
+
+        {/* Progress bar */}
+        <div className="mt-2">
+          <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
+            <span>Progress</span>
+            <span>
+              {masteredCount}/{totalCount} ({progressPct}%)
+            </span>
+          </div>
+
+          {/* Bar + non-clipped glow */}
+          <div className="relative">
+            <div className="h-2 w-full rounded-full bg-neutral-800 overflow-hidden">
+              <div
+                className="h-full bg-green-600 rounded-full transition-[width] duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <div
+              className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 z-20"
+              style={{ width: `${progressPct}%` }}
+            >
+              <div className="h-4 w-full rounded-full blur-[10px] bg-green-400/40 mix-blend-screen" />
+            </div>
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
           <input
@@ -222,7 +309,9 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
               <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
               <QuizPanel
                 key={currentSubtopic.id}
+                subtopicId={currentSubtopic.id}
                 subtopicTitle={currentSubtopic.title}
+                hasLesson={Boolean(explanations[currentSubtopic.id])}
                 questions={currentSubtopic.questions}
                 onPassed={async () => {
                   // Optimistic advance
@@ -267,24 +356,33 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
 }
 
 function QuizPanel({
+  subtopicId,
   subtopicTitle,
+  hasLesson,
   questions,
   onPassed,
 }: {
+  subtopicId: string;
   subtopicTitle: string;
+  hasLesson: boolean;
   questions: QuizQuestion[];
   onPassed: () => void;
 }) {
-  const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
+    const stripABCD = (str: string) =>
+    (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
+
+const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [loadingAnother, setLoadingAnother] = useState(false);
+  const [hardLoaded, setHardLoaded] = useState(false);
 
   // Reset when subtopic changes
   useEffect(() => {
     setItems(questions || []);
     setAnswers([]);
     setRevealed(false);
+    setHardLoaded(false);
   }, [questions.map((q) => q.id).join('|')]);
 
   const setAns = (qIndex: number, ansIndex: number) => {
@@ -299,13 +397,47 @@ function QuizPanel({
   const check = () => setRevealed(true);
   const tryAgain = () => setRevealed(false);
 
+// AUTO HARD QUESTION EFFECT: once the lesson exists, replace with a harder, lesson-based question
+useEffect(() => {
+  if (!hasLesson || hardLoaded) return;
+  (async () => {
+    try {
+      const res = await fetch('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subtopicIds: [subtopicId] }),
+      });
+      if (res.status === 409) return; // lesson not ready
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = (await res.json()) as {
+        questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+      };
+      const q = data.questions?.[0];
+      if (!q) return;
+      const newQ: QuizQuestion = {
+        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `q-${Date.now()}`,
+        prompt: q.prompt,
+        options: q.options,
+        answerIndex: q.answerIndex,
+        explanation: q.explanation,
+      };
+      setItems([newQ]);
+      setAnswers([]);
+      setRevealed(false);
+      setHardLoaded(true);
+    } catch {
+      // ignore and keep seed question
+    }
+  })();
+}, [hasLesson, subtopicId, hardLoaded]);
+
   const askAnother = async () => {
     setLoadingAnother(true);
     try {
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtopics: [{ title: subtopicTitle }] }),
+        body: JSON.stringify({ subtopicIds: [subtopicId] }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
@@ -317,7 +449,10 @@ function QuizPanel({
       const q = data.questions?.[0];
       if (!q) throw new Error('No question returned');
       const newQ: QuizQuestion = {
-        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `q-${Date.now()}`,
+        id:
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? (crypto as any).randomUUID()
+            : `q-${Date.now()}`,
         prompt: q.prompt,
         options: q.options,
         answerIndex: q.answerIndex,
@@ -384,9 +519,7 @@ function QuizPanel({
                       onClick={() => setAns(i, j)}
                       className={buttonClass}
                       disabled={revealed && isAllCorrect}
-                    >
-                      {o}
-                    </button>
+                    >{stripABCD(o)}</button>
                   );
                 })}
               </div>
@@ -429,8 +562,6 @@ function QuizPanel({
             </button>
           </>
         )}
-
-        
       </div>
     </div>
   );

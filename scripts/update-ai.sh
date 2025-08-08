@@ -1,3 +1,15 @@
+#!/usr/bin/env bash
+# Update src/lib/ai.ts to resilient Gemini 2.5 helpers and remove *.bak files.
+# Usage: ./scripts/update-ai.sh
+
+set -euo pipefail
+
+TARGET="src/lib/ai.ts"
+TMP="$(mktemp -t ai.ts.XXXXXX)"
+
+echo "🔄 Writing new AI helpers to temp file…"
+
+cat > "$TMP" <<'TS'
 // src/lib/ai.ts
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -93,7 +105,7 @@ export async function generateJSON(prompt: string): Promise<any> {
       }
 
       // Nothing usable — continue to next model
-      lastErr = new Error(`Empty/invalid JSON from ${name}`);
+      lastErr = new Error(\`Empty/invalid JSON from \${name}\`);
       continue;
     } catch (e) {
       if (isModelAvailabilityError(e)) { lastErr = e; continue; }
@@ -129,7 +141,7 @@ export async function generateText(prompt: string): Promise<string> {
       if (parts.length) return parts.join('\n\n');
 
       // No content — try next model
-      lastErr = new Error(`Empty response from ${name}`);
+      lastErr = new Error(\`Empty response from \${name}\`);
       continue;
     } catch (e) {
       if (isModelAvailabilityError(e)) { lastErr = e; continue; }
@@ -140,3 +152,17 @@ export async function generateText(prompt: string): Promise<string> {
 
   throw new Error('The AI failed to generate a text response. ' + (lastErr?.message || ''));
 }
+TS
+
+# Ensure target dir exists
+mkdir -p "$(dirname "$TARGET")"
+
+# Atomic replace
+echo "📦 Installing to $TARGET"
+mv "$TMP" "$TARGET"
+
+# Remove backups
+echo "🧹 Removing .bak* files…"
+find . -type f \( -name '*.bak' -o -name '*.bak-*' -o -name '*.bak2' -o -name '*.bak.*' \) -print -delete || true
+
+echo "✅ Done."
