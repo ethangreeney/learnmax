@@ -274,16 +274,28 @@ const countedIdsRef = useRef<Set<string>>(
               </div>
             </div>
 
-            <div className="quiz-panel card p-6 md:p-8 xl:p-10">
-              <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
-              <QuizPanel
-                key={currentSubtopic.id}
-                subtopicId={currentSubtopic.id}
-                subtopicTitle={currentSubtopic.title}
-                hasLesson={Boolean((explanations[currentSubtopic.id] || '').trim().length >= 50)}
-                lessonMd={(explanations[currentSubtopic.id] || '').trim()}
-                questions={currentSubtopic.questions}
-                onPassed={async () => {
+            {(() => {
+              const lessonMd = (explanations[currentSubtopic.id] || '').trim();
+              const hasLesson = lessonMd.length >= 50;
+              if (!hasLesson) {
+                return (
+                  <div className="card p-6 md:p-8 xl:p-10">
+                    <h3 className="mb-2 text-xl font-semibold">Mastery Check</h3>
+                    <p className="text-sm text-neutral-400">Generating lesson content… the quiz will appear once the explanation is ready.</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="quiz-panel card p-6 md:p-8 xl:p-10">
+                  <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
+                  <QuizPanel
+                    key={currentSubtopic.id}
+                    subtopicId={currentSubtopic.id}
+                    subtopicTitle={currentSubtopic.title}
+                    hasLesson={hasLesson}
+                    lessonMd={lessonMd}
+                    questions={currentSubtopic.questions}
+                    onPassed={async () => {
   const id = currentSubtopic.id;
   if (!countedIdsRef.current.has(id)) {
     countedIdsRef.current.add(id);
@@ -317,10 +329,12 @@ const countedIdsRef = useRef<Set<string>>(
                     unlockedIndex: Math.max(unlockedIndex, next),
                   });
                   scrollToMainTop();
-                  // No duplicate await; background call above
-                }}
-              />
-            </div>
+                      // No duplicate await; background call above
+                    }}
+                  />
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div className="flex h-full min-h-[60vh] items-center justify-center rounded-lg border-2 border-dashed border-neutral-800 text-neutral-500">
@@ -537,7 +551,7 @@ function QuizPanel({
           <button
             onClick={check}
             disabled={items.length === 0}
-            className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-50"
+            className="rounded-md bg-[rgb(var(--accent))] px-5 py-2 font-semibold text-black disabled:opacity-50"
           >
             Check Answer
           </button>

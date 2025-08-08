@@ -317,3 +317,6 @@ body[data-content="ready"] .quiz-panel { display: block !important; }
 /* Only while the completion page is mounted */
 body[data-page="complete"] { overflow: hidden !important; overscroll-behavior: contain; }
 body[data-page="complete"] footer { display: none !important; }
+
+/* Home page: disable scroll */
+body[data-page="home"] { overflow: hidden !important; overscroll-behavior: none; }

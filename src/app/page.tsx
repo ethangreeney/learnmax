@@ -28,6 +28,15 @@ const PillarCard = ({
 );
 
 export default function HomePage() {
+  // Prevent body scroll while on home page
+  useEffect(() => {
+    const prev = document.body.getAttribute('data-page');
+    document.body.setAttribute('data-page', 'home');
+    return () => {
+      if (prev) document.body.setAttribute('data-page', prev);
+      else document.body.removeAttribute('data-page');
+    };
+  }, []);
   function PrefetchRoutes() {
     const router = useRouter();
     useEffect(() => {
@@ -51,7 +60,7 @@ export default function HomePage() {
           <div className="mt-8 flex items-center justify-center gap-3">
     <Link
       href="/learn"
-      className="btn-primary btn-xl shadow-lg hover:scale-105"
+      className="btn-primary shadow-lg hover:scale-105"
     >
       Optimize Your First Lecture
     </Link>
