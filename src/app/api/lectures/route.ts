@@ -161,14 +161,8 @@ export async function POST(req: NextRequest) {
       if (!file.name.toLowerCase().endsWith('.pdf')) {
         return NextResponse.json({ error: 'Invalid file type. Only PDF files are accepted.' }, { status: 400 });
       }
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const data = await pdf(buffer);
-      text = (data.text || '').replace(/\s{2,}/g, ' ').trim();
-      // If OCR failed or is too thin, keep a vision candidate
-      if (!text || text.length < 200) {
-        visionCandidate = file as File;
-      }
+      // Prefer Vision first for PDFs; keep file for later
+      visionCandidate = file as File;
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
       text = (body?.content || '').toString();
