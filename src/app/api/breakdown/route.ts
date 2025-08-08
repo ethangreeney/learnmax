@@ -3,7 +3,7 @@ import { generateJSON } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
-    const { content } = await req.json();
+    const { content, model } = await req.json();
 
     if (!content) {
       return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       ---
     `;
 
-    const aiResponse = await generateJSON(prompt);
+    const aiResponse = await generateJSON(prompt, model);
     return NextResponse.json(aiResponse);
 
   } catch (error: any) {

@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { BookOpen, Target, BrainCircuit, Flame } from 'lucide-react';
 import { isSessionWithUser } from '@/lib/session-utils';
+import LectureList, { type ClientLecture } from '@/components/LectureList';
 
 function StatCard({
   icon: Icon,
@@ -44,7 +45,10 @@ async function getData() {
     }),
     prisma.lecture.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { starred: 'desc' },
+        { createdAt: 'desc' },
+      ],
       include: {
         _count: { select: { subtopics: true } },
       },
@@ -57,6 +61,13 @@ async function getData() {
 export default async function Dashboard() {
   const { user, lectures } = await getData();
   type LectureItem = typeof lectures[number];
+  const clientLectures: ClientLecture[] = lectures.map((l: any) => ({
+    id: l.id,
+    title: l.title,
+    createdAtISO: new Date(l.createdAt).toISOString(),
+    subtopicCount: l._count.subtopics,
+    starred: l.starred ?? false,
+  }));
 
   return (
     <div className="container-narrow space-y-12">
@@ -108,32 +119,7 @@ export default async function Dashboard() {
       </section>
       <section>
         <h2 className="text-2xl font-semibold">Your Lectures</h2>
-        <div className="mt-6 space-y-4">
-          {lectures.length === 0 && (
-            <div className="text-neutral-400 text-sm">
-              No lectures yet. Create one in the Learn Workspace.
-            </div>
-          )}
-          {lectures.map((lec: LectureItem) => (
-            <div
-              key={lec.id}
-              className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
-            >
-              <div>
-                <h4 className="font-semibold">{lec.title}</h4>
-                <p className="text-sm text-neutral-400">
-                  {new Date(lec.createdAt).toLocaleString()} • {lec._count.subtopics} subtopics
-                </p>
-              </div>
-              <Link
-                href={`/learn/${lec.id}`}
-                className="text-sm font-medium text-white hover:underline"
-              >
-                Open
-              </Link>
-            </div>
-          ))}
-        </div>
+        <LectureList initialLectures={clientLectures} />
       </section>
     </div>
   );

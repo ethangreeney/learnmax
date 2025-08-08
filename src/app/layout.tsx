@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import ContentGate from "@/components/ContentGate";
 import ClientBoundary from '@/components/ClientBoundary';
 import AuthProvider from '@/components/AuthProvider';
+import ModelSelector from '@/components/ModelSelector';
 import Link from 'next/link';
 import './globals.css';
 export const metadata: Metadata = {
@@ -34,7 +35,10 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
-            <ClientBoundary/>
+            <div className="flex items-center gap-4">
+              <ModelSelector />
+              <ClientBoundary/>
+            </div>
           </div>
         </header>
         <main className="py-10">{children}</main>

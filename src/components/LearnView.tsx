@@ -11,7 +11,6 @@ import {
   type QuizQuestion,
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
-import { renameLecture } from '@/lib/client/rename-lecture';
 import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 
 /** Normalize model output so it never renders as one giant code block. */
@@ -82,13 +81,11 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     }
   };
 
-  // Title editing
-  const [title, setTitle] = useState(initial.title);
+  // Title (display-only; rename happens in Dashboard)
+  const title = initial.title;
   const router = useRouter();
   const [isCompleted, setIsCompleted] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
-  const [isSavingTitle, setIsSavingTitle] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   // Explanations cache (sanitized)
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
@@ -128,6 +125,8 @@ const countedIdsRef = useRef<Set<string>>(
       if (!s) return;
       setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
       try {
+        let model: string | undefined;
+        try { model = localStorage.getItem('ai:model') || undefined; } catch {}
         // Our API expects lectureTitle + subtopic and returns { markdown }
         const res = await fetch('/api/explain-db', {
           method: 'POST',
@@ -135,6 +134,7 @@ const countedIdsRef = useRef<Set<string>>(
           body: JSON.stringify({
             lectureTitle: title || initial.title,
             subtopic: s.title,
+            model,
           }),
         });
         if (!res.ok) {
@@ -167,26 +167,7 @@ const countedIdsRef = useRef<Set<string>>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSubtopic?.id]);
 
-  const handleRename = async () => {
-    const newTitle = title.trim();
-    if (!newTitle || newTitle.length < 3) {
-      setSaveMsg('Title must be at least 3 characters.');
-      return;
-    }
-    try {
-      setIsSavingTitle(true);
-      setSaveMsg(null);
-      if (newTitle !== initial.title) {
-        await renameLecture(initial.id, newTitle);
-      }
-      setSaveMsg('Saved!');
-    } catch (e: any) {
-      setSaveMsg(e.message || 'Failed to save.');
-    } finally {
-      setIsSavingTitle(false);
-      setTimeout(() => setSaveMsg(null), 2000);
-    }
-  };
+  // rename removed from lesson page
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 xl:gap-12 px-2 md:px-4">
@@ -220,22 +201,7 @@ const countedIdsRef = useRef<Set<string>>(
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-700 outline-none"
-            aria-label="Lecture title"
-          />
-          <button
-            onClick={handleRename}
-            disabled={isSavingTitle || title.trim().length < 3}
-            className="mt-2 rounded-md bg-white px-4 py-2 text-sm font-medium whitespace-nowrap text-black disabled:opacity-50 sm:mt-0 sm:ml-2"
-          >
-            {isSavingTitle ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-        {saveMsg && <div className="text-xs text-neutral-400">{saveMsg}</div>}
+        {/* Title is managed on the Dashboard now */}
 
         <div className="mt-4 mb-2">
           <div className="text-sm text-neutral-400 uppercase">Title</div>
@@ -326,14 +292,12 @@ const countedIdsRef = useRef<Set<string>>(
 
                   /* END-OF-LECTURE */
                   const isLast = currentIndex === initial.subtopics.length - 1;
-                  // Persist mastery for this subtopic
-                  try {
-                    await fetch('/api/mastery', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
-                    });
-                  } catch {}
+                  // Persist mastery in background (non-blocking)
+                  try { void fetch('/api/mastery', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                  }); } catch {}
 
                   if (isLast) {
                     setIsCompleted(true);
@@ -353,20 +317,7 @@ const countedIdsRef = useRef<Set<string>>(
                     unlockedIndex: Math.max(unlockedIndex, next),
                   });
                   scrollToMainTop();
-
-                  // Persist mastery (duplicate call tolerated)
-                  try {
-                    const res = await fetch('/api/mastery', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
-                    });
-                    if (!res.ok) {
-                      try { console.warn('mastery persist failed', await res.json()); } catch {}
-                    }
-                  } catch (e) {
-                    console.warn('mastery persist error', (e as any)?.message || e);
-                  }
+                  // No duplicate await; background call above
                 }}
               />
             </div>

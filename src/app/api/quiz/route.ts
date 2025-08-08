@@ -108,6 +108,11 @@ function fallbackFromLesson(lessonMd: string): CleanQ {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+    const t0 = Date.now();
+    const preferredModel =
+      typeof (body as any)?.model === 'string' && (body as any).model.trim()
+        ? ((body as any).model as string).trim()
+        : undefined;
     const lessonMd = String(body?.lessonMd || '').trim();
     const subtopicTitle = String(body?.subtopicTitle || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
@@ -148,7 +153,7 @@ ${lessonMd}
 ---`.trim();
 
     // First attempt
-    let json = await generateJSON(basePrompt);
+    let json = await generateJSON(basePrompt, preferredModel);
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
     let grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
@@ -170,7 +175,7 @@ LESSON MARKDOWN:
 ${lessonMd}
 ---`.trim();
 
-      json = await generateJSON(retryPrompt);
+      json = await generateJSON(retryPrompt, preferredModel);
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
       grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
@@ -179,11 +184,11 @@ ${lessonMd}
     // Final fallback — guaranteed grounded
     if (!grounded.length) {
       const fb = fallbackFromLesson(lessonMd);
-      return NextResponse.json({ questions: [fb] });
+      return NextResponse.json({ questions: [fb], debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', ms: Date.now() - t0 } });
     }
 
     // Keep just one good question
-    return NextResponse.json({ questions: [grounded[0]] });
+    return NextResponse.json({ questions: [grounded[0]], debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', ms: Date.now() - t0 } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'quiz failed' }, { status: 500 });
   }

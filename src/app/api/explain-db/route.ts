@@ -38,7 +38,9 @@ export async function POST(req: Request) {
       : styleIn === 'example' ? 'Center the explanation around a concrete, realistic example.'
       : 'Use a balanced, concise explanation.';
 
-    log('IN', { lectureTitle, subtopic, style: styleIn, model: PRIMARY_MODEL });
+    const preferredModel = typeof body?.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
+    const effectiveModel = preferredModel || PRIMARY_MODEL;
+    log('IN', { lectureTitle, subtopic, style: styleIn, model: effectiveModel });
 
     const prompt = [
       `You are writing ONE section of an in-progress lecture.`,
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
       `Keep the tone concise and instructional; use short paragraphs, bullet lists, or small inline examples when useful.`,
     ].join('\n');
 
-    const raw = await generateText(prompt);
+    const raw = await generateText(prompt, preferredModel);
     const markdown = stripPreamble(raw);
     const ms = Date.now() - t0;
 
@@ -60,8 +62,8 @@ export async function POST(req: Request) {
     if (!markdown) {
       return NextResponse.json({ error: 'empty' }, { status: 502 });
     }
-    // Return both keys so callers can pick either.
-    return NextResponse.json({ markdown, explanation: markdown });
+    // Return both keys so callers can pick either, plus light debug info.
+    return NextResponse.json({ markdown, explanation: markdown, debug: { model: effectiveModel, ms } });
   } catch (e: any) {
     const ms = Date.now() - t0;
     err('ERR', { ms, message: e?.message });

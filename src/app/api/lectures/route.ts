@@ -146,9 +146,12 @@ export async function POST(req: NextRequest) {
     const contentType = req.headers.get('content-type') || '';
     let text = '';
 
+    let preferredModel: string | undefined = undefined;
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
       const file = form.get('file');
+      const m = form.get('model');
+      if (typeof m === 'string' && m.trim()) preferredModel = m.trim();
       if (!file || !(file instanceof File)) {
         return NextResponse.json({ error: 'No file provided. Please upload a single PDF.' }, { status: 400 });
       }
@@ -165,6 +168,7 @@ export async function POST(req: NextRequest) {
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
       text = (body?.content || '').toString();
+      if (typeof body?.model === 'string' && body.model.trim()) preferredModel = body.model.trim();
       if (!text.trim()) {
         return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
       }
@@ -192,7 +196,8 @@ export async function POST(req: NextRequest) {
       ---
       ${text}
     `;
-    const bdRaw = await generateJSON(breakdownPrompt);
+    const t0 = Date.now();
+    const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
     const bd = sanitizeBreakdown(bdRaw, text);
 
     // 2) Quiz (robust)
@@ -227,7 +232,10 @@ ${clip(text, 5000)}
 SUBTOPICS (use each overview to focus the question):
 ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title, overview: s.overview })), null, 2)}
 `.trim();
-    const qzRaw = await generateJSON(quizPrompt);
+    const mid = Date.now();
+    const qzRaw = await generateJSON(quizPrompt, preferredModel);
+    const msBreakdown = mid - t0;
+    const msQuiz = Date.now() - mid;
     const qz = sanitizeQuiz(qzRaw, bd.subtopics);
 
     // 3) Persist
@@ -272,7 +280,7 @@ ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title, overview: s.overview }
       return lecture;
     });
 
-    return NextResponse.json({ lectureId: result.id }, { status: 201 });
+    return NextResponse.json({ lectureId: result.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', msBreakdown, msQuiz } }, { status: 201 });
   } catch (e: any) {
     console.error('LECTURES_API_ERROR:', e?.stack || e?.message || e);
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });

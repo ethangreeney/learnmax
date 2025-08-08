@@ -77,12 +77,19 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
     setIsLoading(true);
 
     try {
-      const res = await postJSON<{ response: string }>('/api/chat', {
+      let model: string | undefined;
+      try { model = localStorage.getItem('ai:model') || undefined; } catch {}
+      const res = await postJSON<{ response: string; debug?: { model?: string; ms?: number } }>('/api/chat', {
         userQuestion: input,
         documentContent,
+        model,
       });
       const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
       setHistory(prev => [...prev, aiMessage]);
+      if (res.debug?.ms != null) {
+        const tag = `(${res.debug.model || 'auto'} · ${Math.round(res.debug.ms)} ms)`;
+        setHistory(prev => [...prev, { sender: 'ai', text: tag }]);
+      }
     } catch (error) {
       const errorMessage: Message = { sender: 'ai', text: 'Sorry, I ran into an error. Please try again.' };
       setHistory(prev => [...prev, errorMessage]);

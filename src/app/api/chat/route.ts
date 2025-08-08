@@ -3,7 +3,7 @@ import { generateText } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
-    const { userQuestion, documentContent } = await req.json() as { userQuestion: string, documentContent: string };
+    const { userQuestion, documentContent, model } = await req.json() as { userQuestion: string, documentContent: string, model?: string };
 
     if (!userQuestion) {
       return NextResponse.json({ error: 'A question is required.' }, { status: 400 });
@@ -29,9 +29,12 @@ export async function POST(req: NextRequest) {
       ${userQuestion}
     `;
 
-    const aiTextResponse = await generateText(systemPrompt);
-    
-    return NextResponse.json({ response: aiTextResponse });
+    const t0 = Date.now();
+    const aiTextResponse = await generateText(systemPrompt, model);
+    const ms = Date.now() - t0;
+    const used = model || process.env.GEMINI_MODEL || 'default';
+    // Expose simple timing for debugging UX
+    return NextResponse.json({ response: aiTextResponse, debug: { model: used, ms } });
 
   } catch (error: any) {
     console.error("Error in chat API:", error);

@@ -6,10 +6,12 @@ import { useState } from 'react';
 async function createLectureFromText(
   content: string
 ): Promise<{ lectureId: string }> {
+  let model: string | undefined;
+  try { model = localStorage.getItem('ai:model') || undefined; } catch {}
   const res = await fetch('/api/lectures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, model }),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
@@ -62,7 +64,7 @@ export default function LearnWorkspacePage() {
             disabled={loading || !input.trim()}
             className="rounded-md bg-white px-4 py-2 font-medium text-black disabled:opacity-50"
           >
-            {loading ? 'Creating…' : 'Create Lecture'}
+            {loading ? 'Generating lesson, this may take a while…' : 'Create Lecture'}
           </button>
           <button
             onClick={() => setInput('')}

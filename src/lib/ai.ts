@@ -2,7 +2,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const PRIMARY_MODEL =
-  process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
+  process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-pro';
 
 const apiKey = process.env.GOOGLE_API_KEY;
 if (!apiKey) throw new Error('GOOGLE_API_KEY is not set. Add it to .env.local.');
@@ -36,12 +36,13 @@ function extractFirstJSONObject(text: string): string | null {
 const L = process.env.LOG_AI === '1';
 const log = (...a: any[]) => { if (L) console.log('[ai]', ...a); };
 
-export async function generateText(prompt: string): Promise<string> {
-  const names = [
-    PRIMARY_MODEL,
+export async function generateText(prompt: string, preferredModel?: string): Promise<string> {
+  const names = Array.from(new Set([
+    preferredModel?.trim() || PRIMARY_MODEL,
+    'gemini-2.0-pro',
     'gemini-2.5-flash-lite',
     'gemini-2.0-flash',
-  ];
+  ]));
   let lastErr: any;
 
   for (const name of names) {
@@ -69,8 +70,13 @@ export async function generateText(prompt: string): Promise<string> {
   throw new Error('The AI returned an empty response. ' + (lastErr?.message || ''));
 }
 
-export async function generateJSON(prompt: string): Promise<any> {
-  const names = [PRIMARY_MODEL, 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+export async function generateJSON(prompt: string, preferredModel?: string): Promise<any> {
+  const names = Array.from(new Set([
+    preferredModel?.trim() || PRIMARY_MODEL,
+    'gemini-2.0-pro',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+  ]));
   let lastErr: any;
 
   for (const name of names) {
