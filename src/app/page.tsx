@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { BrainCircuit, Target, FileSearch } from 'lucide-react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 const PillarCard = ({
   icon: Icon,
@@ -26,8 +28,18 @@ const PillarCard = ({
 );
 
 export default function HomePage() {
+  function PrefetchRoutes() {
+    const router = useRouter();
+    useEffect(() => {
+      ['/dashboard', '/learn'].forEach((r) => {
+        try { router.prefetch(r); } catch {}
+      });
+    }, [router]);
+    return null;
+  }
   return (
     <div className="container-narrow" style={{ minHeight: 'calc(100svh - 120px)' }}>
+      <PrefetchRoutes />
       <div className="flex flex-col items-center justify-center text-center min-h-[calc(100svh-160px)] max-w-6xl mx-auto">
         <div className="w-full">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-200 to-neutral-400 leading-[1.18] md:leading-[1.14] lg:leading-[1.12] pb-1.5">

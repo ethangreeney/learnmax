@@ -55,6 +55,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -62,6 +63,15 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
   }, [history]);
+
+  const autosize = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const max = 160; // px, ~5-6 lines
+    el.style.height = Math.min(el.scrollHeight, max) + 'px';
+  };
+  useEffect(() => { autosize(); }, []);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading || !documentContent) {
@@ -74,6 +84,8 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
     const userMessage: Message = { sender: 'user', text: input };
     setHistory(prev => [...prev, userMessage]);
     setInput('');
+    // reset height after clearing
+    setTimeout(autosize, 0);
     setIsLoading(true);
 
     try {
@@ -86,10 +98,6 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
       });
       const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
       setHistory(prev => [...prev, aiMessage]);
-      if (res.debug?.ms != null) {
-        const tag = `(${res.debug.model || 'auto'} · ${Math.round(res.debug.ms)} ms)`;
-        setHistory(prev => [...prev, { sender: 'ai', text: tag }]);
-      }
     } catch (error) {
       const errorMessage: Message = { sender: 'ai', text: 'Sorry, I ran into an error. Please try again.' };
       setHistory(prev => [...prev, errorMessage]);
@@ -104,13 +112,13 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
         <h3 className="font-semibold text-lg">AI Tutor</h3>
       </header>
 
-      <div ref={scrollContainerRef} className="flex-1 p-4 space-y-6 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 p-4 space-y-4 overflow-y-auto">
         {history.map((msg, index) => (
           <div key={index} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
             {msg.sender === 'ai' && <div className="flex-shrink-0 w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center"><Bot className="w-5 h-5" /></div>}
-            <div className={`max-w-xs md:max-w-md rounded-lg px-4 py-2 ${msg.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-neutral-800'}`}>
+            <div className={`max-w-xs md:max-w-md rounded-lg px-3 py-2 ${msg.sender === 'user' ? 'bg-[rgb(var(--accent))] text-black' : 'bg-neutral-800'}`}>
               {msg.sender === 'ai' ? (
-                <div className="markdown text-sm">
+                <div className="markdown chat-md text-sm">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {msg.text}
                   </ReactMarkdown>
@@ -133,10 +141,12 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
       </div>
 
       <footer className="p-4 border-t border-neutral-800">
-        <div className="relative">
+        <div className="flex items-center gap-2">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onInput={autosize}
             onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -144,11 +154,16 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
                 }
             }}
             placeholder="Ask about the content..."
-            className="input pr-12 pl-4 py-2 resize-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))]"
+            className="input flex-1 pl-4 py-2 resize-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))] bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.35)] placeholder:text-neutral-400"
             rows={1}
+            style={{ minHeight: 44, maxHeight: 160, overflowY: 'auto' }}
             disabled={isLoading || !documentContent}
           />
-          <button onClick={handleSendMessage} disabled={isLoading || !input.trim() || !documentContent} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50">
+          <button
+            onClick={handleSendMessage}
+            disabled={isLoading || !input.trim() || !documentContent}
+            className="rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50 h-[44px] w-[44px] md:h-[48px] md:w-[48px] flex items-center justify-center"
+          >
             <Send className="w-4 h-4" />
           </button>
         </div>

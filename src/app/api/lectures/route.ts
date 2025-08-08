@@ -238,49 +238,58 @@ ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title, overview: s.overview }
     const msQuiz = Date.now() - mid;
     const qz = sanitizeQuiz(qzRaw, bd.subtopics);
 
-    // 3) Persist
-    const result = await prisma.$transaction(async (tx: TransactionClient) => {
-      const lecture = await tx.lecture.create({
-        data: { title: bd.topic || 'Untitled', originalContent: text, userId },
-      });
-
-      const subtopics = await Promise.all(
-        bd.subtopics.map((s, idx) =>
-          tx.subtopic.create({
-            data: {
-              order: idx,
-              title: s.title,
-              importance: s.importance,
-              difficulty: s.difficulty,
-              overview: s.overview || '',
-              lectureId: lecture.id,
-            },
-          })
-        )
-      );
-
-      const byTitle = new Map<string, string>();
-      for (const st of subtopics) byTitle.set(st.title.trim().toLowerCase(), st.id);
-
-      for (const q of qz.questions) {
-        const matchTitle = (q.subtopicTitle || '').trim().toLowerCase();
-        const subtopicId = byTitle.get(matchTitle) ?? subtopics[0]?.id;
-        if (!subtopicId) continue;
-        await tx.quizQuestion.create({
-          data: {
-            prompt: q.prompt,
-            options: q.options as unknown as any,
-            answerIndex: q.answerIndex,
-            explanation: q.explanation,
-            subtopicId,
-          },
-        });
-      }
-
-      return lecture;
+    // 3) Persist (non-interactive writes to avoid long-lived transaction issues)
+    const lecture = await prisma.lecture.create({
+      data: { title: bd.topic || 'Untitled', originalContent: text, userId },
     });
 
-    return NextResponse.json({ lectureId: result.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', msBreakdown, msQuiz } }, { status: 201 });
+    // Insert subtopics
+    await prisma.subtopic.createMany({
+      data: bd.subtopics.map((s, idx) => ({
+        order: idx,
+        title: s.title,
+        importance: s.importance,
+        difficulty: s.difficulty,
+        overview: s.overview || '',
+        lectureId: lecture.id,
+      })),
+    });
+
+    // Fetch inserted subtopics to build title→id map
+    const subtopics = await prisma.subtopic.findMany({
+      where: { lectureId: lecture.id },
+      orderBy: { order: 'asc' },
+      select: { id: true, title: true },
+    });
+    const byTitle = new Map<string, string>();
+    for (const st of subtopics) byTitle.set(st.title.trim().toLowerCase(), st.id);
+
+    // Prepare quiz inserts
+    const quizData = qz.questions
+      .map((q) => {
+        const matchTitle = (q.subtopicTitle || '').trim().toLowerCase();
+        const subtopicId = byTitle.get(matchTitle) ?? subtopics[0]?.id;
+        if (!subtopicId) return null;
+        return {
+          prompt: q.prompt,
+          options: q.options as unknown as any,
+          answerIndex: q.answerIndex,
+          explanation: q.explanation,
+          subtopicId,
+        };
+      })
+      .filter(Boolean) as Array<{
+        prompt: string;
+        options: any;
+        answerIndex: number;
+        explanation: string;
+        subtopicId: string;
+      }>;
+    if (quizData.length) {
+      await prisma.quizQuestion.createMany({ data: quizData });
+    }
+
+    return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', msBreakdown, msQuiz } }, { status: 201 });
   } catch (e: any) {
     console.error('LECTURES_API_ERROR:', e?.stack || e?.message || e);
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });

@@ -6,6 +6,8 @@ import { redirect } from 'next/navigation';
 import { BookOpen, Target, BrainCircuit, Flame } from 'lucide-react';
 import { isSessionWithUser } from '@/lib/session-utils';
 import LectureList, { type ClientLecture } from '@/components/LectureList';
+import { Suspense } from 'react';
+import { getLecturesCached, getUserStatsCached } from '@/lib/cached';
 
 function StatCard({
   icon: Icon,
@@ -36,30 +38,16 @@ async function getData() {
   }
   const userId = session.user.id;
 
-  const [user, lectures] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        masteredSubtopics: true, // ensure this relation is loaded
-      },
-    }),
-    prisma.lecture.findMany({
-      where: { userId },
-      orderBy: [
-        { starred: 'desc' },
-        { createdAt: 'desc' },
-      ],
-      include: {
-        _count: { select: { subtopics: true } },
-      },
-    }),
+  const [{ user: userLite, masteredCount }, lectures] = await Promise.all([
+    getUserStatsCached(userId),
+    getLecturesCached(userId),
   ]);
 
-  return { user, lectures };
+  return { user: userLite, masteredCount, lectures };
 }
 
 export default async function Dashboard() {
-  const { user, lectures } = await getData();
+  const { user, masteredCount, lectures } = await getData();
   type LectureItem = typeof lectures[number];
   const clientLectures: ClientLecture[] = lectures.map((l: any) => ({
     id: l.id,
@@ -87,7 +75,7 @@ export default async function Dashboard() {
           />
           <StatCard
             label="Subtopics Mastered"
-            value={user?.masteredSubtopics ? user.masteredSubtopics.length : 0}
+            value={masteredCount ?? 0}
             icon={Target}
             color="text-green-400"
           />
@@ -119,7 +107,13 @@ export default async function Dashboard() {
       </section>
       <section>
         <h2 className="text-2xl font-semibold">Your Lectures</h2>
-        <LectureList initialLectures={clientLectures} />
+        <Suspense fallback={<div className="mt-6 text-sm text-neutral-500">Loading your lectures…</div>}>
+          {/* Already fetched above, but Suspense boundary lets the header paint instantly if cache misses */}
+          <LectureList initialLectures={clientLectures} />
+        </Suspense>
+        {lectures.length >= 50 && (
+          <p className="mt-2 text-sm text-neutral-500">Showing latest 50. Older lectures are available via search; we can add paging if you need it.</p>
+        )}
       </section>
     </div>
   );

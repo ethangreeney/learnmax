@@ -41,6 +41,11 @@ html, body { height: 100%; }
 .input { @apply w-full rounded-md bg-neutral-900/80 px-3 py-2 ring-1 ring-neutral-700 outline-none text-sm; }
 .muted { color: rgb(var(--muted)); }
 
+/* Compact markdown for chat bubbles */
+.chat-md p, .chat-md ul, .chat-md ol { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+.chat-md p:first-child, .chat-md ul:first-child, .chat-md ol:first-child { margin-top: 0; }
+.chat-md p:last-child, .chat-md ul:last-child, .chat-md ol:last-child { margin-bottom: 0; }
+
 /* Size modifiers */
 .btn-xl { @apply text-lg px-6 py-3; }
 
