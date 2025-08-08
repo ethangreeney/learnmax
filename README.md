@@ -4,7 +4,11 @@
 
 LearnMax is a full-stack web application built with Next.js that revolutionizes studying. Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science principles, powered by the Google Gemini API, to deconstruct complex materials, generate focused learning modules, and verify your understanding every step of the way.
 
- <!-- It's highly recommended to add a screenshot of your app's dashboard or learn page -->
+ <img width="1470" height="787" alt="image" src="https://github.com/user-attachments/assets/7a9cf5ec-03a4-4bb6-a700-34deed0735b1" />
+<img width="1470" height="789" alt="image" src="https://github.com/user-attachments/assets/5af0e37a-c1bb-4262-bf60-757bd4c7cfcc" />
+<img width="725" height="575" alt="image" src="https://github.com/user-attachments/assets/8b784b6d-8fa2-4a49-a4d8-12aec793ef46" />
+
+
 
 ---
 
