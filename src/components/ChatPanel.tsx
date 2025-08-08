@@ -99,8 +99,8 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full rounded-lg border border-neutral-800 bg-neutral-900/50">
-      <header className="flex items-center justify-between p-4 border-b border-neutral-800">
+    <div className="flex flex-col h-full card">
+      <header className="flex items-center justify-between p-4 border-b border-neutral-800/80">
         <h3 className="font-semibold text-lg">AI Tutor</h3>
       </header>
 
@@ -144,11 +144,11 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
                 }
             }}
             placeholder="Ask about the content..."
-            className="w-full rounded-md bg-neutral-800 pr-12 pl-4 py-2 resize-none ring-1 ring-transparent focus:ring-blue-500 outline-none"
+            className="input pr-12 pl-4 py-2 resize-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))]"
             rows={1}
             disabled={isLoading || !documentContent}
           />
-          <button onClick={handleSendMessage} disabled={isLoading || !input.trim() || !documentContent} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-md bg-blue-600 text-white disabled:opacity-50">
+          <button onClick={handleSendMessage} disabled={isLoading || !input.trim() || !documentContent} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50">
             <Send className="w-4 h-4" />
           </button>
         </div>

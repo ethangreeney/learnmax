@@ -19,7 +19,7 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col gap-4">
+    <div className="card p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <span className="text-neutral-400">{label}</span>
         <Icon className={`w-6 h-6 ${color}`} />
@@ -104,14 +104,14 @@ export default async function Dashboard() {
             color="text-orange-400"
           />
         </div>
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 flex flex-col items-center justify-center text-center gap-4">
+        <div className="card p-6 flex flex-col items-center justify-center text-center gap-4">
           <h3 className="text-xl font-semibold">Ready to Learn?</h3>
           <p className="text-neutral-400 text-sm">
             Create a lecture from text or PDF in the Learn Workspace.
           </p>
           <Link
             href="/learn"
-            className="w-full rounded-md bg-white px-6 py-3 text-black font-semibold shadow-md transition-transform hover:scale-105"
+            className="w-full btn-primary px-6 py-3 font-semibold transition-transform hover:scale-105"
           >
             Go to Workspace
           </Link>

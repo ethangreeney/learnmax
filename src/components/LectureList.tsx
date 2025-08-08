@@ -22,10 +22,7 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
         <div className="text-neutral-400 text-sm">No lectures yet. Create one in the Learn Workspace.</div>
       )}
       {lectures.map((lec) => (
-        <div
-          key={lec.id}
-          className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
-        >
+        <div key={lec.id} className="card p-4 flex items-center justify-between hover:bg-neutral-900 transition-colors">
           <div>
             <h4 className="font-semibold">{lec.title}</h4>
             <p className="text-sm text-neutral-400">

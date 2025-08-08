@@ -23,10 +23,10 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
         <AuthProvider>
-        <header className="py-8 border-b border-neutral-900">
+        <header className="app-header py-6">
           <div className="container-narrow flex items-center justify-between">
-            <Link href="/" className="text-2xl font-semibold tracking-tight hover:text-white transition-colors">
-              LearnMax
+            <Link href="/" className="text-xl font-semibold tracking-tight hover:opacity-90 transition-opacity">
+              <span className="bg-gradient-to-r from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">LearnMax</span>
             </Link>
             <nav className="flex items-center gap-4 text-sm text-neutral-300">
               {navLinks.map((link, index) => (
@@ -35,7 +35,7 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <ModelSelector />
               <ClientBoundary/>
             </div>

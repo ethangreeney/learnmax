@@ -50,9 +50,9 @@ export default function LearnWorkspacePage() {
         </p>
       </header>
 
-      <div className="space-y-4 rounded-lg border border-neutral-800 p-4">
+      <div className="space-y-4 card p-5">
         <textarea
-          className="min-h-[160px] w-full rounded-md bg-neutral-900 p-3 ring-1 ring-neutral-700 outline-none"
+          className="min-h-[160px] input"
           placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -62,14 +62,14 @@ export default function LearnWorkspacePage() {
           <button
             onClick={handleCreate}
             disabled={loading || !input.trim()}
-            className="rounded-md bg-white px-4 py-2 font-medium text-black disabled:opacity-50"
+            className="btn-primary disabled:opacity-50"
           >
             {loading ? 'Generating lesson, this may take a while…' : 'Create Lecture'}
           </button>
           <button
             onClick={() => setInput('')}
             disabled={loading}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-neutral-200 disabled:opacity-50"
+            className="btn-ghost disabled:opacity-50"
           >
             Reset
           </button>

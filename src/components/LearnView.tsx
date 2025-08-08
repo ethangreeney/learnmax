@@ -233,7 +233,7 @@ const countedIdsRef = useRef<Set<string>>(
       <main ref={mainRef} className="lg:col-span-6">
         {currentSubtopic ? (
           <div className="space-y-8">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
+            <div className="card p-6 md:p-8 xl:p-10">
               <h3 className="text-3xl font-bold tracking-tight">{currentSubtopic.title}</h3>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
                 <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
@@ -274,7 +274,7 @@ const countedIdsRef = useRef<Set<string>>(
               </div>
             </div>
 
-            <div className="quiz-panel rounded-lg border border-neutral-800 bg-neutral-900/50 p-6 md:p-8 xl:p-10">
+            <div className="quiz-panel card p-6 md:p-8 xl:p-10">
               <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
               <QuizPanel
                 key={currentSubtopic.id}

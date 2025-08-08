@@ -27,8 +27,8 @@ const PillarCard = ({
 
 export default function HomePage() {
   return (
-    <div className="container-narrow">
-      <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-180px)] max-w-6xl mx-auto">
+    <div className="container-narrow" style={{ minHeight: 'calc(100svh - 120px)' }}>
+      <div className="flex flex-col items-center justify-center text-center min-h-[calc(100svh-160px)] max-w-6xl mx-auto">
         <div className="w-full">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-200 to-neutral-400 leading-[1.18] md:leading-[1.14] lg:leading-[1.12] pb-1.5">
             The Science of Learning, Perfected by AI.
@@ -39,7 +39,7 @@ export default function HomePage() {
           <div className="mt-8 flex items-center justify-center gap-3">
     <Link
       href="/learn"
-      className="inline-flex items-center gap-3 rounded-md bg-white px-6 py-3 text-base text-black font-semibold shadow-lg transition-transform hover:scale-105"
+      className="btn-primary btn-xl shadow-lg hover:scale-105"
     >
       Optimize Your First Lecture
     </Link>
