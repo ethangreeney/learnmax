@@ -5,6 +5,7 @@ import AuthProvider from '@/components/AuthProvider';
 import ModelSelector from '@/components/ModelSelector';
 import Link from 'next/link';
 import './globals.css';
+import 'katex/dist/katex.min.css';
 export const metadata: Metadata = {
   title: 'LearnMax — Your AI Study Companion',
   description: 'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',

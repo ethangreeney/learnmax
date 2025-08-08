@@ -39,21 +39,21 @@ export default function CompletePage() {
     >
       <div className="relative w-full max-w-4xl"
            style={{ transform: "translateY(var(--complete-y, -48px))" }}>
-        {/* Greener, still-soft, symmetric halo (Tailwind green palette tone) */}
+        {/* Even softer halo */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -inset-x-24 -inset-y-12 rounded-[32px] blur-xl"
+          className="pointer-events-none absolute -inset-x-16 -inset-y-8 rounded-[32px] blur-md"
           style={{
             /* green-500 rgb(34,197,94) */
             background:
-              "radial-gradient(120% 85% at 50% 50%, rgba(34,197,94,0.28) 0%, rgba(34,197,94,0.14) 42%, rgba(34,197,94,0.07) 62%, transparent 76%)",
+              "radial-gradient(120% 85% at 50% 50%, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.05) 42%, rgba(34,197,94,0.025) 62%, transparent 76%)",
           }}
         />
         {/* Balanced outer softness */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 rounded-[24px]"
-          style={{ boxShadow: "0 0 90px rgba(34,197,94,0.28), 0 0 36px rgba(34,197,94,0.16)" }}
+          style={{ boxShadow: "0 0 36px rgba(34,197,94,0.10), 0 0 12px rgba(34,197,94,0.06)" }}
         />
         {/* Card */}
         <div className="relative rounded-2xl border border-green-400/30 bg-neutral-900/70 backdrop-blur-sm p-10 text-center">

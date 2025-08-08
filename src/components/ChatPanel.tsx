@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, User, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 
 // Normalize to avoid whole-message fenced blocks.
@@ -119,7 +121,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
             <div className={`max-w-xs md:max-w-md rounded-lg px-3 py-2 ${msg.sender === 'user' ? 'bg-[rgb(var(--accent))] text-black' : 'bg-neutral-800'}`}>
               {msg.sender === 'ai' ? (
                 <div className="markdown chat-md text-sm">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                     {msg.text}
                   </ReactMarkdown>
                 </div>

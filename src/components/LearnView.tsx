@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import ChatPanel from '@/components/ChatPanel';
 import {
   deriveUnlockedIndex,
@@ -134,6 +136,8 @@ const countedIdsRef = useRef<Set<string>>(
           body: JSON.stringify({
             lectureTitle: title || initial.title,
             subtopic: s.title,
+            lectureId: initial.id,
+            documentContent: initial.originalContent,
             model,
           }),
         });
@@ -268,7 +272,7 @@ const countedIdsRef = useRef<Set<string>>(
               </div>
               <hr className="my-6 border-neutral-800" />
               <div id="lesson-markdown" data-lesson="markdown" className="markdown">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                   {explanations[currentSubtopic.id] || 'Crafting learning module...'}
                 </ReactMarkdown>
               </div>
@@ -376,6 +380,8 @@ function QuizPanel({
   const [revealed, setRevealed] = useState(false);
   const [loadingAnother, setLoadingAnother] = useState(false);
   const [hardLoaded, setHardLoaded] = useState(false);
+  const REQUIRED_QUESTIONS = 2;
+  const hasRequired = items.length >= REQUIRED_QUESTIONS;
 
   // Reset when subtopic questions change
   useEffect(() => {
@@ -393,13 +399,14 @@ function QuizPanel({
 
   const allCorrect =
     items && items.length > 0 && items.every((q, i) => answers[i] === q.answerIndex);
+  const twoCorrect = hasRequired && answers[0] === items[0]?.answerIndex && answers[1] === items[1]?.answerIndex;
 
   const check = () => setRevealed(true);
   const tryAgain = () => setRevealed(false);
 
-  // Once lesson content exists, fetch a harder question that uses it.
+  // Optionally fetch a harder question from lesson content, only if we have < REQUIRED_QUESTIONS
   useEffect(() => {
-    if (!hasLesson || hardLoaded) return;
+    if (!hasLesson || hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
     const payload = (lessonMd || '').trim();
     if (payload.length < 50) return;
 
@@ -426,7 +433,7 @@ function QuizPanel({
           answerIndex: q.answerIndex,
           explanation: q.explanation,
         };
-        setItems([newQ]);
+        setItems((prev) => (prev.length >= REQUIRED_QUESTIONS ? prev : [...prev, newQ]));
         setAnswers([]);
         setRevealed(false);
         setHardLoaded(true);
@@ -434,7 +441,7 @@ function QuizPanel({
         // Keep seed question if API fails
       }
     })();
-  }, [hasLesson, lessonMd, hardLoaded]);
+  }, [hasLesson, lessonMd, hardLoaded, items.length]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
@@ -465,7 +472,7 @@ function QuizPanel({
         answerIndex: q.answerIndex,
         explanation: q.explanation,
       };
-      setItems([newQ]);
+      setItems((prev) => (prev.length >= REQUIRED_QUESTIONS ? prev : [...prev, newQ]));
       setAnswers([]);
       setRevealed(false);
     } catch (_e) {
@@ -492,8 +499,8 @@ function QuizPanel({
       setLoadingAnother(false);
     }
   };
-  if (hasLesson && !hardLoaded) {
-    return <p className="text-sm text-neutral-400">Generating a question from the lesson…</p>;
+  if (hasLesson && items.length < REQUIRED_QUESTIONS && !hardLoaded) {
+    return <p className="text-sm text-neutral-400">Preparing questions…</p>;
   }
 
 
@@ -557,15 +564,8 @@ function QuizPanel({
           </button>
         )}
 
-        {revealed && allCorrect && (
+        {revealed && twoCorrect && (
           <>
-            <button
-              onClick={askAnother}
-              disabled={loadingAnother}
-              className="rounded-md border border-neutral-600 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50"
-            >
-              {loadingAnother ? 'Generating…' : 'Ask me another question'}
-            </button>
             <button
               onClick={onPassed}
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
