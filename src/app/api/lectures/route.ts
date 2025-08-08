@@ -165,10 +165,19 @@ export async function POST(req: NextRequest) {
       visionCandidate = file as File;
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
-      text = (body?.content || '').toString();
       if (typeof body?.model === 'string' && body.model.trim()) preferredModel = body.model.trim();
-      if (!text.trim()) {
-        return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
+      const blobUrl = String(body?.blobUrl || '').trim();
+      const content = String(body?.content || '').trim();
+      if (blobUrl) {
+        // Stream PDF from Blob URL, prefer vision
+        const resp = await fetch(blobUrl);
+        if (!resp.ok) return NextResponse.json({ error: 'Could not fetch blob' }, { status: 400 });
+        const arr = Buffer.from(await resp.arrayBuffer());
+        // Route to vision path via temp File shim
+        visionCandidate = new File([arr], 'upload.pdf', { type: 'application/pdf' }) as any;
+      } else {
+        text = content;
+        if (!text) return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
       }
     } else {
       return NextResponse.json({ error: 'Unsupported content type.' }, { status: 415 });

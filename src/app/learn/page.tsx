@@ -68,7 +68,7 @@ export default function LearnWorkspacePage() {
             disabled={loading || !input.trim()}
             className="btn-primary disabled:opacity-50"
           >
-            {loading ? 'Generating lesson, this may take a while…' : 'Create Lecture'}
+            {loading || uploading ? 'Generating lesson, this may take a while…' : 'Create Lecture'}
           </button>
           <button
             onClick={() => setInput('')}
