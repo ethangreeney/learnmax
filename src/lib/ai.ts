@@ -2,7 +2,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const PRIMARY_MODEL =
-  process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-pro';
+  process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
 
 const apiKey = process.env.GOOGLE_API_KEY;
 if (!apiKey) throw new Error('GOOGLE_API_KEY is not set. Add it to .env.local.');

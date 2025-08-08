@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdf from 'pdf-extraction';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { generateJSON } from '@/lib/ai';
@@ -147,6 +149,7 @@ export async function POST(req: NextRequest) {
     let text = '';
 
     let preferredModel: string | undefined = undefined;
+    let visionCandidate: File | null = null;
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
       const file = form.get('file');
@@ -162,8 +165,9 @@ export async function POST(req: NextRequest) {
       const buffer = Buffer.from(arrayBuffer);
       const data = await pdf(buffer);
       text = (data.text || '').replace(/\s{2,}/g, ' ').trim();
-      if (!text) {
-        return NextResponse.json({ error: 'Could not extract text from the PDF. The file may only contain images.' }, { status: 422 });
+      // If OCR failed or is too thin, keep a vision candidate
+      if (!text || text.length < 200) {
+        visionCandidate = file as File;
       }
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
@@ -174,6 +178,64 @@ export async function POST(req: NextRequest) {
       }
     } else {
       return NextResponse.json({ error: 'Unsupported content type.' }, { status: 415 });
+    }
+
+    // Optional: vision path when OCR is thin
+    if (!text && visionCandidate) {
+      try {
+        const apiKey = process.env.GOOGLE_API_KEY;
+        if (!apiKey) throw new Error('GOOGLE_API_KEY not set');
+        const client = new GoogleGenerativeAI(apiKey);
+        const files = new GoogleAIFileManager(apiKey);
+        const buf = Buffer.from(await visionCandidate.arrayBuffer());
+        const uploaded = await files.uploadFile(buf, { mimeType: 'application/pdf', displayName: (visionCandidate as any).name || 'upload.pdf' });
+        let fileRec: any = uploaded.file;
+        const tStart = Date.now();
+        while (fileRec.state !== 'ACTIVE') {
+          if (Date.now() - tStart > 45000) throw new Error('vision timeout');
+          await new Promise((r) => setTimeout(r, 1200));
+          fileRec = await files.getFile(fileRec.name);
+        }
+        const model = client.getGenerativeModel({ model: preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash' });
+        const visionPrompt = [
+          'Analyze this PDF (text + images). Return ONLY JSON with:',
+          '{ "topic": string, "subtopics": [ { "title": string, "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string } ] }'
+        ].join('\n');
+        const res = await model.generateContent([
+          { fileData: { fileUri: fileRec.uri, mimeType: 'application/pdf' } },
+          { text: visionPrompt },
+        ]);
+        const out = res.response.text?.() || '';
+        const parsed = JSON.parse(out);
+        // Use parsed results as breakdown
+        const bdFromVision = {
+          topic: String(parsed?.topic || 'Untitled'),
+          subtopics: Array.isArray(parsed?.subtopics) ? parsed.subtopics.map((s: any) => ({
+            title: String(s?.title || ''),
+            importance: String(s?.importance || 'medium'),
+            difficulty: Number(s?.difficulty || 2),
+            overview: String(s?.overview || ''),
+          })) : []
+        } as Breakdown;
+        // Fall through using bdFromVision instead of AI breakdown
+        // 3) Persist directly
+        const lecture = await prisma.lecture.create({ data: { title: bdFromVision.topic || 'Untitled', originalContent: 'PDF (vision) upload', userId } });
+        if (bdFromVision.subtopics.length) {
+          await prisma.subtopic.createMany({
+            data: bdFromVision.subtopics.map((s, idx) => ({
+              order: idx,
+              title: s.title || `Section ${idx + 1}`,
+              importance: s.importance,
+              difficulty: s.difficulty,
+              overview: s.overview || '',
+              lectureId: lecture.id,
+            })),
+          });
+        }
+        return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash', usedVision: true } }, { status: 201 });
+      } catch (e) {
+        // If vision fails, continue to text-only path
+      }
     }
 
     // 1) Breakdown (robust)

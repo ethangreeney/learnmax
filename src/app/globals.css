@@ -20,7 +20,16 @@ body {
   --muted: 163 163 163;
 }
 
-body { background: radial-gradient(120% 80% at 20% -10%, rgba(34, 197, 94, 0.06) 0%, rgba(0,0,0,0) 50%), rgb(var(--bg)); color: rgb(245 245 245); }
+body {
+  background: radial-gradient(120% 80% at 20% -10%, rgba(34, 197, 94, 0.06) 0%, rgba(0,0,0,0) 50%), rgb(var(--bg));
+  /* Prevent the radial gradient from tiling, which causes repeating green bands */
+  background-repeat: no-repeat, no-repeat;
+  /* Keep the gradient anchored to the viewport */
+  background-attachment: fixed, fixed;
+  /* Make the gradient cover the viewport width; keep the base color layer auto */
+  background-size: 160% 100%, auto;
+  color: rgb(245 245 245);
+}
 html, body { height: 100%; }
 
 .container-narrow {
