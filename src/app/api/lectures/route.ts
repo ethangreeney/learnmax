@@ -12,6 +12,7 @@ type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+const DEFAULT_TITLE = 'Generating lesson... Please Wait';
 
 type BreakdownSubtopic = {
   title: string;
@@ -64,7 +65,7 @@ function sanitizeBreakdown(raw: any, text: string): Breakdown {
   const topic =
     typeof raw?.topic === 'string' && raw.topic.trim()
       ? raw.topic.trim()
-      : 'Untitled';
+      : DEFAULT_TITLE;
 
   let subs: BreakdownSubtopic[] = [];
   if (Array.isArray(raw?.subtopics)) {
@@ -93,7 +94,7 @@ function sanitizeBreakdown(raw: any, text: string): Breakdown {
     const firstChunk = clip(text, 500);
     subs = [
       {
-        title: topic !== 'Untitled' ? `${topic} — Overview` : 'Overview',
+        title: topic !== DEFAULT_TITLE ? `${topic} — Overview` : 'Overview',
         importance: 'high',
         difficulty: 1,
         overview: firstChunk || 'Overview of the provided content.',
@@ -395,7 +396,7 @@ export async function POST(req: NextRequest) {
     // If this was plain text input, create a lecture record immediately and return.
     if (wasPlainTextInput) {
       const lecture = await prisma.lecture.create({
-        data: { title: 'Untitled', originalContent: sanitizeDbText(text), userId },
+        data: { title: DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId },
       });
       try { await bumpDailyStreak(userId); } catch {}
       return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
@@ -475,13 +476,13 @@ export async function POST(req: NextRequest) {
         } catch {}
         // 3) Persist directly, storing extracted text when available
         const originalContent = extracted || 'PDF (vision) upload';
-    const lecture = await prisma.lecture.create({ data: { title: bdFromVision.topic || 'Untitled', originalContent: sanitizeDbText(originalContent), userId } });
+    const lecture = await prisma.lecture.create({ data: { title: bdFromVision.topic || DEFAULT_TITLE, originalContent: sanitizeDbText(originalContent), userId } });
     // Count lecture generation towards streak
     await bumpDailyStreak(userId);
         if (bdFromVision.subtopics.length) {
           // Cap to avoid long generation
-          const subcaps = bdFromVision.subtopics.length > 12
-            ? await selectTopSubtopics(bdFromVision.subtopics, preferredModel, 12)
+          const subcaps = bdFromVision.subtopics.length > 15
+            ? await selectTopSubtopics(bdFromVision.subtopics, preferredModel, 15)
             : bdFromVision.subtopics;
           // Generate explanation for the FIRST subtopic only; others deferred until viewed
           const firstOnly = subcaps.slice(0, 1);
@@ -564,7 +565,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
     // EARLY RETURN for PDF uploads as well: create minimal lecture and allow client to stream subtopics.
     if (pdfBuffer) {
       const originalContent = sanitizeDbText(text || 'PDF upload');
-      const lecture = await prisma.lecture.create({ data: { title: 'Untitled', originalContent, userId } });
+      const lecture = await prisma.lecture.create({ data: { title: DEFAULT_TITLE, originalContent, userId } });
       try { await bumpDailyStreak(userId); } catch {}
       return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
     }
@@ -573,11 +574,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
     }
 
     // 1) Breakdown (robust)
-    // Heuristic target subtopic count for coverage across the whole document
     const charLen = text.length;
-    const targetByChars = Math.max(8, Math.min(80, Math.round(charLen / 4000) * 5));
-    const targetByPages = approxPages ? Math.max(8, Math.min(80, Math.round(approxPages * 0.6))) : 0;
-    const targetSubtopics = targetByPages || targetByChars;
 
     const breakdownPrompt = `
       You are an expert instructional designer. Create an exhaustive, sequential breakdown of the entire document below.
@@ -586,7 +583,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
       - Preserve the original document order from start to finish.
       - Be concise but complete: each subtopic should map to a coherent portion of the document.
-      - Aim for approximately ${targetSubtopics} subtopics given document length (pages ~ ${approxPages || 'unknown'}, chars ~ ${charLen}). Use up to 80 if needed.
+      - Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
 
       Return ONLY a single JSON object with exactly these keys:
       {
@@ -609,7 +606,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
     const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
     let bd = sanitizeBreakdown(bdRaw, text);
     // Select coverage-maximizing subtopics up to cap
-    const MAX_SUBTOPICS = 12;
+    const MAX_SUBTOPICS = 15;
     if (bd.subtopics.length > MAX_SUBTOPICS) {
       const picked = await selectTopSubtopics(bd.subtopics, preferredModel, MAX_SUBTOPICS);
       bd = { ...bd, subtopics: picked };
@@ -648,13 +645,13 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
 
     // 3) Persist (non-interactive writes to avoid long-lived transaction issues)
     const lecture = await prisma.lecture.create({
-      data: { title: bd.topic || 'Untitled', originalContent: sanitizeDbText(text), userId },
+      data: { title: bd.topic || DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId },
     });
     // Count lecture generation towards streak
     await bumpDailyStreak(userId);
 
     // Generate explanation for FIRST subtopic only; others deferred until viewed
-    const titleForLecture = bd.topic || 'Untitled';
+    const titleForLecture = bd.topic || DEFAULT_TITLE;
     const firstOnly = bd.subtopics.slice(0, 1);
     const sectionMap = await generateSectionMarkdowns(titleForLecture, text, firstOnly, preferredModel);
 

@@ -18,7 +18,9 @@ import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 /** Normalize model output so it never renders as one giant code block. */
 function sanitizeMarkdown(md: string): string {
   if (!md) return md;
-  let t = md.trim();
+  // Do NOT trim here. Trimming breaks streaming by removing leading spaces
+  // that can arrive at chunk boundaries, causing words to concatenate.
+  let t = md;
 
   // 1) Unwrap a single full-document fenced block (```md / ```markdown / ``` / any)
   const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
@@ -89,6 +91,21 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   const [isCompleted, setIsCompleted] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
   const [streaming, setStreaming] = useState(false);
+
+  // Prevent duplicate quiz generation across preloader and panel
+  const questionsInFlightRef = useRef<Set<string>>(new Set());
+  const reserveQuestions = useCallback((id: string): boolean => {
+    const s = questionsInFlightRef.current;
+    if (s.has(id)) return false;
+    s.add(id);
+    return true;
+  }, []);
+
+  // Track which subtopics have been prefetched to avoid missing/duplicate work
+  const prefetchedNextRef = useRef<Set<string>>(new Set());
+  const releaseQuestions = useCallback((id: string): void => {
+    questionsInFlightRef.current.delete(id);
+  }, []);
 
   // Explanations cache (sanitized)
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
@@ -247,7 +264,9 @@ const countedIdsRef = useRef<Set<string>>(
     const nextIndex = currentIndex + 1;
     if (nextIndex < initial.subtopics.length) {
       const next = initial.subtopics[nextIndex];
-      if (next && !explanations[next.id]) {
+      if (next && !prefetchedNextRef.current.has(next.id)) {
+        // Mark as prefetched to guard against StrictMode double effects
+        prefetchedNextRef.current.add(next.id);
         // fire-and-forget preload
         (async () => {
           try {
@@ -273,7 +292,58 @@ const countedIdsRef = useRef<Set<string>>(
             const data = (await res.json()) as { markdown?: string };
             const md = sanitizeMarkdown(data.markdown || '');
             setExplanations((e) => ({ ...e, [next.id]: md || 'No content generated.' }));
-          } catch {}
+
+            // Preload quiz questions for the next subtopic as well
+            try {
+              if (!reserveQuestions(next.id)) return;
+              const REQUIRED_QUESTIONS = 2;
+              const existing = Array.isArray(next.questions) ? next.questions.length : 0;
+              let needed = Math.max(0, REQUIRED_QUESTIONS - existing);
+              const lessonPayload = (md || '').trim();
+              if (lessonPayload.length >= 50 && needed > 0) {
+                const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
+                while (needed > 0) {
+                  const qRes = await fetch('/api/quiz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle: next.title }),
+                  });
+                  if (!qRes.ok) break;
+                  const qData = (await qRes.json()) as {
+                    questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+                  };
+                  const q = qData.questions?.[0];
+                  if (!q) break;
+                  generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
+                  needed--;
+                }
+                if (generated.length) {
+                  const save = await fetch('/api/quiz/questions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subtopicId: next.id, questions: generated }),
+                  });
+                  if (save.ok) {
+                    const payload = (await save.json()) as {
+                      questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+                    };
+                    const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
+                    if (saved.length) {
+                      // Update local in-memory copy so the quiz is ready instantly when navigating
+                      (initial.subtopics[nextIndex] as any).questions = saved;
+                    }
+                  }
+                }
+              }
+            } catch {
+              // swallow preloading errors
+            } finally {
+              releaseQuestions(next.id);
+            }
+          } catch {
+            // If it failed early, allow retry on next navigation
+            prefetchedNextRef.current.delete(next.id);
+          }
         })();
       }
     }
@@ -415,6 +485,8 @@ const countedIdsRef = useRef<Set<string>>(
                     hasLesson={hasLesson}
                     lessonMd={lessonMd}
                     questions={currentSubtopic.questions}
+                    reserveQuestions={reserveQuestions}
+                    releaseQuestions={releaseQuestions}
                     onPassed={async () => {
   const id = currentSubtopic.id;
   if (!countedIdsRef.current.has(id)) {
@@ -451,6 +523,12 @@ const countedIdsRef = useRef<Set<string>>(
                   scrollToMainTop();
                       // No duplicate await; background call above
                     }}
+                    onQuestionsSaved={(saved) => {
+                      try {
+                        const idx = currentIndex;
+                        (initial.subtopics[idx] as any).questions = saved as any;
+                      } catch {}
+                    }}
                   />
                 </div>
               );
@@ -480,6 +558,9 @@ function QuizPanel({
   lessonMd,
   questions,
   onPassed,
+  onQuestionsSaved,
+  reserveQuestions,
+  releaseQuestions,
 }: {
   subtopicId: string;
   subtopicTitle: string;
@@ -487,6 +568,9 @@ function QuizPanel({
   lessonMd?: string;
   questions: QuizQuestion[];
   onPassed: () => void;
+  onQuestionsSaved?: (saved: QuizQuestion[]) => void;
+  reserveQuestions?: (id: string) => boolean;
+  releaseQuestions?: (id: string) => void;
 }) {
   const stripABCD = (str: string) =>
     (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
@@ -523,13 +607,16 @@ function QuizPanel({
   // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
   useEffect(() => {
     if (!hasLesson || hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
+    // Prevent duplicate generations (e.g., StrictMode double invoke / re-mounts)
+    const reserved = reserveQuestions ? reserveQuestions(subtopicId) : true;
+    if (!reserved) return;
     const payload = (lessonMd || '').trim();
     if (payload.length < 50) return;
 
     (async () => {
       try {
         let needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
-        const created: QuizQuestion[] = [];
+        const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
         while (needed > 0) {
           const res = await fetch('/api/quiz', {
             method: 'POST',
@@ -542,33 +629,38 @@ function QuizPanel({
           };
           const q = data.questions?.[0];
           if (!q) break;
-          created.push({
-            id:
-              typeof crypto !== 'undefined' && 'randomUUID' in crypto
-                ? (crypto as any).randomUUID()
-                : `q-${Date.now()}-${created.length}`,
-            prompt: q.prompt,
-            options: q.options,
-            answerIndex: q.answerIndex,
-            explanation: q.explanation,
-          });
+          generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
           needed--;
         }
-        if (created.length) {
-          setItems((prev) => {
-            const next = prev.concat(created).slice(0, REQUIRED_QUESTIONS);
-            return next;
+        if (generated.length) {
+          // Persist to DB so these questions have stable IDs and survive reloads
+          const save = await fetch('/api/quiz/questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subtopicId, questions: generated }),
           });
-          setAnswers([]);
-          setRevealed(false);
+          if (save.ok) {
+            const payload = (await save.json()) as {
+              questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+            };
+            const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
+            if (saved.length) {
+              setItems(saved);
+              setAnswers([]);
+              setRevealed(false);
+              // Inform parent so future mounts use the saved questions and avoid re-generating
+              try { onQuestionsSaved?.(saved as unknown as QuizQuestion[]); } catch {}
+            }
+          }
         }
       } catch {
         // swallow
       } finally {
         setHardLoaded(true);
+        try { releaseQuestions?.(subtopicId); } catch {}
       }
     })();
-  }, [hasLesson, lessonMd, hardLoaded, items.length, subtopicTitle]);
+  }, [hasLesson, lessonMd, hardLoaded, items.length, subtopicId, subtopicTitle, reserveQuestions, releaseQuestions]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
@@ -589,19 +681,29 @@ function QuizPanel({
       };
       const q = data.questions?.[0];
       if (!q) throw new Error('No question returned');
-      const newQ: QuizQuestion = {
-        id:
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? (crypto as any).randomUUID()
-            : `q-${Date.now()}`,
-        prompt: q.prompt,
-        options: q.options,
-        answerIndex: q.answerIndex,
-        explanation: q.explanation,
-      };
-      setItems((prev) => (prev.length >= REQUIRED_QUESTIONS ? prev : [...prev, newQ]));
-      setAnswers([]);
-      setRevealed(false);
+      // Persist the one we generated if we still need more
+      if (items.length < REQUIRED_QUESTIONS) {
+        const save = await fetch('/api/quiz/questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subtopicId,
+            questions: [{ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation }],
+          }),
+        });
+        if (save.ok) {
+          const payload = (await save.json()) as {
+            questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+          };
+          const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
+          if (saved.length) {
+            setItems(saved);
+            setAnswers([]);
+            setRevealed(false);
+            try { onQuestionsSaved?.(saved as unknown as QuizQuestion[]); } catch {}
+          }
+        }
+      }
     } catch (_e) {
       // Fallback: rotate options of the first question
       if (items && items.length > 0) {

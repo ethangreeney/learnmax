@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
       - "importance": A rating of "high", "medium", or "low".
       - "difficulty": A number from 1 (easy) to 3 (hard).
       - "overview": A one-sentence summary of what the subtopic covers.
+      - Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
 
       Here is the text to analyze:
       ---

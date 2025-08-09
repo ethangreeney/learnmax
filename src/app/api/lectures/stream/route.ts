@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
           if (!text) throw new Error('Lecture has no content');
 
           const charLen = text.length;
-          const targetByChars = Math.max(8, Math.min(80, Math.round(charLen / 4000) * 5));
           const breakdownPrompt = `
 You are an expert instructional designer. Create an exhaustive, sequential breakdown of the entire document below.
 
@@ -69,7 +68,7 @@ Goals:
 - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
 - Preserve the original document order from start to finish.
 - Be concise but complete: each subtopic should map to a coherent portion of the document.
-- Aim for approximately ${targetByChars} subtopics given document length.
+ - Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
 
 Return ONLY a single JSON object with exactly these keys:
 {
@@ -84,7 +83,8 @@ Document:
 ${text}
           `;
           const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
-          const topic = typeof bdRaw?.topic === 'string' && bdRaw.topic.trim() ? bdRaw.topic.trim() : 'Untitled';
+          const DEFAULT_TITLE = 'Generating lesson... Please Wait';
+          const topic = typeof bdRaw?.topic === 'string' && bdRaw.topic.trim() ? bdRaw.topic.trim() : DEFAULT_TITLE;
           const subtopics: Array<{ title: string; importance: string; difficulty: number; overview?: string }>
             = Array.isArray(bdRaw?.subtopics) ? bdRaw.subtopics : [];
 
@@ -94,10 +94,24 @@ ${text}
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'title', title: topic })}\n\n`));
           }
 
-          const cap = 12;
-          const limited = subtopics.slice(0, cap);
-          for (let i = offset; i < limited.length; i++) {
-            const s = limited[i];
+          // Select the most important subtopics instead of the first ones
+          const cap = 15;
+          const scored = subtopics.map((s, idx) => ({
+            idx,
+            s,
+            rank: (() => {
+              const imp = String(s?.importance || 'medium').toLowerCase();
+              return imp === 'high' ? 3 : imp === 'low' ? 1 : 2;
+            })(),
+          }));
+          // Pick top by importance rank, then keep original document order among the selected for readability
+          const top = scored
+            .sort((a, b) => b.rank - a.rank || a.idx - b.idx)
+            .slice(0, cap)
+            .sort((a, b) => a.idx - b.idx);
+
+          for (let i = offset; i < top.length; i++) {
+            const s = top[i].s;
             const created = await prisma.subtopic.create({
               data: {
                 order: i,

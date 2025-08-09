@@ -59,9 +59,9 @@ export async function POST(req: NextRequest) {
 
     const prompt = [
       'Analyze this PDF end-to-end (text and images).',
-      'Return a compact JSON object with:',
+      'Return ONLY valid JSON in this exact shape (no extra prose):',
       '{ "topic": string, "subtopics": [ { "title": string, "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string } ] }',
-      'Ensure valid JSON only. No additional prose.',
+      'Generate between 8 and 15 subtopics total. Aim for about 12 on average. Never exceed 15.',
     ].join('\n');
 
     const res = await model.generateContent([
@@ -73,13 +73,14 @@ export async function POST(req: NextRequest) {
     try { json = JSON.parse(text); } catch { return NextResponse.json({ error: 'Invalid JSON from model', raw: text }, { status: 502 }); }
 
     // Persist minimal lecture from JSON
-    const topic = typeof json?.topic === 'string' && json.topic.trim() ? json.topic.trim() : 'Untitled';
+    const topic = typeof json?.topic === 'string' && json.topic.trim() ? json.topic.trim() : 'Generating lesson... Please Wait';
     const subs = Array.isArray(json?.subtopics) ? json.subtopics : [];
+    const cappedSubs = subs.slice(0, 15);
 
     const lecture = await prisma.lecture.create({ data: { title: topic, originalContent: 'PDF (vision) upload', userId } });
-    if (subs.length) {
+    if (cappedSubs.length) {
       await prisma.subtopic.createMany({
-        data: subs.map((s: any, idx: number) => ({
+        data: cappedSubs.map((s: any, idx: number) => ({
           order: idx,
           title: String(s?.title || `Section ${idx + 1}`),
           importance: String(s?.importance || 'medium'),
