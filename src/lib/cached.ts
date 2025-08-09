@@ -11,7 +11,7 @@ export async function getUserStatsCached(userId: string) {
       return { user: userLite, masteredCount };
     },
     ['user-stats', userId],
-    { revalidate: 15 }
+    { revalidate: 15, tags: [`user-stats:${userId}`] }
   );
   return fn();
 }
@@ -28,7 +28,7 @@ export async function getLecturesCached(userId: string) {
       return lectures;
     },
     ['user-lectures', userId],
-    { revalidate: 30 }
+    { revalidate: 30, tags: [`user-lectures:${userId}`] }
   );
   return fn();
 }

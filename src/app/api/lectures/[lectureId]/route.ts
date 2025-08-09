@@ -2,6 +2,7 @@ import { isSessionWithUser } from '@/lib/session-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
+import { revalidateTag } from 'next/cache';
 import { authOptions } from '@/lib/auth';
 
 type Params = { lectureId: string };
@@ -51,7 +52,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) 
       data,
       select: { id: true, title: true, starred: true },
     });
-
+    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try { revalidateTag(`user-stats:${userId}`); } catch {}
     return NextResponse.json({ ok: true, lecture: updated });
   } catch (e: any) {
     console.error('LECTURE_PATCH_ERROR', e);
@@ -83,7 +85,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<Params> })
 
     // Cascade deletes will remove related Subtopics, QuizQuestions, and UserMastery via Prisma schema
     await prisma.lecture.delete({ where: { id: lectureId } });
-
+    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try { revalidateTag(`user-stats:${userId}`); } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error('LECTURE_DELETE_ERROR', e);
