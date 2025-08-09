@@ -525,7 +525,7 @@ SUBTOPIC:
 ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, null, 2)}
 `.trim();
             try {
-              const modelForQuiz = preferredModel || 'gemini-2.5-pro';
+              const modelForQuiz = preferredModel || 'gemini-2.5-flash';
               const qzRawV = await generateJSON(quizPromptV, modelForQuiz);
               const qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
               const quizDataV: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
@@ -641,7 +641,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
     `.trim();
     const mid = Date.now();
-    const modelForQuiz = preferredModel || 'gemini-2.5-pro';
+    const modelForQuiz = preferredModel || 'gemini-2.5-flash';
     const qzRaw = await generateJSON(quizPromptFirst, modelForQuiz);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;

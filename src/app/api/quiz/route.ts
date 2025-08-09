@@ -154,7 +154,7 @@ export async function POST(req: Request) {
       typeof (body as any)?.model === 'string' && (body as any).model.trim()
         ? ((body as any).model as string).trim()
         : undefined;
-    const modelForQuiz = preferredModel || 'gemini-2.5-pro';
+    const modelForQuiz = preferredModel || 'gemini-2.5-flash';
     const lessonMd = String(body?.lessonMd || '').trim();
     const subtopicTitle = String(body?.subtopicTitle || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
