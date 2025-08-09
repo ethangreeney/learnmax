@@ -59,6 +59,31 @@ function sanitizeMarkdown(md: string): string {
   return t;
 }
 
+// Ensure rendered content never starts with a title/heading
+function stripLeadingTitle(md: string, title?: string): string {
+  let out = String(md ?? '');
+  // Drop leading ATX headings (# .. ###### ..)
+  out = out.replace(/^\s{0,3}#{1,6}\s+[^\n]+\n+/m, '');
+  // Drop leading setext headings (Title\n==== or ----)
+  out = out.replace(/^\s*([^\n]+)\n(?:=+|-+)\s*\n+/m, '');
+  // If first non-empty line equals provided title, remove it
+  if (title) {
+    const lines = out.split('\n');
+    const firstIdx = lines.findIndex((l) => l.trim() !== '');
+    if (firstIdx !== -1) {
+      const firstLine = lines[firstIdx].trim();
+      if (firstLine.localeCompare(title.trim(), undefined, { sensitivity: 'accent' }) === 0) {
+        lines.splice(firstIdx, 1);
+        if (lines[firstIdx] !== undefined && lines[firstIdx].trim() === '') {
+          lines.splice(firstIdx, 1);
+        }
+        out = lines.join('\n');
+      }
+    }
+  }
+  return out;
+}
+
 export default function LearnView({ initial }: { initial: LearnLecture }) {
   // UI-only store per page mount
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
@@ -459,13 +484,13 @@ const countedIdsRef = useRef<Set<string>>(
               <hr className="my-6 border-neutral-800" />
               <div id="lesson-markdown" data-lesson="markdown" className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                  {explanations[currentSubtopic.id] || 'Crafting learning module...'}
+                  {stripLeadingTitle(explanations[currentSubtopic.id] || '', currentSubtopic.title) || 'Crafting learning module...'}
                 </ReactMarkdown>
               </div>
             </div>
 
             {(() => {
-              const lessonMd = (explanations[currentSubtopic.id] || '').trim();
+              const lessonMd = stripLeadingTitle(explanations[currentSubtopic.id] || '', currentSubtopic.title).trim();
               const hasLesson = lessonMd.length >= 50;
               if (!hasLesson) {
                 return (

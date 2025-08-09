@@ -82,6 +82,47 @@ function isGrounded(q: CleanQ, lessonMd: string, kws: string[]): boolean {
   return hasKw && hasQuote;
 }
 
+/* -------------------- Single-correctness auditor (LLM) -------------------- */
+async function hasExactlyOneCorrect(
+  q: CleanQ,
+  lessonMd: string,
+  model: string,
+): Promise<boolean> {
+  const auditPrompt = `You are auditing a multiple-choice question for strict single-correctness.
+
+Using ONLY the LESSON below, determine which options are strictly and unambiguously correct.
+
+Return ONLY JSON:
+{ "correctIndices": number[] }
+
+Rules:
+- Consider an option correct only if it is explicitly supported by the LESSON.
+- If two options could both be correct, include both; do not force a single choice.
+- If none is correct, return an empty array.
+
+---
+LESSON:
+${lessonMd}
+---
+QUESTION:
+${q.prompt}
+OPTIONS (0-based):
+${JSON.stringify(q.options, null, 2)}
+`;
+  try {
+    const res = await generateJSON(auditPrompt, model);
+    const arr = Array.isArray(res?.correctIndices)
+      ? res.correctIndices
+          .map((n: any) => Number(n))
+          .filter((n: any) => Number.isInteger(n) && n >= 0 && n < q.options.length)
+      : [];
+    if (arr.length !== 1) return false;
+    return arr[0] === q.answerIndex;
+  } catch {
+    return false;
+  }
+}
+
 /* Deterministic fallback: builds a grounded T/F MCQ from the lesson text */
 function pickDeclarativeSentence(md: string): string | null {
   // Split on sentence-ish boundaries and pick something medium length
@@ -113,6 +154,7 @@ export async function POST(req: Request) {
       typeof (body as any)?.model === 'string' && (body as any).model.trim()
         ? ((body as any).model as string).trim()
         : undefined;
+    const modelForQuiz = preferredModel || 'gemini-2.5-pro';
     const lessonMd = String(body?.lessonMd || '').trim();
     const subtopicTitle = String(body?.subtopicTitle || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
@@ -146,6 +188,8 @@ Rules:
 - Do NOT invent facts not supported by the lesson.
 - Do NOT prefix options with letters or numbers.
 - Exactly four options. Correct answer index must be 0..3.
+ - Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
+ - Avoid ambiguous, overlapping, or "All/None of the above" answers.
 
 ---
 LESSON MARKDOWN:
@@ -153,10 +197,18 @@ ${lessonMd}
 ---`.trim();
 
     // First attempt
-    let json = await generateJSON(basePrompt, preferredModel);
+    let json = await generateJSON(basePrompt, modelForQuiz);
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
     let grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
+    // Enforce exactly-one-correct via a dedicated auditor
+    const single: CleanQ[] = [];
+    for (const q of grounded) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await hasExactlyOneCorrect(q, lessonMd, modelForQuiz);
+      if (ok) single.push(q);
+    }
+    grounded = single;
 
     // Retry if nothing passed audit
     if (!grounded.length) {
@@ -167,6 +219,8 @@ Try again and follow these STRICT requirements:
 - The question and explanation MUST be consistent with the LESSON only.
 - Include at least TWO of these keywords in the prompt or explanation: ${kws.join(', ')}.
 - In the explanation, include one exact quote (6–12 words) from the LESSON in "double quotes". The quote must be verbatim.
+ - Exactly ONE option must be correct; ensure the other three are unambiguously incorrect.
+ - Do NOT use "All of the above" or "None of the above".
 
 Return ONLY the same JSON shape as before.
 
@@ -175,20 +229,28 @@ LESSON MARKDOWN:
 ${lessonMd}
 ---`.trim();
 
-      json = await generateJSON(retryPrompt, preferredModel);
+      json = await generateJSON(retryPrompt, modelForQuiz);
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
       grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
+      // Re-run single-correct audit on retry
+      const singleRetry: CleanQ[] = [];
+      for (const q of grounded) {
+        // eslint-disable-next-line no-await-in-loop
+        const ok = await hasExactlyOneCorrect(q, lessonMd, modelForQuiz);
+        if (ok) singleRetry.push(q);
+      }
+      grounded = singleRetry;
     }
 
     // Final fallback — guaranteed grounded
     if (!grounded.length) {
       const fb = fallbackFromLesson(lessonMd);
-      return NextResponse.json({ questions: [fb], debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', ms: Date.now() - t0 } });
+      return NextResponse.json({ questions: [fb], debug: { model: modelForQuiz, ms: Date.now() - t0 } });
     }
 
     // Keep just one good question
-    return NextResponse.json({ questions: [grounded[0]], debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', ms: Date.now() - t0 } });
+    return NextResponse.json({ questions: [grounded[0]], debug: { model: modelForQuiz, ms: Date.now() - t0 } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'quiz failed' }, { status: 500 });
   }

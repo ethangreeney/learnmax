@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       async start(controller) {
         try {
           const existing = await prisma.subtopic.findMany({ where: { lectureId }, orderBy: { order: 'asc' } });
-          let offset = existing.length;
+          const offset = existing.length;
           // Emit already-present subtopics immediately
           for (const s of existing) {
             controller.enqueue(

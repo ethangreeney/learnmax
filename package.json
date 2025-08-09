@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy": "prisma migrate deploy || prisma db push",
     "build": "pnpm run migrate:deploy && next build --no-lint",
     "start": "next start",
     "lint": "next lint",

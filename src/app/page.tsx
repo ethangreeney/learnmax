@@ -76,7 +76,7 @@ export default function HomePage() {
               Based on proven science, you focus on one core idea at a time. This prevents cognitive overload and embeds knowledge effectively.
             </PillarCard>
             <PillarCard icon={Target} title="Verified Comprehension">
-              Pass a targeted quiz to prove you've mastered the concept. This guarantees a rock-solid foundation for lasting knowledge.
+              Pass a targeted quiz to prove you&apos;ve mastered the concept. This guarantees a rock-solid foundation for lasting knowledge.
             </PillarCard>
           </div>
         </div>

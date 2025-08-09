@@ -525,7 +525,8 @@ SUBTOPIC:
 ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, null, 2)}
 `.trim();
             try {
-              const qzRawV = await generateJSON(quizPromptV, preferredModel);
+              const modelForQuiz = preferredModel || 'gemini-2.5-pro';
+              const qzRawV = await generateJSON(quizPromptV, modelForQuiz);
               const qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
               const quizDataV: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
               const q1 = qList[0];
@@ -622,6 +623,8 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       - Questions must match the scope of the subtopic overview.
       - Include a short DIRECT quote (6–12 words) from the document in the explanation, in "double quotes".
       - Exactly four options ["A","B","C","D"]. No prefixes.
+      - Exactly ONE correct option per question; the other three must be clearly incorrect given the DOCUMENT.
+      - Avoid ambiguous options and avoid "All/None of the above".
 
       Return ONLY ONE JSON object:
       {
@@ -638,7 +641,8 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
     `.trim();
     const mid = Date.now();
-    const qzRaw = await generateJSON(quizPromptFirst, preferredModel);
+    const modelForQuiz = preferredModel || 'gemini-2.5-pro';
+    const qzRaw = await generateJSON(quizPromptFirst, modelForQuiz);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;
     const rawQuestions: QuizQuestion[] = Array.isArray(qzRaw?.questions) ? (qzRaw.questions as any[]).filter(isGoodQuestion) : [];
