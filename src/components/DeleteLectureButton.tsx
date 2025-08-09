@@ -22,19 +22,21 @@ export default function DeleteLectureButton({
 
     try {
       setBusy(true);
+      // Optimistic removal: update UI immediately
+      if (onDeleted) onDeleted();
+      // Perform delete in background
       const res = await fetch(`/api/lectures/${lectureId}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error || 'Failed to delete');
       }
-      if (onDeleted) {
-        onDeleted();
-      } else {
-        startTransition(() => router.refresh());
-      }
+      // If no optimistic handler, fall back to refresh
+      if (!onDeleted) startTransition(() => router.refresh());
     } catch (e) {
       // eslint-disable-next-line no-alert
       alert((e as Error)?.message || 'Failed to delete');
+      // Re-sync UI from server in case optimistic update removed item locally
+      startTransition(() => router.refresh());
     } finally {
       setBusy(false);
     }
