@@ -109,8 +109,13 @@ ${q.prompt}
 OPTIONS (0-based):
 ${JSON.stringify(q.options, null, 2)}
 `;
+  const withTimeout = <T,>(p: Promise<T>, ms = 12000): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+    ]);
   try {
-    const res = await generateJSON(auditPrompt, model);
+    const res = await withTimeout(generateJSON(auditPrompt, model));
     const arr = Array.isArray(res?.correctIndices)
       ? res.correctIndices
           .map((n: any) => Number(n))
@@ -196,8 +201,14 @@ LESSON MARKDOWN:
 ${lessonMd}
 ---`.trim();
 
-    // First attempt
-    let json = await generateJSON(basePrompt, modelForQuiz);
+    const withTimeout = <T,>(p: Promise<T>, ms = 15000): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+      ]);
+
+    // First attempt (with timeout)
+    let json = await withTimeout(generateJSON(basePrompt, modelForQuiz)).catch(() => ({} as any));
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
     let grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
@@ -229,7 +240,7 @@ LESSON MARKDOWN:
 ${lessonMd}
 ---`.trim();
 
-      json = await generateJSON(retryPrompt, modelForQuiz);
+      json = await withTimeout(generateJSON(retryPrompt, modelForQuiz)).catch(() => ({} as any));
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
       grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));

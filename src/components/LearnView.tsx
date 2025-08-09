@@ -632,28 +632,33 @@ function QuizPanel({
   // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
   useEffect(() => {
     if (!hasLesson || hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
+    // Require sufficient lesson text before reserving to avoid reservation leaks
+    const lessonPayload = (lessonMd || '').trim();
+    if (lessonPayload.length < 50) return;
     // Prevent duplicate generations (e.g., StrictMode double invoke / re-mounts)
     const reserved = reserveQuestions ? reserveQuestions(subtopicId) : true;
     if (!reserved) return;
-    const payload = (lessonMd || '').trim();
-    if (payload.length < 50) return;
 
     (async () => {
+      let success = false;
       try {
         let needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
         const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
-        while (needed > 0) {
+        let tries = 0;
+        const MAX_TRIES = 3 * Math.max(1, needed);
+        while (needed > 0 && tries < MAX_TRIES) {
+          tries++;
           const res = await fetch('/api/quiz', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle }),
+            body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle }),
           });
-          if (!res.ok) break;
+          if (!res.ok) continue;
           const data = (await res.json()) as {
             questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
           };
           const q = data.questions?.[0];
-          if (!q) break;
+          if (!q) continue;
           generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
           needed--;
         }
@@ -673,6 +678,7 @@ function QuizPanel({
               setItems(saved);
               setAnswers([]);
               setRevealed(false);
+              success = true;
               // Inform parent so future mounts use the saved questions and avoid re-generating
               try { onQuestionsSaved?.(saved as unknown as QuizQuestion[]); } catch {}
             }
@@ -681,7 +687,7 @@ function QuizPanel({
       } catch {
         // swallow
       } finally {
-        setHardLoaded(true);
+        setHardLoaded((prev) => prev || success);
         try { releaseQuestions?.(subtopicId); } catch {}
       }
     })();
