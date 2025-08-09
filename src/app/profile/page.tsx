@@ -13,6 +13,7 @@ type PublicProfile = {
   streak: number;
   masteredCount: number;
   quiz: { totalAttempts: number; correct: number; accuracy: number };
+  isAdmin?: boolean;
 };
 
 export default function ProfilePage() {
@@ -81,7 +82,14 @@ export default function ProfilePage() {
 
   async function onPickAvatar(file: File) {
     try {
-      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      if (file.type === 'image/gif') {
+        throw new Error('GIFs are not allowed for profile pictures');
+      }
+      const ext = file.type === 'image/png'
+        ? 'png'
+        : file.type === 'image/webp'
+          ? 'webp'
+          : 'jpg';
       const pathname = `avatars/${me?.id}.${ext}`;
       const { url } = await upload(pathname, file, {
         access: 'public',
@@ -131,41 +139,41 @@ export default function ProfilePage() {
       <section className="relative overflow-hidden card">
         <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
         <div className="p-5 md:p-6 pb-8 md:pb-10">
-            <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-4 min-w-0 flex-1">
               <div className="relative self-center top-[6px]">
-              <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
-                {image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={image}
-                    alt="avatar"
-                    className="h-full w-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-neutral-500">
-                    <UserIcon className="h-8 w-8" />
-                  </div>
-                )}
+                <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
+                  {image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={image}
+                      alt="avatar"
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-neutral-500">
+                      <UserIcon className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-                  {me.name || 'Your Profile'}
-                </h1>
-                <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}
-                >
-                  <span className={`bg-gradient-to-r ${tierColor} bg-clip-text text-transparent font-semibold`}>{tier}</span>
-                  <span className="text-neutral-400">Elo {me.elo}</span>
-                </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                    {me.name || 'Your Profile'}
+                  </h1>
+                  <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}
+                  >
+                    <span className={`bg-gradient-to-r ${tierColor} bg-clip-text text-transparent font-semibold`}>{tier}</span>
+                    <span className="text-neutral-400">Elo {me.elo}</span>
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-neutral-400">
+                  {me.username ? `@${me.username}` : 'Pick a username to claim your handle'}
+                </p>
               </div>
-              <p className="mt-1 text-sm text-neutral-400">
-                {me.username ? `@${me.username}` : 'Pick a username to claim your handle'}
-              </p>
-            </div>
             </div>
 
             <div className="hidden md:flex items-center gap-2 shrink-0 relative top-[2px]">
@@ -219,6 +227,16 @@ export default function ProfilePage() {
             <Stat label="Streak" value={String(me.streak)} icon={Flame} />
           </div>
         </div>
+        {me?.isAdmin && (
+          <div className="card p-6">
+            <h2 className="text-xl font-semibold mb-3">Admin Panel</h2>
+            <p className="text-neutral-400 text-sm mb-4">You have admin access.</p>
+            <div className="flex flex-wrap gap-3">
+              <a href="/admin" className="btn-primary px-4 py-2">Open Admin Panel</a>
+              <a href="/admin/ranks" className="btn-ghost px-4 py-2">Manage Rank Icons</a>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

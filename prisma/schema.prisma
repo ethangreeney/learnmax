@@ -129,3 +129,10 @@ model QuizAttempt {
   @@index([userId, createdAt])
   @@index([userId, isCorrect, createdAt])
 }
+
+model Rank {
+  slug    String  @id
+  name    String
+  minElo  Int     @unique
+  iconUrl String?
+}

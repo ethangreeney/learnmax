@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { handleUpload } from '@vercel/blob/client';
+import { requireAdmin } from '@/lib/admin';
 
 export const maxDuration = 60;
 
@@ -10,9 +11,17 @@ export async function POST(req: Request) {
       request: req,
       body,
       token: process.env.BLOB_READ_WRITE_TOKEN,
-      onBeforeGenerateToken: async (_pathname) => {
+      onBeforeGenerateToken: async (pathname) => {
+        // Lock down rank icon uploads to admins only
+        if (typeof pathname === 'string' && pathname.startsWith('ranks/')) {
+          await requireAdmin();
+        }
+        const isAvatar = typeof pathname === 'string' && pathname.startsWith('avatars/');
+        const allowedImages = isAvatar
+          ? ['image/png', 'image/jpeg', 'image/webp'] // no GIFs for avatars
+          : ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
         return {
-          allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
+          allowedContentTypes: ['application/pdf', ...allowedImages],
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB
           addRandomSuffix: false,
           allowOverwrite: true,

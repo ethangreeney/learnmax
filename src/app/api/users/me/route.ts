@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
+import { isAdminEmail } from '@/lib/admin';
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -80,6 +81,11 @@ export async function GET() {
     const total = agg.reduce((a, r) => a + r._count._all, 0);
     const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
     const accuracy = total ? Math.round((correct / total) * 100) : 0;
+
+    // Determine rank based on ELO
+    const userElo = user.elo;
+    const rank = await prisma.rank.findFirst({ where: { minElo: { lte: userElo } }, orderBy: { minElo: 'desc' } });
+    const isAdmin = isAdminEmail((session.user as any)?.email || null);
     return NextResponse.json({
       user: {
         id: user.id,
@@ -91,6 +97,8 @@ export async function GET() {
         streak: user.streak,
         masteredCount: user._count.masteredSubtopics,
         quiz: { totalAttempts: total, correct, accuracy },
+        rank: rank ? { slug: rank.slug, name: rank.name, minElo: rank.minElo, iconUrl: rank.iconUrl } : null,
+        isAdmin,
       },
     });
   } catch (e: any) {

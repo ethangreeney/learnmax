@@ -33,6 +33,9 @@ export async function GET(_req: Request, context: { params: Promise<{ username: 
     const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
     const accuracy = total ? Math.round((correct / total) * 100) : 0;
 
+    // Determine rank based on ELO
+    const rank = await prisma.rank.findFirst({ where: { minElo: { lte: user.elo } }, orderBy: { minElo: 'desc' } });
+
     return NextResponse.json({
       user: {
         id: user.id,
@@ -44,6 +47,7 @@ export async function GET(_req: Request, context: { params: Promise<{ username: 
         streak: user.streak,
         masteredCount: user._count.masteredSubtopics,
         quiz: { totalAttempts: total, correct, accuracy },
+        rank: rank ? { slug: rank.slug, name: rank.name, minElo: rank.minElo, iconUrl: rank.iconUrl } : null,
       },
     });
   } catch (e: any) {
