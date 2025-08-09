@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateJSON } from '@/lib/ai';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { isSessionWithUser } from '@/lib/session-utils';
+import { bumpDailyStreak } from '@/lib/streak';
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    const userId = isSessionWithUser(session) ? session.user.id : null;
     const { content, model } = await req.json();
 
     if (!content) {
@@ -26,6 +32,9 @@ export async function POST(req: NextRequest) {
     `;
 
     const aiResponse = await generateJSON(prompt, model);
+    if (userId) {
+      await bumpDailyStreak(userId);
+    }
     return NextResponse.json(aiResponse);
 
   } catch (error: any) {

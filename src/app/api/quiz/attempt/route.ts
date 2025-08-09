@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { bumpDailyStreak } from '@/lib/streak';
 import { requireSession } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest) {
     await prisma.quizAttempt.create({
       data: { userId, questionId, selectedIndex, isCorrect },
     });
+    // Bump streak on any attempt
+    await bumpDailyStreak(userId);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });

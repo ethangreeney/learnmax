@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText } from '@/lib/ai';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { isSessionWithUser } from '@/lib/session-utils';
+import { bumpDailyStreak } from '@/lib/streak';
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    const userId = isSessionWithUser(session) ? session.user.id : null;
     const { userQuestion, documentContent, model } = await req.json() as { userQuestion: string, documentContent: string, model?: string };
 
     if (!userQuestion) {
@@ -33,6 +39,10 @@ export async function POST(req: NextRequest) {
     const aiTextResponse = await generateText(systemPrompt, model);
     const ms = Date.now() - t0;
     const used = model || process.env.GEMINI_MODEL || 'default';
+    // Count chat interactions towards streak if authenticated
+    if (userId) {
+      await bumpDailyStreak(userId);
+    }
     // Expose simple timing for debugging UX
     return NextResponse.json({ response: aiTextResponse, debug: { model: used, ms } });
 

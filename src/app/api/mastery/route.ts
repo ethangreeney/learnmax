@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
+import { bumpDailyStreak } from '@/lib/streak';
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
       where: { id: userId },
       data: { elo: { increment: eloDelta } },
     });
+    await bumpDailyStreak(userId);
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

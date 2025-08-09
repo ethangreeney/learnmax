@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { generateJSON, generateText } from '@/lib/ai';
 import { isSessionWithUser } from '@/lib/session-utils';
+import { bumpDailyStreak } from '@/lib/streak';
 
 type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -462,7 +463,9 @@ export async function POST(req: NextRequest) {
         } catch {}
         // 3) Persist directly, storing extracted text when available
         const originalContent = extracted || 'PDF (vision) upload';
-        const lecture = await prisma.lecture.create({ data: { title: bdFromVision.topic || 'Untitled', originalContent: sanitizeDbText(originalContent), userId } });
+    const lecture = await prisma.lecture.create({ data: { title: bdFromVision.topic || 'Untitled', originalContent: sanitizeDbText(originalContent), userId } });
+    // Count lecture generation towards streak
+    await bumpDailyStreak(userId);
         if (bdFromVision.subtopics.length) {
           // Cap to avoid long generation
           const subcaps = bdFromVision.subtopics.length > 12
@@ -632,6 +635,8 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
     const lecture = await prisma.lecture.create({
       data: { title: bd.topic || 'Untitled', originalContent: sanitizeDbText(text), userId },
     });
+    // Count lecture generation towards streak
+    await bumpDailyStreak(userId);
 
     // Generate persistent section markdown for each subtopic
     const titleForLecture = bd.topic || 'Untitled';

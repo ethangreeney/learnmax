@@ -10,12 +10,12 @@ export async function POST(req: Request) {
       request: req,
       body,
       token: process.env.BLOB_READ_WRITE_TOKEN,
-      onBeforeGenerateToken: async (pathname) => {
+      onBeforeGenerateToken: async (_pathname) => {
         return {
           allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB
           addRandomSuffix: false,
-          allowOverwrite: false,
+          allowOverwrite: true,
           cacheControlMaxAge: 60 * 60 * 24 * 7, // 7 days
         };
       },

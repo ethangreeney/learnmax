@@ -9,8 +9,9 @@ export const getUserStatsCached = unstable_cache(
     ]);
     return { user: userLite, masteredCount };
   },
-  ['user-stats'],
-  { revalidate: 30 }
+  // Include userId in key so caches don't collide between users
+  (userId: string) => ['user-stats', userId],
+  { revalidate: 15 }
 );
 
 export const getLecturesCached = unstable_cache(
