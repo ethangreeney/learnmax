@@ -30,7 +30,7 @@ importers:
         specifier: 15.4.5
         version: 15.4.5(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       next-auth:
-        specifier: ^4.24.11
+        specifier: ^4.24.7
         version: 4.24.11(next@15.4.5(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       pdf-extraction:
         specifier: ^1.0.2

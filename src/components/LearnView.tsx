@@ -534,7 +534,21 @@ function QuizPanel({
                   return (
                     <button
                       key={j}
-                      onClick={() => setAns(i, j)}
+                      onClick={async () => {
+                        setAns(i, j);
+                        try {
+                          // Record attempt (fire-and-forget)
+                          void fetch('/api/quiz/attempt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              questionId: q.id,
+                              selectedIndex: j,
+                              isCorrect: j === q.answerIndex,
+                            }),
+                          });
+                        } catch {}
+                      }}
                       className={buttonClass}
                       disabled={revealed && isAllCorrect}
                     >
