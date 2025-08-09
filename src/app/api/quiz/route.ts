@@ -18,6 +18,12 @@ type CleanQ = {
   explanation: string;
 };
 
+// Clip helper to keep prompts bounded for latency and cost
+function clip(text: string, max = 8000): string {
+  const t = String(text || '').trim();
+  return t.length > max ? t.slice(0, max) : t;
+}
+
 function toClean(q: RawQ): CleanQ | null {
   const prompt = String((q.prompt ?? q.question ?? '') || '').trim();
   const explanation = String((q.explanation ?? q.explain ?? '') || '').trim();
@@ -109,7 +115,7 @@ ${q.prompt}
 OPTIONS (0-based):
 ${JSON.stringify(q.options, null, 2)}
 `;
-  const withTimeout = <T,>(p: Promise<T>, ms = 12000): Promise<T> =>
+  const withTimeout = <T,>(p: Promise<T>, ms = 6000): Promise<T> =>
     Promise.race([
       p,
       new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
@@ -196,12 +202,12 @@ Rules:
  - Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
  - Avoid ambiguous, overlapping, or "All/None of the above" answers.
 
----
-LESSON MARKDOWN:
-${lessonMd}
----`.trim();
+  ---
+  LESSON MARKDOWN (truncated):
+  ${clip(lessonMd, 8000)}
+  ---`.trim();
 
-    const withTimeout = <T,>(p: Promise<T>, ms = 15000): Promise<T> =>
+    const withTimeout = <T,>(p: Promise<T>, ms = 9000): Promise<T> =>
       Promise.race([
         p,
         new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
@@ -235,10 +241,10 @@ Try again and follow these STRICT requirements:
 
 Return ONLY the same JSON shape as before.
 
----
-LESSON MARKDOWN:
-${lessonMd}
----`.trim();
+      ---
+      LESSON MARKDOWN (truncated):
+      ${clip(lessonMd, 8000)}
+      ---`.trim();
 
       json = await withTimeout(generateJSON(retryPrompt, modelForQuiz)).catch(() => ({} as any));
       raw = Array.isArray(json?.questions) ? json.questions : [];
