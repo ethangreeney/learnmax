@@ -340,6 +340,7 @@ export async function POST(req: NextRequest) {
     let approxPages = 0;
 
     let preferredModel: string | undefined = undefined;
+    let wasPlainTextInput = false;
     let visionCandidate: File | null = null;
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
@@ -374,6 +375,7 @@ export async function POST(req: NextRequest) {
       } else {
         text = sanitizeDbText(content);
         if (!text) return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
+        wasPlainTextInput = true;
       }
     } else {
       return NextResponse.json({ error: 'Unsupported content type.' }, { status: 415 });
@@ -387,6 +389,16 @@ export async function POST(req: NextRequest) {
         const extracted = normalizeExtractedText(data.text || '');
         if (extracted) text = extracted;
       } catch {}
+    }
+
+    // EARLY RETURN for immediate navigation:
+    // If this was plain text input, create a lecture record immediately and return.
+    if (wasPlainTextInput) {
+      const lecture = await prisma.lecture.create({
+        data: { title: 'Untitled', originalContent: sanitizeDbText(text), userId },
+      });
+      try { await bumpDailyStreak(userId); } catch {}
+      return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
     }
 
     // Optional: vision path when OCR/text extraction is thin
@@ -471,8 +483,9 @@ export async function POST(req: NextRequest) {
           const subcaps = bdFromVision.subtopics.length > 12
             ? await selectTopSubtopics(bdFromVision.subtopics, preferredModel, 12)
             : bdFromVision.subtopics;
-          // Generate explanations for each subtopic and persist
-          const sectionMap = await generateSectionMarkdowns(bdFromVision.topic || 'Untitled', extracted, subcaps, preferredModel);
+          // Generate explanation for the FIRST subtopic only; others deferred until viewed
+          const firstOnly = subcaps.slice(0, 1);
+          const sectionMap = await generateSectionMarkdowns(bdFromVision.topic || 'Untitled', extracted, firstOnly, preferredModel);
           await prisma.subtopic.createMany({
             data: subcaps.map((s, idx) => ({
               order: idx,
@@ -480,57 +493,58 @@ export async function POST(req: NextRequest) {
               importance: s.importance,
               difficulty: s.difficulty,
               overview: s.overview || '',
-              explanation: sectionMap[(s.title || '').trim().toLowerCase()] || null,
+              explanation: idx === 0 ? (sectionMap[(s.title || '').trim().toLowerCase()] || null) : null,
               lectureId: lecture.id,
             })),
           });
-          // After subtopics exist, create initial quiz questions grounded in extracted text
+          // After subtopics exist, create initial quiz questions ONLY for the first subtopic
           const created = await prisma.subtopic.findMany({ where: { lectureId: lecture.id }, orderBy: { order: 'asc' }, select: { id: true, title: true, overview: true } });
-          const quizPromptV = `
-You are an expert assessment writer. Create exactly ONE multiple-choice question per subtopic, grounded ONLY in the DOCUMENT CONTENT below.
+          const firstSt = created[0];
+          if (firstSt) {
+            const quizPromptV = `
+You are an expert assessment writer. Create exactly TWO multiple-choice questions grounded ONLY in the DOCUMENT CONTENT below for the subtopic shown.
 
 Constraints:
 - Use only facts present in the document. Do not invent.
 - Include a short DIRECT quote (6–12 words) from the document in the explanation, in "double quotes".
 - Exactly four options ["A","B","C","D"]. No prefixes.
-- Each "subtopicTitle" must EXACTLY match one below.
 
 Return ONLY ONE JSON object:
 {
   "questions": [
-    { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "string" }
+    { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSt.title}" },
+    { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSt.title}" }
   ]
 }
 
 DOCUMENT CONTENT (truncated):
 ${(extracted || '').slice(0, 8000)}
 
-SUBTOPICS:
-${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), null, 2)}
+SUBTOPIC:
+${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, null, 2)}
 `.trim();
-          try {
-            const qzRawV = await generateJSON(quizPromptV, preferredModel);
-            const qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
-            const quizDataV: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
-            for (let i = 0; i < created.length; i++) {
-              const st = created[i];
-              const q1 = qList[2 * i];
-              const q2 = qList[2 * i + 1];
+            try {
+              const qzRawV = await generateJSON(quizPromptV, preferredModel);
+              const qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
+              const quizDataV: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
+              const q1 = qList[0];
+              const q2 = qList[1];
               if (isGoodQuestion(q1) && isGoodQuestion(q2)) {
                 quizDataV.push(
-                  { prompt: q1.prompt, options: q1.options as any, answerIndex: q1.answerIndex, explanation: q1.explanation, subtopicId: st.id },
-                  { prompt: q2.prompt, options: q2.options as any, answerIndex: q2.answerIndex, explanation: q2.explanation, subtopicId: st.id },
+                  { prompt: q1.prompt, options: q1.options as any, answerIndex: q1.answerIndex, explanation: q1.explanation, subtopicId: firstSt.id },
+                  { prompt: q2.prompt, options: q2.options as any, answerIndex: q2.answerIndex, explanation: q2.explanation, subtopicId: firstSt.id },
                 );
               } else {
-                const [f1, f2] = fallbackPairForSubtopic(subcaps[i]);
+                const sub = subcaps[0];
+                const [f1, f2] = fallbackPairForSubtopic(sub);
                 quizDataV.push(
-                  { prompt: f1.prompt, options: f1.options as any, answerIndex: f1.answerIndex, explanation: f1.explanation, subtopicId: st.id },
-                  { prompt: f2.prompt, options: f2.options as any, answerIndex: f2.answerIndex, explanation: f2.explanation, subtopicId: st.id },
+                  { prompt: f1.prompt, options: f1.options as any, answerIndex: f1.answerIndex, explanation: f1.explanation, subtopicId: firstSt.id },
+                  { prompt: f2.prompt, options: f2.options as any, answerIndex: f2.answerIndex, explanation: f2.explanation, subtopicId: firstSt.id },
                 );
               }
-            }
-            if (quizDataV.length) await prisma.quizQuestion.createMany({ data: quizDataV });
-          } catch {}
+              if (quizDataV.length) await prisma.quizQuestion.createMany({ data: quizDataV });
+            } catch {}
+          }
         }
         return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash', usedVision: true } }, { status: 201 });
       } catch (e) {
@@ -546,6 +560,13 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
         const extracted = normalizeExtractedText(data.text || '');
         text = extracted;
       } catch {}
+    }
+    // EARLY RETURN for PDF uploads as well: create minimal lecture and allow client to stream subtopics.
+    if (pdfBuffer) {
+      const originalContent = sanitizeDbText(text || 'PDF upload');
+      const lecture = await prisma.lecture.create({ data: { title: 'Untitled', originalContent, userId } });
+      try { await bumpDailyStreak(userId); } catch {}
+      return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
     }
     if (!text) {
       return NextResponse.json({ error: 'Could not extract text from the PDF. The file may only contain images.' }, { status: 422 });
@@ -594,39 +615,33 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
       bd = { ...bd, subtopics: picked };
     }
 
-    // 2) Quiz (robust)
-    const quizPrompt = `
-      You are an expert assessment writer. Create exactly TWO multiple-choice questions per subtopic, grounded ONLY in the DOCUMENT CONTENT below.
+    // 2) Quiz (robust) — generate only for FIRST subtopic to speed up
+    const firstSub = bd.subtopics[0];
+    const quizPromptFirst = `
+      You are an expert assessment writer. Create exactly TWO multiple-choice questions grounded ONLY in the DOCUMENT CONTENT below for the subtopic shown.
 
       Constraints:
       - Use only facts present in the document. Do not invent.
-      - Each question should match the scope of its subtopic overview.
+      - Questions must match the scope of the subtopic overview.
       - Include a short DIRECT quote (6–12 words) from the document in the explanation, in "double quotes".
       - Exactly four options ["A","B","C","D"]. No prefixes.
-      - Each "subtopicTitle" must EXACTLY match one below.
-      - Return questions in the same order as the subtopics, with TWO consecutive questions for each subtopic.
 
       Return ONLY ONE JSON object:
       {
         "questions": [
-          {
-            "prompt": "string",
-            "options": ["A","B","C","D"],
-            "answerIndex": 0,
-            "explanation": "string",
-            "subtopicTitle": "string"
-          }
+          { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSub?.title || ''}" },
+          { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSub?.title || ''}" }
         ]
       }
 
       DOCUMENT CONTENT (truncated for safety):
       ${clip(text, 8000)}
 
-      SUBTOPICS (use each overview to focus the question):
-      ${JSON.stringify(bd.subtopics.map(s => ({ title: s.title, overview: s.overview })), null, 2)}
+      SUBTOPIC:
+      ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
     `.trim();
     const mid = Date.now();
-    const qzRaw = await generateJSON(quizPrompt, preferredModel);
+    const qzRaw = await generateJSON(quizPromptFirst, preferredModel);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;
     const rawQuestions: QuizQuestion[] = Array.isArray(qzRaw?.questions) ? (qzRaw.questions as any[]).filter(isGoodQuestion) : [];
@@ -638,11 +653,12 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
     // Count lecture generation towards streak
     await bumpDailyStreak(userId);
 
-    // Generate persistent section markdown for each subtopic
+    // Generate explanation for FIRST subtopic only; others deferred until viewed
     const titleForLecture = bd.topic || 'Untitled';
-    const sectionMap = await generateSectionMarkdowns(titleForLecture, text, bd.subtopics, preferredModel);
+    const firstOnly = bd.subtopics.slice(0, 1);
+    const sectionMap = await generateSectionMarkdowns(titleForLecture, text, firstOnly, preferredModel);
 
-    // Insert subtopics with explanation content persisted
+    // Insert subtopics with only first explanation persisted
     await prisma.subtopic.createMany({
       data: bd.subtopics.map((s, idx) => ({
         order: idx,
@@ -650,7 +666,7 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
         importance: s.importance,
         difficulty: s.difficulty,
         overview: s.overview || '',
-        explanation: sectionMap[s.title.trim().toLowerCase()] || null,
+        explanation: idx === 0 ? (sectionMap[s.title.trim().toLowerCase()] || null) : null,
         lectureId: lecture.id,
       })),
     });
@@ -662,17 +678,17 @@ ${JSON.stringify(created.map(s => ({ title: s.title, overview: s.overview })), n
       select: { id: true, title: true },
     });
     const quizData: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
-    for (let i = 0; i < subtopics.length; i++) {
-      const st = subtopics[i];
-      const q1 = rawQuestions[2 * i];
-      const q2 = rawQuestions[2 * i + 1];
+    if (subtopics.length > 0) {
+      const st = subtopics[0];
+      const q1 = rawQuestions[0];
+      const q2 = rawQuestions[1];
       if (isGoodQuestion(q1) && isGoodQuestion(q2)) {
         quizData.push(
           { prompt: q1.prompt, options: q1.options as any, answerIndex: q1.answerIndex, explanation: q1.explanation, subtopicId: st.id },
           { prompt: q2.prompt, options: q2.options as any, answerIndex: q2.answerIndex, explanation: q2.explanation, subtopicId: st.id },
         );
       } else {
-        const [f1, f2] = fallbackPairForSubtopic(bd.subtopics[i]);
+        const [f1, f2] = fallbackPairForSubtopic(bd.subtopics[0]);
         quizData.push(
           { prompt: f1.prompt, options: f1.options as any, answerIndex: f1.answerIndex, explanation: f1.explanation, subtopicId: st.id },
           { prompt: f2.prompt, options: f2.options as any, answerIndex: f2.answerIndex, explanation: f2.explanation, subtopicId: st.id },

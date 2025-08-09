@@ -120,3 +120,52 @@ export async function generateJSON(prompt: string, preferredModel?: string): Pro
   }
   throw new Error('The AI failed to generate JSON. ' + (lastErr?.message || ''));
 }
+
+/**
+ * Stream text chunks from the model as they are generated.
+ * Yields incremental text segments (may be partial tokens or sentences).
+ */
+export async function* streamTextChunks(
+  prompt: string,
+  preferredModel?: string,
+): AsyncGenerator<string, void, void> {
+  const names = Array.from(
+    new Set([
+      (preferredModel?.trim() || PRIMARY_MODEL),
+      'gemini-2.0-pro',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash',
+    ]),
+  );
+  let lastErr: any;
+
+  for (const name of names) {
+    try {
+      const model = client.getGenerativeModel({ model: name });
+      // The SDK supports streaming
+      const result: any = await (model as any).generateContentStream(prompt);
+      if (!result?.stream || typeof result.stream[Symbol.asyncIterator] !== 'function') {
+        // Fallback: no streaming available for this model/version
+        const text = await generateText(prompt, name);
+        if (text) {
+          yield text;
+          return;
+        }
+        continue;
+      }
+      for await (const chunk of result.stream) {
+        try {
+          const textPart = typeof chunk?.text === 'function' ? chunk.text() : '';
+          if (textPart && textPart.trim()) {
+            yield textPart;
+          }
+        } catch {}
+      }
+      return;
+    } catch (e: any) {
+      lastErr = e;
+      continue;
+    }
+  }
+  throw new Error('The AI failed to stream a response. ' + (lastErr?.message || ''));
+}

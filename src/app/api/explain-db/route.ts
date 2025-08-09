@@ -1,6 +1,6 @@
 // src/app/api/explain-db/route.ts
 import { NextResponse } from 'next/server';
-import { generateText, PRIMARY_MODEL } from '@/lib/ai';
+import { generateText, PRIMARY_MODEL, streamTextChunks } from '@/lib/ai';
 import prisma from '@/lib/prisma';
 
 const L = process.env.LOG_EXPLAIN === '1';
@@ -9,8 +9,20 @@ const err = (...a: any[]) => { if (L) console.error('[explain-db]', ...a); };
 
 function stripPreamble(md: string): string {
   let out = (md || '').trim();
+  // Common filler/preamble phrases
   out = out.replace(/^(of course|sure\,?|here (?:is|are)|crafting learning module\.\.\.)[^\n]*\n*/i, '');
-  out = out.replace(/^# .+\n+/m, ''); // drop leading H1 if any
+  // Drop leading H1 if any
+  out = out.replace(/^# .+\n+/m, '');
+  // Drop generic disclaimers about context/section at the very start
+  const paras = out.split(/\n{2,}/);
+  if (paras.length) {
+    const first = paras[0].trim();
+    const preambleRe = /\b(document\s+context|provided\s+context|limited\s+context|this\s+(section|explanation)\s+will|in\s+this\s+(section|lesson)|overview\s+of)\b/i;
+    if (first.length <= 400 && preambleRe.test(first)) {
+      paras.shift();
+      out = paras.join('\n\n').trim();
+    }
+  }
   return out.trim() || (md || '').trim();
 }
 
@@ -23,6 +35,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({} as any));
     const subtopicIn = typeof body?.subtopic === 'string' ? body.subtopic.trim() : '';
+    const subtopicIdIn = typeof body?.subtopicId === 'string' ? body.subtopicId.trim() : '';
     const lectureIdIn = typeof body?.lectureId === 'string' ? body.lectureId.trim() : '';
     const docIn = typeof body?.documentContent === 'string' ? body.documentContent : '';
     const titleIn =
@@ -35,6 +48,14 @@ export async function POST(req: Request) {
       typeof body?.style === 'string' && body.style.trim()
         ? body.style.trim().toLowerCase()
         : 'default';
+    const coveredList = Array.isArray(body?.covered)
+      ? (body.covered as any[])
+          .map((c) => ({
+            title: String((c as any)?.title || '').trim(),
+            overview: String((c as any)?.overview || '').trim(),
+          }))
+          .filter((c) => c.title)
+      : [];
 
     const subtopic = subtopicIn || 'Overview';
     const lectureTitle = titleIn;
@@ -70,6 +91,9 @@ export async function POST(req: Request) {
       `Lecture title: "${lectureTitle}"`,
       `Subtopic: "${subtopic}"`,
       `Style: ${styleHint}`,
+      (coveredList.length
+        ? `Previously covered subtopics (avoid repeating their content; build upon them where natural):\n${JSON.stringify(coveredList, null, 2)}`
+        : ''),
       `Ground your explanation STRICTLY in the DOCUMENT CONTEXT below when relevant. If the context is missing or does not cover the subtopic, say so briefly and provide a best-effort general explanation without inventing specifics from the document.`,
       `Write 300–600 words of clean Markdown.`,
       `Start directly with content. No preamble (e.g., "Of course", "Here is", etc.).`,
@@ -80,6 +104,48 @@ export async function POST(req: Request) {
       clip(documentContent, 20000),
     ].join('\n');
 
+    // Streaming mode: return text/event-stream with incremental chunks
+    const url = new URL(req.url);
+    const doStream = url.searchParams.get('stream') === '1';
+    if (doStream) {
+      const encoder = new TextEncoder();
+      let full = '';
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          try {
+            for await (const chunk of streamTextChunks(prompt, preferredModel)) {
+              const clean = stripPreamble(chunk);
+              full += clean;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', delta: clean })}\n\n`));
+            }
+            const markdown = stripPreamble(full);
+            // Persist best-effort
+            if (subtopicIdIn && markdown) {
+              try {
+                await prisma.subtopic.update({ where: { id: subtopicIdIn }, data: { explanation: sanitizeDbText(markdown) } });
+              } catch {}
+            }
+            const ms = Date.now() - t0;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', debug: { model: effectiveModel, ms } })}\n\n`));
+            controller.close();
+          } catch (e: any) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`));
+            controller.close();
+          }
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+
+    // Non-streaming fallback
     const raw = await generateText(prompt, preferredModel);
     const markdown = stripPreamble(raw);
     const ms = Date.now() - t0;
@@ -89,7 +155,14 @@ export async function POST(req: Request) {
     if (!markdown) {
       return NextResponse.json({ error: 'empty' }, { status: 502 });
     }
-    // Return both keys so callers can pick either, plus light debug info.
+    if (subtopicIdIn) {
+      try {
+        await prisma.subtopic.update({
+          where: { id: subtopicIdIn },
+          data: { explanation: sanitizeDbText(markdown) },
+        });
+      } catch {}
+    }
     return NextResponse.json({ markdown, explanation: markdown, debug: { model: effectiveModel, ms } });
   } catch (e: any) {
     const ms = Date.now() - t0;

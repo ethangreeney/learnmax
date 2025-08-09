@@ -12,7 +12,7 @@ const MODELS = [
 ];
 
 export default function ModelSelector() {
-  const [model, setModel] = useState<string>('gemini-2.5-pro');
+  const [model, setModel] = useState<string>('gemini-2.5-flash');
 
   useEffect(() => {
     try {

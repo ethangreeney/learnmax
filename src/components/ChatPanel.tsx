@@ -56,6 +56,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [supportsStreaming, setSupportsStreaming] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,16 +94,69 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
     try {
       let model: string | undefined;
       try { model = localStorage.getItem('ai:model') || undefined; } catch {}
-      const res = await postJSON<{ response: string; debug?: { model?: string; ms?: number } }>('/api/chat', {
-        userQuestion: input,
-        documentContent,
-        model,
-      });
-      const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
-      setHistory(prev => [...prev, aiMessage]);
+
+      if (supportsStreaming) {
+        const qs = new URLSearchParams({ stream: '1' });
+        const res = await fetch('/api/chat?' + qs.toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userQuestion: userMessage.text, documentContent, model }),
+        });
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+
+        // Add an empty AI message we will append to
+        let aiIndex = -1;
+        setHistory(prev => {
+          aiIndex = prev.length;
+          return [...prev, { sender: 'ai', text: '' }];
+        });
+
+        const reader = (res.body as ReadableStream<Uint8Array>)?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        if (!reader) throw new Error('No stream reader');
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const event = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 2);
+            if (!event.startsWith('data:')) continue;
+            const json = event.slice(5).trim();
+            let payload: any;
+            try { payload = JSON.parse(json); } catch { continue; }
+            if (payload?.type === 'chunk' && typeof payload.delta === 'string') {
+              const delta = sanitizeMd(payload.delta);
+              setHistory(prev => {
+                const copy = prev.slice();
+                const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
+                const current = copy[i];
+                copy[i] = { ...current, text: (current?.text || '') + delta };
+                return copy;
+              });
+            } else if (payload?.type === 'done') {
+              // nothing extra
+            } else if (payload?.type === 'error') {
+              throw new Error(payload.error || 'stream error');
+            }
+          }
+        }
+      } else {
+        const res = await postJSON<{ response: string; debug?: { model?: string; ms?: number } }>('/api/chat', {
+          userQuestion: userMessage.text,
+          documentContent,
+          model,
+        });
+        const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
+        setHistory(prev => [...prev, aiMessage]);
+      }
     } catch (error) {
       const errorMessage: Message = { sender: 'ai', text: 'Sorry, I ran into an error. Please try again.' };
       setHistory(prev => [...prev, errorMessage]);
+      // If streaming failed once, fallback next time
+      setSupportsStreaming(false);
     } finally {
       setIsLoading(false);
     }

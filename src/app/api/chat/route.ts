@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateText } from '@/lib/ai';
+import { generateText, streamTextChunks } from '@/lib/ai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
@@ -36,14 +36,48 @@ export async function POST(req: NextRequest) {
     `;
 
     const t0 = Date.now();
+
+    // If query param stream=1, return Server-Sent Events style text/event-stream
+    const url = new URL(req.url);
+    const doStream = url.searchParams.get('stream') === '1';
+
+    if (doStream) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          try {
+            for await (const chunk of streamTextChunks(systemPrompt, model)) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`));
+            }
+            const ms = Date.now() - t0;
+            const used = model || process.env.GEMINI_MODEL || 'default';
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', debug: { model: used, ms } })}\n\n`));
+            controller.close();
+            if (userId) { try { await bumpDailyStreak(userId); } catch {} }
+          } catch (e: any) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`));
+            controller.close();
+          }
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+
+    // Fallback: non-streaming JSON
     const aiTextResponse = await generateText(systemPrompt, model);
     const ms = Date.now() - t0;
     const used = model || process.env.GEMINI_MODEL || 'default';
-    // Count chat interactions towards streak if authenticated
     if (userId) {
       await bumpDailyStreak(userId);
     }
-    // Expose simple timing for debugging UX
     return NextResponse.json({ response: aiTextResponse, debug: { model: used, ms } });
 
   } catch (error: any) {

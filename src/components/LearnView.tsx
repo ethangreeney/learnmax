@@ -83,11 +83,12 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     }
   };
 
-  // Title (display-only; rename happens in Dashboard)
-  const title = initial.title;
+  // Title (display; updated live from streaming endpoint)
+  const [title, setTitle] = useState(initial.title);
   const router = useRouter();
   const [isCompleted, setIsCompleted] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
+  const [streaming, setStreaming] = useState(false);
 
   // Explanations cache (sanitized)
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
@@ -95,6 +96,65 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
       initial.subtopics.map((s) => [s.id, s.explanation ? sanitizeMarkdown(s.explanation) : ''])
     )
   );
+
+  // On first mount, if there are no subtopics yet, stream them in progressively
+  useEffect(() => {
+    if (!initial.subtopics || initial.subtopics.length === 0) {
+      (async () => {
+        try {
+          setStreaming(true);
+          let model: string | undefined;
+          try { model = localStorage.getItem('ai:model') || undefined; } catch {}
+          const qs = new URLSearchParams({ lectureId: initial.id, ...(model ? { model } : {}) });
+          const res = await fetch('/api/lectures/stream?' + qs.toString());
+          if (!res.ok || !res.body) return;
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let idx: number;
+            while ((idx = buffer.indexOf('\n\n')) !== -1) {
+              const event = buffer.slice(0, idx).trim();
+              buffer = buffer.slice(idx + 2);
+              if (!event.startsWith('data:')) continue;
+              const json = event.slice(5).trim();
+              let payload: any; try { payload = JSON.parse(json); } catch { continue; }
+              if (payload?.type === 'subtopic' && payload.subtopic) {
+                const s = payload.subtopic as any;
+                // append into our local initial.subtopics clone
+                (initial.subtopics as any).push({
+                  id: s.id,
+                  order: s.order,
+                  title: s.title,
+                  importance: s.importance,
+                  difficulty: s.difficulty,
+                  overview: s.overview || '',
+                  explanation: s.explanation || '',
+                  mastered: false,
+                  questions: [],
+                });
+                // Keep unlocked to currentIndex
+                ui.setState((st) => ({ ...st, currentIndex: st.currentIndex, unlockedIndex: Math.max(st.unlockedIndex, st.currentIndex) }));
+                setExplanations((e) => ({ ...e, [s.id]: (s.explanation || '') }));
+              } else if (payload?.type === 'title' && typeof payload.title === 'string') {
+                setTitle(String(payload.title));
+              } else if (payload?.type === 'done') {
+                // finished initial stream
+              } else if (payload?.type === 'error') {
+                // swallow
+              }
+            }
+          }
+        } finally {
+          setStreaming(false);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Progress state (green progress bar in left sidebar)
   const initialMastered = initial.subtopics.filter((s) => s.mastered).length;
@@ -125,29 +185,51 @@ const countedIdsRef = useRef<Set<string>>(
     async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
       const s = currentSubtopic;
       if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: 'Crafting learning module...' }));
+      setExplanations((e) => ({ ...e, [s.id]: '' }));
       try {
         let model: string | undefined;
         try { model = localStorage.getItem('ai:model') || undefined; } catch {}
-        // Our API expects lectureTitle + subtopic and returns { markdown }
-        const res = await fetch('/api/explain-db', {
+        const covered = initial.subtopics
+          .slice(0, Math.max(0, currentIndex))
+          .map((st) => ({ title: st.title, overview: st.overview }));
+        const qs = new URLSearchParams({ stream: '1' });
+        const res = await fetch('/api/explain-db?' + qs.toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lectureTitle: title || initial.title,
             subtopic: s.title,
+            subtopicId: s.id,
             lectureId: initial.id,
             documentContent: initial.originalContent,
+            covered,
             model,
           }),
         });
-        if (!res.ok) {
-          const e = await res.json().catch(() => ({}));
-          throw new Error(e.error || `HTTP ${res.status}`);
+        if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const event = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 2);
+            if (!event.startsWith('data:')) continue;
+            const json = event.slice(5).trim();
+            let payload: any; try { payload = JSON.parse(json); } catch { continue; }
+            if (payload?.type === 'chunk' && typeof payload.delta === 'string') {
+              setExplanations((e) => ({ ...e, [s.id]: (e[s.id] || '') + sanitizeMarkdown(payload.delta) }));
+            } else if (payload?.type === 'done') {
+              // finished
+            } else if (payload?.type === 'error') {
+              throw new Error(payload.error || 'stream error');
+            }
+          }
         }
-        const data = (await res.json()) as { markdown?: string };
-        const md = sanitizeMarkdown(data.markdown || '');
-        setExplanations((e) => ({ ...e, [s.id]: md || 'No content generated.' }));
       } catch (e: any) {
         setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + (e?.message || '') }));
       }
@@ -160,6 +242,40 @@ const countedIdsRef = useRef<Set<string>>(
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
       fetchExplanation('default');
+    }
+    // Preload the NEXT subtopic explanation one step ahead
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < initial.subtopics.length) {
+      const next = initial.subtopics[nextIndex];
+      if (next && !explanations[next.id]) {
+        // fire-and-forget preload
+        (async () => {
+          try {
+            let model: string | undefined;
+            try { model = localStorage.getItem('ai:model') || undefined; } catch {}
+            const covered = initial.subtopics
+              .slice(0, Math.max(0, nextIndex))
+              .map((st) => ({ title: st.title, overview: st.overview }));
+            const res = await fetch('/api/explain-db', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lectureTitle: title || initial.title,
+                subtopic: next.title,
+                subtopicId: next.id,
+                lectureId: initial.id,
+                documentContent: initial.originalContent,
+                covered,
+                model,
+              }),
+            });
+            if (!res.ok) return;
+            const data = (await res.json()) as { markdown?: string };
+            const md = sanitizeMarkdown(data.markdown || '');
+            setExplanations((e) => ({ ...e, [next.id]: md || 'No content generated.' }));
+          } catch {}
+        })();
+      }
     }
     if (s) {
       if (typeof requestAnimationFrame !== 'undefined') {
@@ -404,7 +520,7 @@ function QuizPanel({
   const check = () => setRevealed(true);
   const tryAgain = () => setRevealed(false);
 
-  // Optionally fetch a harder question from lesson content, only if we have < REQUIRED_QUESTIONS
+  // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
   useEffect(() => {
     if (!hasLesson || hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
     const payload = (lessonMd || '').trim();
@@ -412,36 +528,47 @@ function QuizPanel({
 
     (async () => {
       try {
-        const res = await fetch('/api/quiz', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle }),
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = (await res.json()) as {
-          questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-        };
-        const q = data.questions?.[0];
-        if (!q) return;
-        const newQ: QuizQuestion = {
-          id:
-            typeof crypto !== 'undefined' && 'randomUUID' in crypto
-              ? (crypto as any).randomUUID()
-              : `q-${Date.now()}`,
-          prompt: q.prompt,
-          options: q.options,
-          answerIndex: q.answerIndex,
-          explanation: q.explanation,
-        };
-        setItems((prev) => (prev.length >= REQUIRED_QUESTIONS ? prev : [...prev, newQ]));
-        setAnswers([]);
-        setRevealed(false);
-        setHardLoaded(true);
+        let needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
+        const created: QuizQuestion[] = [];
+        while (needed > 0) {
+          const res = await fetch('/api/quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle }),
+          });
+          if (!res.ok) break;
+          const data = (await res.json()) as {
+            questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+          };
+          const q = data.questions?.[0];
+          if (!q) break;
+          created.push({
+            id:
+              typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? (crypto as any).randomUUID()
+                : `q-${Date.now()}-${created.length}`,
+            prompt: q.prompt,
+            options: q.options,
+            answerIndex: q.answerIndex,
+            explanation: q.explanation,
+          });
+          needed--;
+        }
+        if (created.length) {
+          setItems((prev) => {
+            const next = prev.concat(created).slice(0, REQUIRED_QUESTIONS);
+            return next;
+          });
+          setAnswers([]);
+          setRevealed(false);
+        }
       } catch {
-        // Keep seed question if API fails
+        // swallow
+      } finally {
+        setHardLoaded(true);
       }
     })();
-  }, [hasLesson, lessonMd, hardLoaded, items.length]);
+  }, [hasLesson, lessonMd, hardLoaded, items.length, subtopicTitle]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
