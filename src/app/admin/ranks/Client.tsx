@@ -5,15 +5,15 @@ import { upload } from '@vercel/blob/client';
 
 type Rank = { slug: string; name: string; minElo: number; iconUrl: string | null };
 
-export default function RankManagerClient() {
-    const initial = (typeof window !== 'undefined' && (window as any).__RANKS__) || [];
-    const [ranks, setRanks] = useState<Rank[]>(initial);
+export default function RankManagerClient({ initial }: { initial: Rank[] }) {
+    const [ranks, setRanks] = useState<Rank[]>(initial || []);
     const [saving, setSaving] = useState(false);
     const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
     useEffect(() => {
+        // If server provided no data, fetch as a fallback (shouldn't happen)
         (async () => {
-            if (!initial?.length) {
+            if (!ranks?.length) {
                 const res = await fetch('/api/ranks');
                 if (res.ok) {
                     const data = await res.json();
