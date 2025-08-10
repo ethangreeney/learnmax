@@ -167,9 +167,7 @@ function sanitizeQuiz(raw: any, subtopics: BreakdownSubtopic[]): QuizOut {
   if (Array.isArray(raw?.questions)) {
     items = raw.questions.filter(isGoodQuestion);
   }
-  if (items.length === 0) {
-    items = fallbackQuestions(subtopics);
-  }
+  // Do not auto-fill fallback questions; return empty if none
   return { questions: items };
 }
 
@@ -537,12 +535,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
                   { prompt: q2.prompt, options: q2.options as any, answerIndex: q2.answerIndex, explanation: q2.explanation, subtopicId: firstSt.id },
                 );
               } else {
-                const sub = subcaps[0];
-                const [f1, f2] = fallbackPairForSubtopic(sub);
-                quizDataV.push(
-                  { prompt: f1.prompt, options: f1.options as any, answerIndex: f1.answerIndex, explanation: f1.explanation, subtopicId: firstSt.id },
-                  { prompt: f2.prompt, options: f2.options as any, answerIndex: f2.answerIndex, explanation: f2.explanation, subtopicId: firstSt.id },
-                );
+                // Do not insert fallback questions; leave first subtopic without questions
               }
               if (quizDataV.length) await prisma.quizQuestion.createMany({ data: quizDataV });
             } catch {}
@@ -689,11 +682,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
           { prompt: q2.prompt, options: q2.options as any, answerIndex: q2.answerIndex, explanation: q2.explanation, subtopicId: st.id },
         );
       } else {
-        const [f1, f2] = fallbackPairForSubtopic(bd.subtopics[0]);
-        quizData.push(
-          { prompt: f1.prompt, options: f1.options as any, answerIndex: f1.answerIndex, explanation: f1.explanation, subtopicId: st.id },
-          { prompt: f2.prompt, options: f2.options as any, answerIndex: f2.answerIndex, explanation: f2.explanation, subtopicId: st.id },
-        );
+        // Do not insert fallback questions; leave first subtopic without questions
       }
     }
     if (quizData.length) {

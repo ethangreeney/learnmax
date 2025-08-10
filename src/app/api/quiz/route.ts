@@ -1,6 +1,7 @@
 // src/app/api/quiz/route.ts
 import { NextResponse } from 'next/server';
 import { generateJSON } from '@/lib/ai';
+import prisma from '@/lib/prisma';
 
 type RawQ = {
   question?: string;
@@ -69,7 +70,7 @@ function containsNgramQuote(explanation: string, lesson: string, n = 4): boolean
   const eText = ew.join(' ');
   for (let i = 0; i <= lw.length - n; i++) {
     const gram = lw.slice(i, i + n).join(' ');
-    if (gram.length >= 18 && eText.includes(gram)) return true;
+    if (gram.length >= 12 && eText.includes(gram)) return true;
   }
   return false;
 }
@@ -84,8 +85,17 @@ function overlapCount(text: string, kws: string[]): number {
 function isGrounded(q: CleanQ, lessonMd: string, kws: string[]): boolean {
   const text = [q.prompt, q.explanation, ...q.options].join(' ').toLowerCase();
   const hasKw = overlapCount(text, kws) >= Math.min(2, kws.length); // at least 2 keywords
-  const hasQuote = containsNgramQuote(q.explanation, lessonMd, 4);
+  const hasQuote = containsNgramQuote(q.explanation, lessonMd, 3);
   return hasKw && hasQuote;
+}
+
+function scoreCandidate(q: CleanQ, lessonMd: string, kws: string[]): number {
+  const text = [q.prompt, q.explanation, ...q.options].join(' ').toLowerCase();
+  const kwScore = overlapCount(text, kws);
+  const quoteScore = containsNgramQuote(q.explanation, lessonMd, 3) ? 3 : 0;
+  // light penalty for true/false style
+  const tfPenalty = q.options.join(' ').toLowerCase().includes('true') ? 1 : 0;
+  return kwScore + quoteScore - tfPenalty;
 }
 
 /* -------------------- Single-correctness auditor (LLM) -------------------- */
@@ -115,7 +125,7 @@ ${q.prompt}
 OPTIONS (0-based):
 ${JSON.stringify(q.options, null, 2)}
 `;
-  const withTimeout = <T,>(p: Promise<T>, ms = 6000): Promise<T> =>
+  const withTimeout = <T,>(p: Promise<T>, ms = 8000): Promise<T> =>
     Promise.race([
       p,
       new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
@@ -145,15 +155,7 @@ function pickDeclarativeSentence(md: string): string | null {
   });
   return candidates[0] || pieces[0] || null;
 }
-function fallbackFromLesson(lessonMd: string): CleanQ {
-  const s = pickDeclarativeSentence(lessonMd) || 'A tree has exactly one unique path between any two distinct vertices.';
-  return {
-    prompt: `According to the lesson, is the following statement true?\n\n“${s}”`,
-    options: ['True', 'False', 'Not stated', 'Only in a special case'],
-    answerIndex: 0,
-    explanation: `This sentence appears in (or is directly implied by) the lesson: “${s}”.`,
-  };
-}
+// Fallback completely disabled for quality: if no acceptable question, return 422
 
 /* ------------------------------ Route ------------------------------ */
 
@@ -166,10 +168,21 @@ export async function POST(req: Request) {
         ? ((body as any).model as string).trim()
         : undefined;
     const modelForQuiz = preferredModel || 'gemini-2.5-flash';
-    const lessonMd = String(body?.lessonMd || '').trim();
+    let lessonMd = String(body?.lessonMd || '').trim();
     const subtopicTitle = String(body?.subtopicTitle || '').trim();
+    const lectureId = String((body as any)?.lectureId || '').trim();
+    const overview = String((body as any)?.overview || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
 
+    // If lesson is short, try to augment from server-side stored original content using lectureId
+    if (lessonMd.length < 50 && lectureId) {
+      try {
+        const lec = await prisma.lecture.findUnique({ where: { id: lectureId }, select: { originalContent: true } });
+        const original = String(lec?.originalContent || '').trim();
+        const composite = [overview, lessonMd, original].filter(Boolean).join('\n\n');
+        if (composite.length >= 50) lessonMd = composite;
+      } catch {}
+    }
     if (lessonMd.length < 50) {
       return NextResponse.json({ error: 'lessonMd (≥50 chars) is required' }, { status: 400 });
     }
@@ -195,37 +208,56 @@ Return ONE JSON object in this shape:
 Rules:
 - ${rigor}
 - ${kwHint}
-- The explanation MUST include a short DIRECT quote (6–12 words) from the lesson, in "double quotes".
+- In the explanation, include a short DIRECT quote (6–12 words) from the lesson, in "double quotes". The quote must be verbatim and not generic filler.
 - Do NOT invent facts not supported by the lesson.
 - Do NOT prefix options with letters or numbers.
 - Exactly four options. Correct answer index must be 0..3.
- - Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
- - Avoid ambiguous, overlapping, or "All/None of the above" answers.
+- Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
+- Avoid ambiguous, overlapping, or "All/None of the above" answers.
+- Prefer conceptual or applied questions over trivial factual restatement.
 
-  ---
-  LESSON MARKDOWN (truncated):
-  ${clip(lessonMd, 8000)}
-  ---`.trim();
+Context hints to avoid triviality:
+- Do not ask "is this sentence true" questions.
+- Avoid simply echoing a single sentence; synthesize across two or more details where possible.
 
-    const withTimeout = <T,>(p: Promise<T>, ms = 9000): Promise<T> =>
+---
+LESSON MARKDOWN (truncated):
+${clip(lessonMd, 6000)}
+---`.trim();
+
+    const withTimeout = <T,>(p: Promise<T>, ms = 20000): Promise<T> =>
       Promise.race([
         p,
         new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
       ]);
 
     // First attempt (with timeout)
-    let json = await withTimeout(generateJSON(basePrompt, modelForQuiz)).catch(() => ({} as any));
+    let attempt1Ms = 0; let timedOut1 = false;
+    let json: any = {};
+    try {
+      const a0 = Date.now();
+      json = await withTimeout(generateJSON(basePrompt, modelForQuiz));
+      attempt1Ms = Date.now() - a0;
+    } catch (e: any) {
+      attempt1Ms = attempt1Ms || 0;
+      timedOut1 = String(e?.message || '').toLowerCase().includes('timeout');
+      json = {} as any;
+    }
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
-    let grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
-    // Enforce exactly-one-correct via a dedicated auditor
-    const single: CleanQ[] = [];
-    for (const q of grounded) {
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await hasExactlyOneCorrect(q, lessonMd, modelForQuiz);
-      if (ok) single.push(q);
+    const cleaned1 = cleaned.slice();
+    const initiallyGrounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
+    // Enforce exactly-one-correct via a dedicated auditor (parallelized)
+    let auditMs = 0;
+    let grounded: CleanQ[] = [];
+    if (initiallyGrounded.length) {
+      const auditStart = Date.now();
+      const results = await Promise.allSettled(
+        initiallyGrounded.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
+      );
+      auditMs += Date.now() - auditStart;
+      grounded = initiallyGrounded.filter((_, i) => results[i].status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value);
     }
-    grounded = single;
 
     // Retry if nothing passed audit
     if (!grounded.length) {
@@ -238,6 +270,8 @@ Try again and follow these STRICT requirements:
 - In the explanation, include one exact quote (6–12 words) from the LESSON in "double quotes". The quote must be verbatim.
  - Exactly ONE option must be correct; ensure the other three are unambiguously incorrect.
  - Do NOT use "All of the above" or "None of the above".
+ - Do NOT produce a boolean true/false wrapper around a copied sentence.
+ - Prefer a question that requires understanding a relationship, mechanism, or constraint stated in the lesson.
 
 Return ONLY the same JSON shape as before.
 
@@ -246,28 +280,45 @@ Return ONLY the same JSON shape as before.
       ${clip(lessonMd, 8000)}
       ---`.trim();
 
-      json = await withTimeout(generateJSON(retryPrompt, modelForQuiz)).catch(() => ({} as any));
+      let attempt2Ms = 0; let timedOut2 = false;
+      try {
+        const b0 = Date.now();
+        json = await withTimeout(generateJSON(retryPrompt, modelForQuiz));
+        attempt2Ms = Date.now() - b0;
+      } catch (e: any) {
+        attempt2Ms = attempt2Ms || 0;
+        timedOut2 = String(e?.message || '').toLowerCase().includes('timeout');
+        json = {} as any;
+      }
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
-      grounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
-      // Re-run single-correct audit on retry
-      const singleRetry: CleanQ[] = [];
-      for (const q of grounded) {
-        // eslint-disable-next-line no-await-in-loop
-        const ok = await hasExactlyOneCorrect(q, lessonMd, modelForQuiz);
-        if (ok) singleRetry.push(q);
+      const cleaned2 = cleaned.slice();
+      const groundedRetry = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
+      if (groundedRetry.length) {
+        const auditStart2 = Date.now();
+        const results2 = await Promise.allSettled(
+          groundedRetry.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
+        );
+        auditMs += Date.now() - auditStart2;
+        const auditedRetry = groundedRetry.filter((_, i) => results2[i].status === 'fulfilled' && (results2[i] as PromiseFulfilledResult<boolean>).value);
+        grounded = auditedRetry.length ? auditedRetry : [];
+      } else {
+        grounded = [];
       }
-      grounded = singleRetry;
+      const msTotal = Date.now() - t0;
+      if (!grounded.length) {
+        return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: msTotal, auditMs, attempt1Ms, attempt2Ms, timedOut1, timedOut2, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, cleaned2: cleaned2.length, grounded2: groundedRetry.length } }, { status: 422 });
+      }
     }
 
-    // Final fallback — guaranteed grounded
+    // Decide acceptance path and return
     if (!grounded.length) {
-      const fb = fallbackFromLesson(lessonMd);
-      return NextResponse.json({ questions: [fb], debug: { model: modelForQuiz, ms: Date.now() - t0 } });
+      return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, attempt1Ms, timedOut1, cleaned1: cleaned.length, grounded1: initiallyGrounded.length } }, { status: 422 });
     }
 
-    // Keep just one good question
-    return NextResponse.json({ questions: [grounded[0]], debug: { model: modelForQuiz, ms: Date.now() - t0 } });
+    // Keep just one good question (already audited)
+    const acceptPath = 'audited';
+    return NextResponse.json({ questions: [grounded[0]], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: acceptPath, attempt1Ms, timedOut1, cleaned1: cleaned?.length || 0, grounded1: initiallyGrounded?.length || 0 } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'quiz failed' }, { status: 500 });
   }

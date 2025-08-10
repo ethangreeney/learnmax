@@ -11,9 +11,10 @@ import {
   deriveUnlockedIndex,
   type LearnLecture,
   type QuizQuestion,
+  type LearnSubtopic,
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
-import useBodyScrollLock from '@/hooks/useBodyScrollLock';
+// import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 
 /** Normalize model output so it never renders as one giant code block. */
 function sanitizeMarkdown(md: string): string {
@@ -57,6 +58,22 @@ function sanitizeMarkdown(md: string): string {
   }
 
   return t;
+}
+
+// Merge streaming chunks without gluing words together across boundaries.
+function appendChunkSafely(previous: string, next: string): string {
+  if (!next) return previous || '';
+  if (!previous) return next;
+  const lastChar = previous.slice(-1);
+  const firstChar = next[0];
+  const isWordChar = (ch: string) => /[A-Za-z0-9]/.test(ch);
+  const needsSpace = (
+    // word + word (e.g., "feathers" + "While")
+    (isWordChar(lastChar) && isWordChar(firstChar)) ||
+    // sentence/colon punctuation followed by a word with no whitespace
+    (/[\.:;!?]$/.test(previous) && isWordChar(firstChar))
+  ) && !/^\s/.test(next);
+  return needsSpace ? previous + ' ' + next : previous + next;
 }
 
 // Ensure rendered content never starts with a title/heading
@@ -117,6 +134,11 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
   const [showSparkle, setShowSparkle] = useState(false);
   const [streaming, setStreaming] = useState(false);
 
+  // Maintain a reactive questions map keyed by subtopicId so UI updates immediately
+  const [questionsById, setQuestionsById] = useState<Record<string, QuizQuestion[]>>(
+    () => Object.fromEntries(initial.subtopics.map((s) => [s.id, s.questions || []]))
+  );
+
   // Prevent duplicate quiz generation across preloader and panel
   const questionsInFlightRef = useRef<Set<string>>(new Set());
   const reserveQuestions = useCallback((id: string): boolean => {
@@ -126,17 +148,29 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     return true;
   }, []);
 
+  // If subtopics stream in and the second one becomes available AFTER mount while
+  // we are still on the first, prefetch is deferred to the subtopic-change effect
+  // so it can run in parallel with current quiz generation.
+
   // Track which subtopics have been prefetched to avoid missing/duplicate work
   const prefetchedNextRef = useRef<Set<string>>(new Set());
   const releaseQuestions = useCallback((id: string): void => {
     questionsInFlightRef.current.delete(id);
   }, []);
 
+  // Force-correct first subtopic explanation once on mount to avoid any
+  // potential mismatch showing the second subtopic's content.
+  const forceFirstFixRef = useRef<boolean>(false);
+
   // Explanations cache (sanitized)
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       initial.subtopics.map((s) => [s.id, s.explanation ? sanitizeMarkdown(s.explanation) : ''])
     )
+  );
+  // Track when a subtopic's explanation is fully generated
+  const [explanationDone, setExplanationDone] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(initial.subtopics.map((s) => [s.id, Boolean(s.explanation && s.explanation.length > 0)]))
   );
 
   // On first mount, if there are no subtopics yet, stream them in progressively
@@ -153,7 +187,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
-          while (true) {
+            while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
@@ -223,29 +257,43 @@ const countedIdsRef = useRef<Set<string>>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.subtopics.map((s) => (s as any).mastered).join('|')]);
 
-  const fetchExplanation = useCallback(
-    async (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') => {
-      const s = currentSubtopic;
-      if (!s) return;
-      setExplanations((e) => ({ ...e, [s.id]: '' }));
+  const fetchExplanationFor = useCallback(
+    async (
+      target: LearnSubtopic | null | undefined,
+      style: 'default' | 'simplified' | 'detailed' | 'example' = 'default',
+    ) => {
+      if (!target) return;
+      const targetId = target.id;
+      const targetTitle = target.title;
+      // Guard: only stream for the ACTIVE subtopic being viewed.
+      try {
+        const activeIndex = (ui as any)?.getState?.().currentIndex ?? currentIndex;
+        const activeId = initial.subtopics[activeIndex]?.id;
+        if (activeId !== targetId) {
+          return;
+        }
+      } catch {}
+      setExplanations((e) => ({ ...e, [targetId]: '' }));
       try {
         let model: string | undefined;
         try { model = localStorage.getItem('ai:model') || undefined; } catch {}
-        const covered = initial.subtopics
-          .slice(0, Math.max(0, currentIndex))
-          .map((st) => ({ title: st.title, overview: st.overview }));
+        const targetIndex = Math.max(0, initial.subtopics.findIndex((st) => st.id === targetId));
+        const covered = targetIndex > 0
+          ? initial.subtopics.slice(0, targetIndex).map((st) => ({ title: st.title, overview: st.overview }))
+          : [];
         const qs = new URLSearchParams({ stream: '1' });
         const res = await fetch('/api/explain-db?' + qs.toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lectureTitle: title || initial.title,
-            subtopic: s.title,
-            subtopicId: s.id,
+            subtopic: targetTitle,
+            subtopicId: targetId,
             lectureId: initial.id,
             documentContent: initial.originalContent,
             covered,
             model,
+            style,
           }),
         });
         if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
@@ -264,30 +312,70 @@ const countedIdsRef = useRef<Set<string>>(
             const json = event.slice(5).trim();
             let payload: any; try { payload = JSON.parse(json); } catch { continue; }
             if (payload?.type === 'chunk' && typeof payload.delta === 'string') {
-              setExplanations((e) => ({ ...e, [s.id]: (e[s.id] || '') + sanitizeMarkdown(payload.delta) }));
+              // Guard: ensure target remains the active subtopic while streaming
+              let stillActive = true;
+              try {
+                const activeIndex = (ui as any)?.getState?.().currentIndex ?? currentIndex;
+                const activeId = initial.subtopics[activeIndex]?.id;
+                stillActive = activeId === targetId;
+              } catch {}
+              if (stillActive) {
+                setExplanations((e) => ({
+                  ...e,
+                  [targetId]: appendChunkSafely(e[targetId] || '', sanitizeMarkdown(payload.delta)),
+                }));
+              }
             } else if (payload?.type === 'done') {
-              // finished
+              setExplanationDone((m) => ({ ...m, [targetId]: true }));
             } else if (payload?.type === 'error') {
               throw new Error(payload.error || 'stream error');
             }
           }
         }
       } catch (e: any) {
-        setExplanations((ex) => ({ ...ex, [s.id]: 'Could not generate explanation. ' + (e?.message || '') }));
+        setExplanations((ex) => ({ ...ex, [targetId]: 'Could not generate explanation. ' + (e?.message || '') }));
       }
     },
-    [currentSubtopic, title, initial.title]
+    [title, initial.title, initial.id, initial.originalContent, initial.subtopics]
   );
+
+  // Convenience wrapper for buttons: uses current subtopic
+  const fetchExplanation = useCallback(
+    (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') =>
+      fetchExplanationFor(currentSubtopic, style),
+    [currentSubtopic, fetchExplanationFor]
+  );
+
+  // On initial mount, proactively regenerate the FIRST subtopic explanation once.
+  // This guards against any stale/mismapped persisted content for index 0.
+  useEffect(() => {
+    if (forceFirstFixRef.current) return;
+    if (!initial.subtopics || initial.subtopics.length === 0) return;
+    // Only act if we are at the first subtopic
+    // deferred: handled when explanation is ready to run in parallel with quiz
+    return;
+    const first = initial.subtopics[0];
+    if (!first) return;
+    forceFirstFixRef.current = true;
+    // Clear then regenerate to ensure fresh, correct content
+    setExplanations((e) => ({ ...e, [first.id]: '' }));
+    void fetchExplanationFor(first, 'default');
+
+    // Note: prefetch of second subtopic is handled by other effects to avoid
+    // duplicate requests and potential content mixups on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // On subtopic change: fetch explanation once and scroll to top
   useEffect(() => {
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
-      fetchExplanation('default');
+      fetchExplanationFor(s, 'default');
     }
-    // Preload the NEXT subtopic explanation one step ahead
+    const currentReady = s ? Boolean(explanationDone[s.id]) : false;
+    // Preload the NEXT subtopic explanation one step ahead, only after current explanation is done
     const nextIndex = currentIndex + 1;
-    if (nextIndex < initial.subtopics.length) {
+    if (currentReady && nextIndex < initial.subtopics.length) {
       const next = initial.subtopics[nextIndex];
       if (next && !prefetchedNextRef.current.has(next.id)) {
         // Mark as prefetched to guard against StrictMode double effects
@@ -317,13 +405,18 @@ const countedIdsRef = useRef<Set<string>>(
             const data = (await res.json()) as { markdown?: string };
             const md = sanitizeMarkdown(data.markdown || '');
             setExplanations((e) => ({ ...e, [next.id]: md || 'No content generated.' }));
+            setExplanationDone((m) => ({ ...m, [next.id]: true }));
 
             // Preload quiz questions for the next subtopic as well
             try {
               if (!reserveQuestions(next.id)) return;
               const REQUIRED_QUESTIONS = 2;
-              const existing = Array.isArray(next.questions) ? next.questions.length : 0;
-              let needed = Math.max(0, REQUIRED_QUESTIONS - existing);
+              const existingCount = Array.isArray(questionsById[next.id])
+                ? questionsById[next.id].length
+                : Array.isArray(next.questions)
+                  ? next.questions.length
+                  : 0;
+              let needed = Math.max(0, REQUIRED_QUESTIONS - existingCount);
               const lessonPayload = (md || '').trim();
               if (lessonPayload.length >= 50 && needed > 0) {
                 const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
@@ -331,7 +424,7 @@ const countedIdsRef = useRef<Set<string>>(
                   const qRes = await fetch('/api/quiz', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle: next.title }),
+                    body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle: next.title, lectureId: initial.id, overview: next.overview || '' }),
                   });
                   if (!qRes.ok) break;
                   const qData = (await qRes.json()) as {
@@ -354,8 +447,8 @@ const countedIdsRef = useRef<Set<string>>(
                     };
                     const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
                     if (saved.length) {
-                      // Update local in-memory copy so the quiz is ready instantly when navigating
-                      (initial.subtopics[nextIndex] as any).questions = saved;
+                      // Update reactive questions map so the quiz is ready instantly when navigating
+                      setQuestionsById((prev) => ({ ...prev, [next.id]: saved as unknown as QuizQuestion[] }));
                     }
                   }
                 }
@@ -380,7 +473,7 @@ const countedIdsRef = useRef<Set<string>>(
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSubtopic?.id]);
+  }, [currentSubtopic?.id, explanationDone[currentSubtopic?.id || '']]);
 
   // rename removed from lesson page
 
@@ -492,24 +585,23 @@ const countedIdsRef = useRef<Set<string>>(
             {(() => {
               const lessonMd = stripLeadingTitle(explanations[currentSubtopic.id] || '', currentSubtopic.title).trim();
               const hasLesson = lessonMd.length >= 50;
-              if (!hasLesson) {
-                return (
-                  <div className="card p-6 md:p-8 xl:p-10">
-                    <h3 className="mb-2 text-xl font-semibold">Mastery Check</h3>
-                    <p className="text-sm text-neutral-400">Generating lesson content… the quiz will appear once the explanation is ready.</p>
-                  </div>
-                );
-              }
               return (
                 <div className="quiz-panel card p-6 md:p-8 xl:p-10">
                   <h3 className="mb-6 text-2xl font-bold tracking-tight">Mastery Check</h3>
-                  <QuizPanel
+                  {!hasLesson && (
+                    <p className="mb-4 text-sm text-neutral-400">
+                      Waiting for the lesson to finish… quiz will be prepared right after.
+                    </p>
+                  )}
+                   <QuizPanel
                     key={currentSubtopic.id}
                     subtopicId={currentSubtopic.id}
                     subtopicTitle={currentSubtopic.title}
-                    hasLesson={hasLesson}
+                    overview={currentSubtopic.overview}
+                    explanationReady={Boolean(explanationDone[currentSubtopic.id])}
+                    lectureId={initial.id}
                     lessonMd={lessonMd}
-                    questions={currentSubtopic.questions}
+                     questions={questionsById[currentSubtopic.id] || currentSubtopic.questions}
                     reserveQuestions={reserveQuestions}
                     releaseQuestions={releaseQuestions}
                     onPassed={async () => {
@@ -529,13 +621,21 @@ const countedIdsRef = useRef<Set<string>>(
                   }); } catch {}
 
                   if (isLast) {
+                    // Mark complete so progress bar hits 100%
                     setIsCompleted(true);
                     setShowSparkle(true);
+                    // Smoothly scroll to the top so the user can see the full progress bar
+                    if (typeof requestAnimationFrame !== 'undefined') {
+                      requestAnimationFrame(() => scrollToMainTop());
+                    } else {
+                      scrollToMainTop();
+                    }
+                    // Keep sparkle briefly, then hide
                     setTimeout(() => setShowSparkle(false), 1200);
-                    // Let the bar finish animating, then go to completion screen
+                    // Give time for the bar's 500ms animation and the scroll to finish before redirecting
                     setTimeout(() => {
                       try { router.push(`/learn/${initial.id}/complete`); } catch {}
-                    }, 900);
+                    }, 1600);
                     return;
                   }
                   // Optimistic advance
@@ -550,8 +650,8 @@ const countedIdsRef = useRef<Set<string>>(
                     }}
                     onQuestionsSaved={(saved) => {
                       try {
-                        const idx = currentIndex;
-                        (initial.subtopics[idx] as any).questions = saved as any;
+                        const id = currentSubtopic.id;
+                        setQuestionsById((prev) => ({ ...prev, [id]: saved }));
                       } catch {}
                     }}
                   />
@@ -579,7 +679,9 @@ const countedIdsRef = useRef<Set<string>>(
 function QuizPanel({
   subtopicId,
   subtopicTitle,
-  hasLesson,
+  overview,
+  explanationReady,
+  lectureId,
   lessonMd,
   questions,
   onPassed,
@@ -589,7 +691,9 @@ function QuizPanel({
 }: {
   subtopicId: string;
   subtopicTitle: string;
-  hasLesson: boolean;
+  overview?: string;
+  explanationReady: boolean;
+  lectureId: string;
   lessonMd?: string;
   questions: QuizQuestion[];
   onPassed: () => void;
@@ -631,8 +735,9 @@ function QuizPanel({
 
   // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
   useEffect(() => {
-    if (!hasLesson || hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
-    // Require sufficient lesson text before reserving to avoid reservation leaks
+    // Only start once the explanation is fully ready to preserve question quality
+    if (!explanationReady) return;
+    if (hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
     const lessonPayload = (lessonMd || '').trim();
     if (lessonPayload.length < 50) return;
     // Prevent duplicate generations (e.g., StrictMode double invoke / re-mounts)
@@ -645,18 +750,20 @@ function QuizPanel({
         let needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
         const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
         let tries = 0;
-        const MAX_TRIES = 3 * Math.max(1, needed);
+        const MAX_TRIES = 4 * Math.max(1, needed);
         while (needed > 0 && tries < MAX_TRIES) {
           tries++;
           const res = await fetch('/api/quiz', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle }),
+            body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle, lectureId, overview }),
           });
           if (!res.ok) continue;
           const data = (await res.json()) as {
             questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+            debug?: any;
           };
+          try { if (data?.debug) console.debug('[quiz]', { subtopicId, debug: data.debug }); } catch {}
           const q = data.questions?.[0];
           if (!q) continue;
           generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
@@ -691,7 +798,7 @@ function QuizPanel({
         try { releaseQuestions?.(subtopicId); } catch {}
       }
     })();
-  }, [hasLesson, lessonMd, hardLoaded, items.length, subtopicId, subtopicTitle, reserveQuestions, releaseQuestions]);
+  }, [explanationReady, lessonMd, hardLoaded, items.length, subtopicId, subtopicTitle, reserveQuestions, releaseQuestions]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
@@ -701,7 +808,7 @@ function QuizPanel({
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle }),
+        body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle, lectureId, overview }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
@@ -709,7 +816,9 @@ function QuizPanel({
       }
       const data = (await res.json()) as {
         questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+        debug?: any;
       };
+      try { if (data?.debug) console.debug('[quiz/another]', { subtopicId, debug: data.debug }); } catch {}
       const q = data.questions?.[0];
       if (!q) throw new Error('No question returned');
       // Persist the one we generated if we still need more
@@ -759,12 +868,12 @@ function QuizPanel({
       setLoadingAnother(false);
     }
   };
-  if (hasLesson && items.length < REQUIRED_QUESTIONS && !hardLoaded) {
+  if (items.length < REQUIRED_QUESTIONS && !hardLoaded) {
     return <p className="text-sm text-neutral-400">Preparing questions…</p>;
   }
 
 
-  if (!items || items.length === 0) {
+  if (explanationReady && (!items || items.length === 0) && hardLoaded) {
     return <p className="text-sm text-neutral-400">No quiz questions for this subtopic.</p>;
   }
 
@@ -776,7 +885,17 @@ function QuizPanel({
           const isAllCorrect = allCorrect;
           return (
             <li key={q.id} className="space-y-3">
-              <div className="font-medium text-neutral-200">{q.prompt}</div>
+              <div className="font-medium text-neutral-200 chat-md">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={{
+                    em: (props) => <em className="font-semibold not-italic" {...props} />,
+                  }}
+                >
+                  {q.prompt}
+                </ReactMarkdown>
+              </div>
               <div className="grid gap-2">
                 {q.options.map((o, j) => {
                   const isSelected = selected === j;
@@ -818,8 +937,10 @@ function QuizPanel({
                 })}
               </div>
               {revealed && (
-                <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-                  {q.explanation}
+                <div className="mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400 chat-md">
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    {q.explanation}
+                  </ReactMarkdown>
                 </div>
               )}
             </li>

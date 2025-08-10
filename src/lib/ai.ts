@@ -1,13 +1,57 @@
 // src/lib/ai.ts
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 
+/**
+ * Primary/default model, preferring explicitly configured OpenAI model
+ * if present, otherwise falling back to configured Gemini model, and then
+ * a sensible Gemini default. This value is only used when a caller doesn't
+ * pass an explicit preferredModel.
+ */
 export const PRIMARY_MODEL =
-  process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
+  (process.env.OPENAI_MODEL?.trim()) ||
+  (process.env.GEMINI_MODEL?.trim()) ||
+  'gemini-2.5-flash';
 
-const apiKey = process.env.GOOGLE_API_KEY;
-if (!apiKey) throw new Error('GOOGLE_API_KEY is not set. Add it to .env.local.');
+// Lazy-init clients so we don't require both providers to be configured.
+let googleClient: GoogleGenerativeAI | null = null;
+let openaiClient: OpenAI | null = null;
 
-const client = new GoogleGenerativeAI(apiKey);
+function getGoogleClient(): GoogleGenerativeAI {
+  if (!googleClient) {
+    const key = process.env.GOOGLE_API_KEY;
+    if (!key) throw new Error('GOOGLE_API_KEY is not set. Add it to .env.local.');
+    googleClient = new GoogleGenerativeAI(key);
+  }
+  return googleClient;
+}
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('OPENAI_API_KEY is not set. Add it to .env.local.');
+    openaiClient = new OpenAI({ apiKey: key });
+  }
+  return openaiClient;
+}
+
+function isOpenAIModel(name: string | undefined): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return n.startsWith('gpt-') || n.startsWith('openai:');
+}
+
+function normalizeModelId(name: string): string {
+  // Allow an explicit provider prefix like "openai:gpt-5"
+  const idx = name.indexOf(':');
+  return idx > -1 ? name.slice(idx + 1) : name;
+}
+
+function isGPT5Mini(name: string | undefined): boolean {
+  if (!name) return false;
+  const id = normalizeModelId(name).toLowerCase();
+  return id.startsWith('gpt-5-mini');
+}
 
 function tryParseJson(s: string): any | null { try { return JSON.parse(s); } catch { return null; } }
 
@@ -36,33 +80,65 @@ function extractFirstJSONObject(text: string): string | null {
 const L = process.env.LOG_AI === '1';
 const log = (...a: any[]) => { if (L) console.log('[ai]', ...a); };
 
-export async function generateText(prompt: string, preferredModel?: string): Promise<string> {
-  const names = Array.from(new Set([
-    preferredModel?.trim() || PRIMARY_MODEL,
-    'gemini-2.5-pro',
-    'gemini-2.0-pro',
-    'gemini-2.5-flash-lite',
-    'gemini-2.0-flash',
-  ]));
-  let lastErr: any;
+function buildFallbackList(preferredModel?: string): string[] {
+  const list: string[] = [];
+  const base = preferredModel?.trim() || PRIMARY_MODEL;
+  list.push(base);
+  if (isOpenAIModel(base)) {
+    // Only allow GPT-5 Mini as the OpenAI fallback option
+    list.push('gpt-5-mini');
+  } else {
+    // Gemini fallbacks
+    list.push('gemini-2.5-pro');
+    list.push('gemini-2.0-pro');
+    list.push('gemini-2.5-flash-lite');
+    list.push('gemini-2.0-flash');
+  }
+  return Array.from(new Set(list));
+}
 
+async function generateTextWithGemini(prompt: string, modelName: string): Promise<string> {
+  const client = getGoogleClient();
+  const model = client.getGenerativeModel({ model: modelName });
+  const result = await model.generateContent(prompt);
+  const text = result.response?.text?.();
+  if (text && text.trim()) return text;
+  const parts: string[] = [];
+  const candidates = (result.response as any)?.candidates ?? [];
+  for (const c of candidates) {
+    const p = c?.content?.parts ?? [];
+    for (const part of p) if (typeof part?.text === 'string' && part.text.trim()) parts.push(part.text.trim());
+  }
+  if (parts.length) return parts.join('\n\n');
+  throw new Error(`Empty response from ${modelName}`);
+}
+
+async function generateTextWithOpenAI(prompt: string, modelName: string): Promise<string> {
+  const openai = getOpenAIClient();
+  const model = normalizeModelId(modelName);
+  const params: any = {
+    model,
+    messages: [ { role: 'user', content: prompt } ],
+  };
+  if (!isGPT5Mini(model)) {
+    params.temperature = 0.2;
+  }
+  const completion = await openai.chat.completions.create(params);
+  const content = completion.choices?.[0]?.message?.content || '';
+  if (content && content.trim()) return content;
+  throw new Error(`Empty response from ${model}`);
+}
+
+export async function generateText(prompt: string, preferredModel?: string): Promise<string> {
+  const names = buildFallbackList(preferredModel);
+  let lastErr: any;
   for (const name of names) {
     try {
-      const model = client.getGenerativeModel({ model: name });
-      const result = await model.generateContent(prompt);
-
-      const text = result.response?.text?.();
-      if (text && text.trim()) { log('ok', name, text.length); return text; }
-
-      const parts: string[] = [];
-      const candidates = (result.response as any)?.candidates ?? [];
-      for (const c of candidates) {
-        const p = c?.content?.parts ?? [];
-        for (const part of p) if (typeof part?.text === 'string' && part.text.trim()) parts.push(part.text.trim());
-      }
-      if (parts.length) { log('parts', name, parts.length); return parts.join('\n\n'); }
-
-      lastErr = new Error(`Empty response from ${name}`);
+      const t = isOpenAIModel(name)
+        ? await generateTextWithOpenAI(prompt, name)
+        : await generateTextWithGemini(prompt, name);
+      log('ok', name, t.length);
+      return t;
     } catch (e: any) {
       lastErr = e;
       continue;
@@ -72,49 +148,64 @@ export async function generateText(prompt: string, preferredModel?: string): Pro
 }
 
 export async function generateJSON(prompt: string, preferredModel?: string): Promise<any> {
-  const names = Array.from(new Set([
-    preferredModel?.trim() || PRIMARY_MODEL,
-    'gemini-2.5-pro',
-    'gemini-2.0-pro',
-    'gemini-2.5-flash-lite',
-    'gemini-2.0-flash',
-  ]));
+  const names = buildFallbackList(preferredModel);
   let lastErr: any;
-
   for (const name of names) {
     try {
-      const model = client.getGenerativeModel({
-        model: name,
-        generationConfig: { responseMimeType: 'application/json' },
-      });
-      const result = await model.generateContent(prompt);
-
-      const text = result.response?.text?.();
-      if (text && text.trim()) {
-        const direct = tryParseJson(text); if (direct !== null) return direct;
-        const fenced = extractFromCodeFence(text); if (fenced) {
-          const p = tryParseJson(fenced); if (p !== null) return p;
+      if (isOpenAIModel(name)) {
+        const openai = getOpenAIClient();
+        const model = normalizeModelId(name);
+        const params: any = {
+          model,
+          messages: [ { role: 'user', content: prompt } ],
+        };
+        if (!isGPT5Mini(model)) {
+          params.temperature = 0;
+          params.response_format = { type: 'json_object' };
         }
-        const obj = extractFirstJSONObject(text); if (obj) {
-          const p = tryParseJson(obj); if (p !== null) return p;
+        const completion = await openai.chat.completions.create(params);
+        const text = completion.choices?.[0]?.message?.content || '';
+        if (text && text.trim()) {
+          const parsed = tryParseJson(text);
+          if (parsed !== null) return parsed;
         }
+        lastErr = new Error(`Empty/invalid JSON from ${model}`);
+        continue;
+      } else {
+        const client = getGoogleClient();
+        const model = client.getGenerativeModel({
+          model: name,
+          generationConfig: { responseMimeType: 'application/json' },
+        });
+        const result = await model.generateContent(prompt);
+        const text = result.response?.text?.();
+        if (text && text.trim()) {
+          const direct = tryParseJson(text); if (direct !== null) return direct;
+          const fenced = extractFromCodeFence(text); if (fenced) {
+            const p = tryParseJson(fenced); if (p !== null) return p;
+          }
+          const obj = extractFirstJSONObject(text); if (obj) {
+            const p = tryParseJson(obj); if (p !== null) return p;
+          }
+        }
+        const parts: string[] = [];
+        const candidates = (result.response as any)?.candidates ?? [];
+        for (const c of candidates) {
+          const p = c?.content?.parts ?? [];
+          for (const part of p) if (typeof part?.text === 'string' && part.text.trim()) parts.push(part.text.trim());
+        }
+        for (const p of parts) {
+          const direct = tryParseJson(p); if (direct !== null) return direct;
+          const fenced = extractFromCodeFence(p); if (fenced) {
+            const pf = tryParseJson(fenced); if (pf !== null) return pf;
+          }
+          const obj = extractFirstJSONObject(p); if (obj) {
+            const pb = tryParseJson(obj); if (pb !== null) return pb;
+          }
+        }
+        lastErr = new Error(`Empty/invalid JSON from ${name}`);
+        continue;
       }
-      const parts: string[] = [];
-      const candidates = (result.response as any)?.candidates ?? [];
-      for (const c of candidates) {
-        const p = c?.content?.parts ?? [];
-        for (const part of p) if (typeof part?.text === 'string' && part.text.trim()) parts.push(part.text.trim());
-      }
-      for (const p of parts) {
-        const direct = tryParseJson(p); if (direct !== null) return direct;
-        const fenced = extractFromCodeFence(p); if (fenced) {
-          const pf = tryParseJson(fenced); if (pf !== null) return pf;
-        }
-        const obj = extractFirstJSONObject(p); if (obj) {
-          const pb = tryParseJson(obj); if (pb !== null) return pb;
-        }
-      }
-      lastErr = new Error(`Empty/invalid JSON from ${name}`);
     } catch (e: any) {
       lastErr = e;
       continue;
@@ -131,40 +222,58 @@ export async function* streamTextChunks(
   prompt: string,
   preferredModel?: string,
 ): AsyncGenerator<string, void, void> {
-  const names = Array.from(
-    new Set([
-      (preferredModel?.trim() || PRIMARY_MODEL),
-      'gemini-2.5-pro',
-      'gemini-2.0-pro',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash',
-    ]),
-  );
+  const names = buildFallbackList(preferredModel);
   let lastErr: any;
 
   for (const name of names) {
     try {
-      const model = client.getGenerativeModel({ model: name });
-      // The SDK supports streaming
-      const result: any = await (model as any).generateContentStream(prompt);
-      if (!result?.stream || typeof result.stream[Symbol.asyncIterator] !== 'function') {
-        // Fallback: no streaming available for this model/version
-        const text = await generateText(prompt, name);
-        if (text) {
-          yield text;
+      if (isOpenAIModel(name)) {
+        const openai = getOpenAIClient();
+        const model = normalizeModelId(name);
+        // GPT-5 Mini currently may not support streaming for some orgs; simulate streaming by
+        // falling back to a single non-streaming generation to keep the SSE contract alive.
+        if (isGPT5Mini(model)) {
+          const text = await generateText(prompt, name);
+          if (text) { yield text; }
           return;
         }
-        continue;
+        const params: any = {
+          model,
+          messages: [ { role: 'user', content: prompt } ],
+          stream: true,
+        };
+        if (!isGPT5Mini(model)) {
+          params.temperature = 0.2;
+        }
+        const stream: any = await openai.chat.completions.create(params);
+        let yielded = false;
+        for await (const part of stream) {
+          const delta: string | undefined = part?.choices?.[0]?.delta?.content;
+          if (delta && delta.trim()) { yield delta; yielded = true; }
+        }
+        if (!yielded) {
+          // Fallback to non-streaming single shot
+          const text = await generateText(prompt, name);
+          if (text) { yield text; }
+        }
+        return;
+      } else {
+        const client = getGoogleClient();
+        const model = client.getGenerativeModel({ model: name });
+        const result: any = await (model as any).generateContentStream(prompt);
+        if (!result?.stream || typeof result.stream[Symbol.asyncIterator] !== 'function') {
+          const text = await generateText(prompt, name);
+          if (text) { yield text; return; }
+          continue;
+        }
+        for await (const chunk of result.stream) {
+          try {
+            const textPart = typeof chunk?.text === 'function' ? chunk.text() : '';
+            if (textPart && textPart.trim()) { yield textPart; }
+          } catch {}
+        }
+        return;
       }
-      for await (const chunk of result.stream) {
-        try {
-          const textPart = typeof chunk?.text === 'function' ? chunk.text() : '';
-          if (textPart && textPart.trim()) {
-            yield textPart;
-          }
-        } catch {}
-      }
-      return;
     } catch (e: any) {
       lastErr = e;
       continue;

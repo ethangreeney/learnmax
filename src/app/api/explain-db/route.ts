@@ -50,6 +50,20 @@ function stripPreamble(md: string, opts?: StripOpts): string {
   return out;
 }
 
+// Merge streaming chunks without gluing words together across boundaries.
+function appendChunkSafely(previous: string, next: string): string {
+  if (!next) return previous || '';
+  if (!previous) return next;
+  const lastChar = previous.slice(-1);
+  const firstChar = next[0];
+  const isWordChar = (ch: string) => /[A-Za-z0-9]/.test(ch);
+  const needsSpace = (
+    (isWordChar(lastChar) && isWordChar(firstChar)) ||
+    (/[\.:;!?]$/.test(previous) && isWordChar(firstChar))
+  ) && !/^\s/.test(next);
+  return needsSpace ? previous + ' ' + next : previous + next;
+}
+
   function sanitizeDbText(s: string): string {
     return (s || '').replace(/\u0000/g, '');
   }
@@ -139,7 +153,7 @@ export async function POST(req: Request) {
           try {
             for await (const chunk of streamTextChunks(prompt, preferredModel)) {
               const clean = stripPreamble(chunk, { title: subtopic, isChunk: true });
-              full += clean;
+              full = appendChunkSafely(full, clean);
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', delta: clean })}\n\n`));
             }
             const markdown = stripPreamble(full, { title: subtopic });

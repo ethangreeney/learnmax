@@ -6,9 +6,7 @@ const STORAGE_KEY = 'ai:model';
 const MODELS = [
   { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  { id: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
 ];
 
 export default function ModelSelector() {
@@ -17,7 +15,15 @@ export default function ModelSelector() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setModel(saved);
+      if (saved) {
+        const isAllowed = MODELS.some((m) => m.id === saved);
+        const fallback = 'gemini-2.5-flash';
+        const next = isAllowed ? saved : fallback;
+        if (!isAllowed) {
+          localStorage.setItem(STORAGE_KEY, next);
+        }
+        setModel(next);
+      }
     } catch {}
   }, []);
 
