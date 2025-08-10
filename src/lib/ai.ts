@@ -13,6 +13,16 @@ export const PRIMARY_MODEL =
   (process.env.GEMINI_MODEL?.trim()) ||
   'gemini-2.5-flash';
 
+// Global per-call AI timeout (each provider request)
+const AI_MODEL_TIMEOUT_MS: number = Number(process.env.AI_MODEL_TIMEOUT_MS || '') || 15000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label?: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error((label ? label + ' ' : '') + 'timeout')), ms)),
+  ]);
+}
+
 // Lazy-init clients so we don't require both providers to be configured.
 let googleClient: GoogleGenerativeAI | null = null;
 let openaiClient: OpenAI | null = null;
@@ -89,10 +99,12 @@ function buildFallbackList(preferredModel?: string): string[] {
     list.push('gpt-5-mini');
   } else {
     // Gemini fallbacks
-    list.push('gemini-2.5-pro');
-    list.push('gemini-2.0-pro');
+    // Prefer lower-latency Flash variants first
     list.push('gemini-2.5-flash-lite');
     list.push('gemini-2.0-flash');
+    // Keep Pro variants last as a strict fallback
+    list.push('gemini-2.5-pro');
+    list.push('gemini-2.0-pro');
   }
   return Array.from(new Set(list));
 }
@@ -100,7 +112,7 @@ function buildFallbackList(preferredModel?: string): string[] {
 async function generateTextWithGemini(prompt: string, modelName: string): Promise<string> {
   const client = getGoogleClient();
   const model = client.getGenerativeModel({ model: modelName });
-  const result = await model.generateContent(prompt);
+  const result = await withTimeout(model.generateContent(prompt), AI_MODEL_TIMEOUT_MS, `gemini:${modelName}`);
   const text = result.response?.text?.();
   if (text && text.trim()) return text;
   const parts: string[] = [];
@@ -123,7 +135,7 @@ async function generateTextWithOpenAI(prompt: string, modelName: string): Promis
   if (!isGPT5Mini(model)) {
     params.temperature = 0.2;
   }
-  const completion = await openai.chat.completions.create(params);
+  const completion = await withTimeout(openai.chat.completions.create(params), AI_MODEL_TIMEOUT_MS, `openai:${model}`);
   const content = completion.choices?.[0]?.message?.content || '';
   if (content && content.trim()) return content;
   throw new Error(`Empty response from ${model}`);
@@ -163,7 +175,7 @@ export async function generateJSON(prompt: string, preferredModel?: string): Pro
           params.temperature = 0;
           params.response_format = { type: 'json_object' };
         }
-        const completion = await openai.chat.completions.create(params);
+        const completion = await withTimeout(openai.chat.completions.create(params), AI_MODEL_TIMEOUT_MS, `openai:${model}`);
         const text = completion.choices?.[0]?.message?.content || '';
         if (text && text.trim()) {
           const parsed = tryParseJson(text);
@@ -177,7 +189,7 @@ export async function generateJSON(prompt: string, preferredModel?: string): Pro
           model: name,
           generationConfig: { responseMimeType: 'application/json' },
         });
-        const result = await model.generateContent(prompt);
+        const result = await withTimeout(model.generateContent(prompt), AI_MODEL_TIMEOUT_MS, `gemini:${name}`);
         const text = result.response?.text?.();
         if (text && text.trim()) {
           const direct = tryParseJson(text); if (direct !== null) return direct;

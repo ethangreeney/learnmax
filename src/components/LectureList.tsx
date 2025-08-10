@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Star, StarOff, Pencil } from 'lucide-react';
 import DeleteLectureButton from '@/components/DeleteLectureButton';
 
@@ -9,12 +9,17 @@ export type ClientLecture = {
   id: string;
   title: string;
   createdAtISO: string; // serialized for client component props
+  lastOpenedAtISO: string | null;
   subtopicCount: number;
   starred: boolean;
 };
 
 export default function LectureList({ initialLectures }: { initialLectures: ClientLecture[] }) {
   const [lectures, setLectures] = useState<ClientLecture[]>(initialLectures);
+  // Keep local state in sync when server-provided lectures change (e.g., after navigation)
+  useEffect(() => {
+    setLectures(initialLectures);
+  }, [initialLectures]);
 
   return (
     <div className="mt-6 space-y-4">
@@ -40,8 +45,16 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
                   const next = !lec.starred;
                   setLectures((prev) => {
                     const updated = prev.map((p) => (p.id === lec.id ? { ...p, starred: next } : p));
-                    // Reorder: starred first, then by createdAt desc
-                    return [...updated].sort((a, b) => (b.starred === a.starred ? 0 : b.starred ? 1 : -1));
+                    // Reorder: starred first, then by lastOpenedAt desc (fallback createdAt desc)
+                    return [...updated].sort((a, b) => {
+                      if (a.starred !== b.starred) return b.starred ? 1 : -1;
+                      const aOpen = a.lastOpenedAtISO ? Date.parse(a.lastOpenedAtISO) : 0;
+                      const bOpen = b.lastOpenedAtISO ? Date.parse(b.lastOpenedAtISO) : 0;
+                      if (aOpen !== bOpen) return bOpen - aOpen;
+                      const aCreated = Date.parse(a.createdAtISO);
+                      const bCreated = Date.parse(b.createdAtISO);
+                      return bCreated - aCreated;
+                    });
                   });
                   const res = await fetch(`/api/lectures/${lec.id}`, {
                     method: 'PATCH',

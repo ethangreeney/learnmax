@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import pdf from 'pdf-extraction';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
@@ -116,6 +117,20 @@ function isGoodQuestion(q: any): q is QuizQuestion {
     q.answerIndex < 4 &&
     typeof q.explanation === 'string'
   );
+}
+
+function shuffleOptionsWithAnswer(
+  options: string[],
+  answerIndex: number,
+): { options: string[]; answerIndex: number } {
+  const pairs = options.map((opt, idx) => ({ opt, idx }));
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  const newOptions = pairs.map((p) => p.opt);
+  const newAnswerIndex = pairs.findIndex((p) => p.idx === answerIndex);
+  return { options: newOptions, answerIndex: newAnswerIndex };
 }
 
 function fallbackQuestions(subtopics: BreakdownSubtopic[]): QuizQuestion[] {
@@ -394,9 +409,12 @@ export async function POST(req: NextRequest) {
     // If this was plain text input, create a lecture record immediately and return.
     if (wasPlainTextInput) {
       const lecture = await prisma.lecture.create({
-        data: { title: DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId },
+        data: { title: DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId, lastOpenedAt: new Date() },
       });
       try { await bumpDailyStreak(userId); } catch {}
+      // Ensure dashboard caches reflect the new lecture immediately
+      try { revalidateTag(`user-lectures:${userId}`); } catch {}
+      try { revalidateTag(`user-stats:${userId}`); } catch {}
       return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
     }
 
@@ -525,7 +543,12 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
             try {
               const modelForQuiz = preferredModel || 'gemini-2.5-flash';
               const qzRawV = await generateJSON(quizPromptV, modelForQuiz);
-              const qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
+              let qList: QuizQuestion[] = Array.isArray(qzRawV?.questions) ? (qzRawV.questions as any[]).filter(isGoodQuestion) : [];
+              // Shuffle options for each question to avoid positional bias
+              qList = qList.map((q) => {
+                const sh = shuffleOptionsWithAnswer(q.options, q.answerIndex);
+                return { ...q, options: sh.options, answerIndex: sh.answerIndex };
+              });
               const quizDataV: Array<{ prompt: string; options: any; answerIndex: number; explanation: string; subtopicId: string; }> = [];
               const q1 = qList[0];
               const q2 = qList[1];
@@ -541,6 +564,9 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
             } catch {}
           }
         }
+        // Ensure dashboard caches reflect the new lecture immediately
+        try { revalidateTag(`user-lectures:${userId}`); } catch {}
+        try { revalidateTag(`user-stats:${userId}`); } catch {}
         return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash', usedVision: true } }, { status: 201 });
       } catch (e) {
         // If vision fails, continue to text-only path
@@ -559,8 +585,11 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
     // EARLY RETURN for PDF uploads as well: create minimal lecture and allow client to stream subtopics.
     if (pdfBuffer) {
       const originalContent = sanitizeDbText(text || 'PDF upload');
-      const lecture = await prisma.lecture.create({ data: { title: DEFAULT_TITLE, originalContent, userId } });
+      const lecture = await prisma.lecture.create({ data: { title: DEFAULT_TITLE, originalContent, userId, lastOpenedAt: new Date() } });
       try { await bumpDailyStreak(userId); } catch {}
+      // Ensure dashboard caches reflect the new lecture immediately
+      try { revalidateTag(`user-lectures:${userId}`); } catch {}
+      try { revalidateTag(`user-stats:${userId}`); } catch {}
       return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', immediate: true } }, { status: 201 });
     }
     if (!text) {
@@ -628,7 +657,7 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       }
 
       DOCUMENT CONTENT (truncated for safety):
-      ${clip(text, 8000)}
+      ${clip(text, 6000)}
 
       SUBTOPIC:
       ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
@@ -638,11 +667,15 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
     const qzRaw = await generateJSON(quizPromptFirst, modelForQuiz);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;
-    const rawQuestions: QuizQuestion[] = Array.isArray(qzRaw?.questions) ? (qzRaw.questions as any[]).filter(isGoodQuestion) : [];
+    let rawQuestions: QuizQuestion[] = Array.isArray(qzRaw?.questions) ? (qzRaw.questions as any[]).filter(isGoodQuestion) : [];
+    rawQuestions = rawQuestions.map((q) => {
+      const sh = shuffleOptionsWithAnswer(q.options, q.answerIndex);
+      return { ...q, options: sh.options, answerIndex: sh.answerIndex };
+    });
 
     // 3) Persist (non-interactive writes to avoid long-lived transaction issues)
     const lecture = await prisma.lecture.create({
-      data: { title: bd.topic || DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId },
+      data: { title: bd.topic || DEFAULT_TITLE, originalContent: sanitizeDbText(text), userId, lastOpenedAt: new Date() },
     });
     // Count lecture generation towards streak
     await bumpDailyStreak(userId);
@@ -689,6 +722,9 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       await prisma.quizQuestion.createMany({ data: quizData });
     }
 
+    // Ensure dashboard caches reflect the new lecture immediately
+    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try { revalidateTag(`user-stats:${userId}`); } catch {}
     return NextResponse.json({ lectureId: lecture.id, debug: { model: preferredModel || process.env.GEMINI_MODEL || 'default', msBreakdown, msQuiz } }, { status: 201 });
   } catch (e: any) {
     console.error('LECTURES_API_ERROR:', e?.stack || e?.message || e);

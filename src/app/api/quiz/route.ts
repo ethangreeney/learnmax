@@ -19,6 +19,11 @@ type CleanQ = {
   explanation: string;
 };
 
+// Allow tuning via env vars
+const GEN_TIMEOUT_MS: number = Number(process.env.QUIZ_GEN_TIMEOUT_MS || '') || 20000;
+const AUDIT_TIMEOUT_MS: number = Number(process.env.QUIZ_AUDIT_TIMEOUT_MS || '') || 8000;
+const ALLOW_SECOND_TRY: boolean = (process.env.QUIZ_ALLOW_SECOND_TRY || '0') === '1';
+
 // Clip helper to keep prompts bounded for latency and cost
 function clip(text: string, max = 8000): string {
   const t = String(text || '').trim();
@@ -36,6 +41,20 @@ function toClean(q: RawQ): CleanQ | null {
   if (options.length !== 4) return null;
   if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) return null;
   return { prompt, options, answerIndex, explanation };
+}
+
+function shuffleOptionsWithAnswer(
+  options: string[],
+  answerIndex: number,
+): { options: string[]; answerIndex: number } {
+  const pairs = options.map((opt, idx) => ({ opt, idx }));
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  const newOptions = pairs.map((p) => p.opt);
+  const newAnswerIndex = pairs.findIndex((p) => p.idx === answerIndex);
+  return { options: newOptions, answerIndex: newAnswerIndex };
 }
 
 /* ------------------------ Grounding helpers ------------------------ */
@@ -82,9 +101,38 @@ function overlapCount(text: string, kws: string[]): number {
   return c;
 }
 
+// -------------------------- Similarity helpers --------------------------
+const SIMILARITY_THRESHOLD: number = Number(process.env.QUIZ_SIMILARITY_THRESHOLD || '') || 0.6;
+
+function significantWords(s: string): string[] {
+  return words(s).filter((w) => w.length >= 4 && !STOP.has(w));
+}
+
+function jaccardSimilarity(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const A = new Set(a);
+  const B = new Set(b);
+  let intersect = 0;
+  for (const w of A) if (B.has(w)) intersect++;
+  const union = A.size + B.size - intersect;
+  return union > 0 ? intersect / union : 0;
+}
+
+function isPromptSimilarToAny(prompt: string, existing: string[], threshold = SIMILARITY_THRESHOLD): boolean {
+  if (!prompt || !existing?.length) return false;
+  const ta = significantWords(prompt);
+  for (const ex of existing) {
+    const tb = significantWords(ex);
+    const sim = jaccardSimilarity(ta, tb);
+    if (sim >= threshold) return true;
+  }
+  return false;
+}
+
 function isGrounded(q: CleanQ, lessonMd: string, kws: string[]): boolean {
   const text = [q.prompt, q.explanation, ...q.options].join(' ').toLowerCase();
-  const hasKw = overlapCount(text, kws) >= Math.min(2, kws.length); // at least 2 keywords
+  // Require at least one keyword match to allow more fast-path acceptances
+  const hasKw = overlapCount(text, kws) >= Math.min(1, kws.length);
   const hasQuote = containsNgramQuote(q.explanation, lessonMd, 3);
   return hasKw && hasQuote;
 }
@@ -125,13 +173,13 @@ ${q.prompt}
 OPTIONS (0-based):
 ${JSON.stringify(q.options, null, 2)}
 `;
-  const withTimeout = <T,>(p: Promise<T>, ms = 8000): Promise<T> =>
+  const withTimeout = <T,>(p: Promise<T>, ms = 4000): Promise<T> =>
     Promise.race([
       p,
       new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
     ]);
   try {
-    const res = await withTimeout(generateJSON(auditPrompt, model));
+    const res = await withTimeout(generateJSON(auditPrompt, model), AUDIT_TIMEOUT_MS);
     const arr = Array.isArray(res?.correctIndices)
       ? res.correctIndices
           .map((n: any) => Number(n))
@@ -173,6 +221,10 @@ export async function POST(req: Request) {
     const lectureId = String((body as any)?.lectureId || '').trim();
     const overview = String((body as any)?.overview || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
+    const subtopicId = String((body as any)?.subtopicId || '').trim();
+    const avoidPromptsFromClient: string[] = Array.isArray((body as any)?.avoidPrompts)
+      ? ((body as any).avoidPrompts as string[]).map((s) => String(s || '').trim()).filter(Boolean)
+      : [];
 
     // If lesson is short, try to augment from server-side stored original content using lectureId
     if (lessonMd.length < 50 && lectureId) {
@@ -189,6 +241,25 @@ export async function POST(req: Request) {
 
     const kws = keywords(lessonMd, 12);
     const kwHint = kws.length ? `Use the lesson’s domain. Keywords you should naturally touch: ${kws.slice(0, 8).join(', ')}.` : '';
+
+    // Collect existing prompts to encourage diversity
+    let existingPrompts: string[] = [];
+    if (subtopicId) {
+      try {
+        const existing = await prisma.quizQuestion.findMany({ where: { subtopicId }, select: { prompt: true } });
+        existingPrompts.push(
+          ...existing.map((q) => String(q?.prompt || '').trim()).filter(Boolean),
+        );
+      } catch {}
+    }
+    if (avoidPromptsFromClient.length) existingPrompts.push(...avoidPromptsFromClient);
+    existingPrompts = Array.from(new Set(existingPrompts.filter(Boolean)));
+    const existingSection = existingPrompts.length
+      ? `EXISTING QUESTIONS (avoid repeating their topics/wording):\n${existingPrompts
+          .slice(0, 8)
+          .map((p, i) => `${i + 1}. ${p}`)
+          .join('\n')}\n`
+      : '';
 
     const rigor =
       difficulty === 'hard'
@@ -215,17 +286,20 @@ Rules:
 - Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
 - Avoid ambiguous, overlapping, or "All/None of the above" answers.
 - Prefer conceptual or applied questions over trivial factual restatement.
+ - If the section "EXISTING QUESTIONS" appears below, your question must be meaningfully different in both topic and wording. Choose a different mechanism, constraint, cause/effect, or scenario than any listed.
+ - Vary the question style relative to existing ones (e.g., application scenario, diagnose an error, compare/contrast, cause-and-effect, ordering/steps).
 
 Context hints to avoid triviality:
 - Do not ask "is this sentence true" questions.
 - Avoid simply echoing a single sentence; synthesize across two or more details where possible.
 
 ---
+${existingSection}
 LESSON MARKDOWN (truncated):
-${clip(lessonMd, 6000)}
+${clip(lessonMd, 4500)}
 ---`.trim();
 
-    const withTimeout = <T,>(p: Promise<T>, ms = 20000): Promise<T> =>
+    const withTimeout = <T,>(p: Promise<T>, ms = GEN_TIMEOUT_MS): Promise<T> =>
       Promise.race([
         p,
         new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
@@ -245,22 +319,54 @@ ${clip(lessonMd, 6000)}
     }
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
+    if (existingPrompts.length && cleaned.length) {
+      cleaned = cleaned.filter((q) => !isPromptSimilarToAny(q.prompt, existingPrompts));
+    }
     const cleaned1 = cleaned.slice();
     const initiallyGrounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
-    // Enforce exactly-one-correct via a dedicated auditor (parallelized)
-    let auditMs = 0;
-    let grounded: CleanQ[] = [];
+
+    // Fast path: if we have at least one grounded candidate, accept the best-scoring one without LLM audit
     if (initiallyGrounded.length) {
-      const auditStart = Date.now();
-      const results = await Promise.allSettled(
-        initiallyGrounded.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
-      );
-      auditMs += Date.now() - auditStart;
-      grounded = initiallyGrounded.filter((_, i) => results[i].status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value);
+      const best = initiallyGrounded
+        .slice()
+        .sort((a, b) => scoreCandidate(b, lessonMd, kws) - scoreCandidate(a, lessonMd, kws))[0]!;
+      const shFast = shuffleOptionsWithAnswer(best.options, best.answerIndex);
+      const outFast = { ...best, options: shFast.options, answerIndex: shFast.answerIndex };
+      return NextResponse.json({
+        questions: [outFast],
+        debug: {
+          model: modelForQuiz,
+          ms: Date.now() - t0,
+          accepted: 'fast',
+          attempt1Ms,
+          timedOut1,
+          cleaned1: cleaned1.length,
+          grounded1: initiallyGrounded.length,
+          existing: existingPrompts.length,
+        },
+      });
     }
 
-    // Retry if nothing passed audit
-    if (!grounded.length) {
+    // Try auditing the first attempt's cleaned candidates before doing a second LLM try
+    let auditMs = 0;
+    let grounded: CleanQ[] = [];
+    if (cleaned1.length) {
+      const auditStart1 = Date.now();
+      const results1 = await Promise.allSettled(
+        cleaned1.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
+      );
+      auditMs += Date.now() - auditStart1;
+      const audited1 = cleaned1.filter((_, i) => results1[i].status === 'fulfilled' && (results1[i] as PromiseFulfilledResult<boolean>).value);
+      if (audited1.length) {
+        const q0 = audited1[0];
+        const sh = shuffleOptionsWithAnswer(q0.options, q0.answerIndex);
+        const outQ = { ...q0, options: sh.options, answerIndex: sh.answerIndex };
+        return NextResponse.json({ questions: [outQ], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: 'audited1', attempt1Ms, timedOut1, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, existing: existingPrompts.length } });
+      }
+    }
+
+    // Retry if nothing passed audit (optional, controlled by env)
+    if (!grounded.length && ALLOW_SECOND_TRY) {
       const retryPrompt = `
 Your previous attempt was rejected for not being grounded in the LESSON.
 Try again and follow these STRICT requirements:
@@ -272,6 +378,7 @@ Try again and follow these STRICT requirements:
  - Do NOT use "All of the above" or "None of the above".
  - Do NOT produce a boolean true/false wrapper around a copied sentence.
  - Prefer a question that requires understanding a relationship, mechanism, or constraint stated in the lesson.
+ - Your question must be clearly different in topic AND wording from these existing ones (if any):\n${existingPrompts.slice(0, 8).map((p, i) => `${i + 1}. ${p}`).join('\n')}
 
 Return ONLY the same JSON shape as before.
 
@@ -292,6 +399,9 @@ Return ONLY the same JSON shape as before.
       }
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
+      if (existingPrompts.length && cleaned.length) {
+        cleaned = cleaned.filter((q) => !isPromptSimilarToAny(q.prompt, existingPrompts));
+      }
       const cleaned2 = cleaned.slice();
       const groundedRetry = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
       if (groundedRetry.length) {
@@ -307,18 +417,21 @@ Return ONLY the same JSON shape as before.
       }
       const msTotal = Date.now() - t0;
       if (!grounded.length) {
-        return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: msTotal, auditMs, attempt1Ms, attempt2Ms, timedOut1, timedOut2, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, cleaned2: cleaned2.length, grounded2: groundedRetry.length } }, { status: 422 });
+        return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: msTotal, auditMs, attempt1Ms, attempt2Ms, timedOut1, timedOut2, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, cleaned2: cleaned2.length, grounded2: groundedRetry.length, secondTry: true } }, { status: 422 });
       }
     }
 
     // Decide acceptance path and return
     if (!grounded.length) {
-      return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, attempt1Ms, timedOut1, cleaned1: cleaned.length, grounded1: initiallyGrounded.length } }, { status: 422 });
+      return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, attempt1Ms, timedOut1, cleaned1: cleaned.length, grounded1: initiallyGrounded.length, secondTry: false } }, { status: 422 });
     }
 
-    // Keep just one good question (already audited)
+    // Keep just one good question (already audited) and shuffle options
     const acceptPath = 'audited';
-    return NextResponse.json({ questions: [grounded[0]], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: acceptPath, attempt1Ms, timedOut1, cleaned1: cleaned?.length || 0, grounded1: initiallyGrounded?.length || 0 } });
+    const q0 = grounded[0];
+    const sh = shuffleOptionsWithAnswer(q0.options, q0.answerIndex);
+    const outQ = { ...q0, options: sh.options, answerIndex: sh.answerIndex };
+    return NextResponse.json({ questions: [outQ], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: acceptPath, attempt1Ms, timedOut1, cleaned1: cleaned?.length || 0, grounded1: initiallyGrounded?.length || 0, existing: existingPrompts.length } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'quiz failed' }, { status: 500 });
   }

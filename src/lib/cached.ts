@@ -21,7 +21,12 @@ export async function getLecturesCached(userId: string) {
     async () => {
       const lectures = await prisma.lecture.findMany({
         where: { userId },
-        orderBy: [{ starred: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          { starred: 'desc' },
+          // Most recently opened first; fallback to createdAt below if nulls remain
+          { lastOpenedAt: 'desc' },
+          { createdAt: 'desc' },
+        ],
         take: 50,
         include: { _count: { select: { subtopics: true } } },
       });

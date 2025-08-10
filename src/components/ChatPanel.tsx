@@ -34,6 +34,23 @@ function sanitizeMd(md: string): string {
   return t;
 }
 
+// Merge streamed chat chunks robustly (handles cumulative streams & avoids word gluing)
+function mergeChatChunk(previous: string, incoming: string): string {
+  const incSan = sanitizeMd(incoming);
+  if (!previous) return incSan;
+  if (!incSan) return previous;
+  const tail = previous.slice(Math.max(0, previous.length - 4096));
+  const maxOverlap = Math.min(tail.length, incSan.length);
+  let overlap = 0;
+  for (let k = maxOverlap; k > 0; k--) {
+    if (tail.endsWith(incSan.slice(0, k))) { overlap = k; break; }
+  }
+  const novel = incSan.slice(overlap);
+  // Avoid concatenating words across boundary
+  const needsSpace = /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(novel);
+  return needsSpace ? previous + ' ' + novel : previous + novel;
+}
+
 
 type Message = {
   sender: 'user' | 'ai';
@@ -114,6 +131,10 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
         const reader = (res.body as ReadableStream<Uint8Array>)?.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        const yieldFrame = () => new Promise<void>((r) => {
+          if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => r());
+          else setTimeout(r, 0);
+        });
         if (!reader) throw new Error('No stream reader');
         while (true) {
           const { done, value } = await reader.read();
@@ -128,14 +149,15 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
             let payload: any;
             try { payload = JSON.parse(json); } catch { continue; }
             if (payload?.type === 'chunk' && typeof payload.delta === 'string') {
-              const delta = sanitizeMd(payload.delta);
+              const delta = payload.delta;
               setHistory(prev => {
                 const copy = prev.slice();
                 const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
                 const current = copy[i];
-                copy[i] = { ...current, text: (current?.text || '') + delta };
+                copy[i] = { ...current, text: mergeChatChunk(current?.text || '', delta) };
                 return copy;
               });
+              await yieldFrame();
             } else if (payload?.type === 'done') {
               // nothing extra
             } else if (payload?.type === 'error') {

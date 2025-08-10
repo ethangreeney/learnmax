@@ -53,6 +53,7 @@ export default async function Dashboard() {
     id: l.id,
     title: l.title,
     createdAtISO: new Date(l.createdAt).toISOString(),
+    lastOpenedAtISO: l.lastOpenedAt ? new Date(l.lastOpenedAt).toISOString() : null,
     subtopicCount: l._count.subtopics,
     starred: l.starred ?? false,
   }));

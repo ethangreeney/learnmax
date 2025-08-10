@@ -76,6 +76,26 @@ function appendChunkSafely(previous: string, next: string): string {
   return needsSpace ? previous + ' ' + next : previous + next;
 }
 
+// Merge an incoming streamed chunk robustly:
+// - Sanitize like the final renderer would
+// - Deduplicate if the provider sends cumulative chunks (common with some streams)
+// - Avoid gluing words across boundaries
+function mergeStreamChunk(previous: string, incoming: string): string {
+  const incSan = sanitizeMarkdown(incoming);
+  if (!previous) return incSan;
+  if (!incSan) return previous;
+
+  // Deduplicate overlap (largest suffix of previous that matches prefix of incoming)
+  const prevTail = previous.slice(Math.max(0, previous.length - 4096));
+  const maxOverlap = Math.min(prevTail.length, incSan.length);
+  let overlap = 0;
+  for (let k = maxOverlap; k > 0; k--) {
+    if (prevTail.endsWith(incSan.slice(0, k))) { overlap = k; break; }
+  }
+  const novel = incSan.slice(overlap);
+  return appendChunkSafely(previous, novel);
+}
+
 // Ensure rendered content never starts with a title/heading
 function stripLeadingTitle(md: string, title?: string): string {
   let out = String(md ?? '');
@@ -146,6 +166,19 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
     if (s.has(id)) return false;
     s.add(id);
     return true;
+  }, []);
+
+  // Prevent duplicate explanation generation (e.g., React StrictMode double effects
+  // and races between prefetch and active streaming for the same subtopic)
+  const explanationsInFlightRef = useRef<Set<string>>(new Set());
+  const reserveExplanation = useCallback((id: string): boolean => {
+    const s = explanationsInFlightRef.current;
+    if (s.has(id)) return false;
+    s.add(id);
+    return true;
+  }, []);
+  const releaseExplanation = useCallback((id: string): void => {
+    explanationsInFlightRef.current.delete(id);
   }, []);
 
   // If subtopics stream in and the second one becomes available AFTER mount while
@@ -273,6 +306,10 @@ const countedIdsRef = useRef<Set<string>>(
           return;
         }
       } catch {}
+      // Guard: avoid duplicate in-flight generation for the same subtopic
+      if (!reserveExplanation(targetId)) {
+        return;
+      }
       setExplanations((e) => ({ ...e, [targetId]: '' }));
       try {
         let model: string | undefined;
@@ -300,6 +337,10 @@ const countedIdsRef = useRef<Set<string>>(
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        const yieldFrame = () => new Promise<void>((r) => {
+          if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => r());
+          else setTimeout(r, 0);
+        });
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -322,8 +363,10 @@ const countedIdsRef = useRef<Set<string>>(
               if (stillActive) {
                 setExplanations((e) => ({
                   ...e,
-                  [targetId]: appendChunkSafely(e[targetId] || '', sanitizeMarkdown(payload.delta)),
+                  [targetId]: mergeStreamChunk(e[targetId] || '', payload.delta),
                 }));
+                // Let the browser paint between chunks to avoid "all at once" dumps
+                await yieldFrame();
               }
             } else if (payload?.type === 'done') {
               setExplanationDone((m) => ({ ...m, [targetId]: true }));
@@ -334,6 +377,8 @@ const countedIdsRef = useRef<Set<string>>(
         }
       } catch (e: any) {
         setExplanations((ex) => ({ ...ex, [targetId]: 'Could not generate explanation. ' + (e?.message || '') }));
+      } finally {
+        releaseExplanation(targetId);
       }
     },
     [title, initial.title, initial.id, initial.originalContent, initial.subtopics]
@@ -370,10 +415,24 @@ const countedIdsRef = useRef<Set<string>>(
   useEffect(() => {
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
+      // Start fetching explanation immediately
       fetchExplanationFor(s, 'default');
     }
-    const currentReady = s ? Boolean(explanationDone[s.id]) : false;
-    // Preload the NEXT subtopic explanation one step ahead, only after current explanation is done
+    if (s) {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => scrollToMainTop());
+      } else {
+        scrollToMainTop();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSubtopic?.id]);
+
+  // After explanation finishes, prefetch the next subtopic (no scroll)
+  useEffect(() => {
+    const s = currentSubtopic;
+    if (!s) return;
+    const currentReady = Boolean(explanationDone[s.id]);
     const nextIndex = currentIndex + 1;
     if (currentReady && nextIndex < initial.subtopics.length) {
       const next = initial.subtopics[nextIndex];
@@ -404,10 +463,13 @@ const countedIdsRef = useRef<Set<string>>(
             if (!res.ok) return;
             const data = (await res.json()) as { markdown?: string };
             const md = sanitizeMarkdown(data.markdown || '');
-            setExplanations((e) => ({ ...e, [next.id]: md || 'No content generated.' }));
-            setExplanationDone((m) => ({ ...m, [next.id]: true }));
+            // If active streaming started for this subtopic, ignore prefetch result to avoid double content
+            if (!explanationsInFlightRef.current.has(next.id)) {
+              setExplanations((e) => ({ ...e, [next.id]: md || 'No content generated.' }));
+              setExplanationDone((m) => ({ ...m, [next.id]: true }));
+            }
 
-            // Preload quiz questions for the next subtopic as well
+            // Preload quiz questions for the next subtopic in parallel
             try {
               if (!reserveQuestions(next.id)) return;
               const REQUIRED_QUESTIONS = 2;
@@ -416,25 +478,41 @@ const countedIdsRef = useRef<Set<string>>(
                 : Array.isArray(next.questions)
                   ? next.questions.length
                   : 0;
-              let needed = Math.max(0, REQUIRED_QUESTIONS - existingCount);
+              const needed = Math.max(0, REQUIRED_QUESTIONS - existingCount);
               const lessonPayload = (md || '').trim();
               if (lessonPayload.length >= 50 && needed > 0) {
-                const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
-                while (needed > 0) {
-                  const qRes = await fetch('/api/quiz', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle: next.title, lectureId: initial.id, overview: next.overview || '' }),
-                  });
-                  if (!qRes.ok) break;
-                  const qData = (await qRes.json()) as {
-                    questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-                  };
-                  const q = qData.questions?.[0];
-                  if (!q) break;
-                  generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
-                  needed--;
-                }
+                // Generate questions in parallel for better performance
+                const promises = Array.from({ length: needed }, async () => {
+                  try {
+                    const qRes = await fetch('/api/quiz', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        lessonMd: lessonPayload,
+                        difficulty: 'hard',
+                        subtopicTitle: next.title,
+                        lectureId: initial.id,
+                        overview: next.overview || '',
+                        subtopicId: next.id,
+                        avoidPrompts: [
+                          ...(Array.isArray(questionsById[next.id]) ? questionsById[next.id] : []).map((q) => q.prompt),
+                          ...(Array.isArray(next.questions) ? next.questions : []).map((q: any) => q.prompt),
+                        ].filter(Boolean),
+                      }),
+                    });
+                    if (!qRes.ok) return null;
+                    const qData = (await qRes.json()) as {
+                      questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+                    };
+                    return qData.questions?.[0] || null;
+                  } catch {
+                    return null;
+                  }
+                });
+
+                const results = await Promise.all(promises);
+                const generated = results.filter((q): q is NonNullable<typeof q> => q !== null);
+
                 if (generated.length) {
                   const save = await fetch('/api/quiz/questions', {
                     method: 'POST',
@@ -463,13 +541,6 @@ const countedIdsRef = useRef<Set<string>>(
             prefetchedNextRef.current.delete(next.id);
           }
         })();
-      }
-    }
-    if (s) {
-      if (typeof requestAnimationFrame !== 'undefined') {
-        requestAnimationFrame(() => scrollToMainTop());
-      } else {
-        scrollToMainTop();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -704,17 +775,66 @@ function QuizPanel({
   const stripABCD = (str: string) =>
     (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
 
-  const [items, setItems] = useState<QuizQuestion[]>(() => questions || []);
+  // Stable, seeded shuffle so the correct answer isn't position-biased and
+  // ordering is consistent per question across rerenders.
+  const hashStringToSeed = (s: string): number => {
+    let h = 2166136261 >>> 0; // FNV-1a base
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  };
+  const seededRandomFactory = (seed: number) => {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+  const shuffleOptionsWithAnswerSeeded = (
+    options: string[],
+    answerIndex: number,
+    seedStr: string,
+  ): { options: string[]; answerIndex: number } => {
+    const rng = seededRandomFactory(hashStringToSeed(seedStr));
+    const pairs = options.map((opt, idx) => ({ opt, idx }));
+    for (let i = pairs.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+    }
+    const newOptions = pairs.map((p) => p.opt);
+    let newAnswerIndex = pairs.findIndex((p) => p.idx === answerIndex);
+    // Guard: avoid placing the correct answer at index 0 to reduce perceived bias
+    if (newAnswerIndex === 0) {
+      const rng2 = seededRandomFactory(hashStringToSeed(`${seedStr}|nofirst`));
+      const j = 1 + Math.floor(rng2() * 3); // pick 1..3 uniformly
+      [newOptions[0], newOptions[j]] = [newOptions[j], newOptions[0]];
+      newAnswerIndex = j;
+    }
+    return { options: newOptions, answerIndex: newAnswerIndex };
+  };
+  const shuffleForDisplay = (q: QuizQuestion): QuizQuestion => {
+    const seed = q.id || `${q.prompt}:${q.explanation}`;
+    const sh = shuffleOptionsWithAnswerSeeded(q.options, q.answerIndex, seed);
+    return { ...q, options: sh.options, answerIndex: sh.answerIndex };
+  };
+
+  const [items, setItems] = useState<QuizQuestion[]>(() => (Array.isArray(questions) ? questions.map(shuffleForDisplay) : []));
   const [answers, setAnswers] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [loadingAnother, setLoadingAnother] = useState(false);
   const [hardLoaded, setHardLoaded] = useState(false);
+  const [version, setVersion] = useState(0); // Force re-render when questions change
   const REQUIRED_QUESTIONS = 2;
   const hasRequired = items.length >= REQUIRED_QUESTIONS;
 
   // Reset when subtopic questions change
   useEffect(() => {
-    setItems(questions || []);
+    const processed = Array.isArray(questions) ? questions.map(shuffleForDisplay) : [];
+    setItems(processed);
     setAnswers([]);
     setRevealed(false);
     setHardLoaded(false);
@@ -735,11 +855,14 @@ function QuizPanel({
 
   // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
   useEffect(() => {
-    // Only start once the explanation is fully ready to preserve question quality
-    if (!explanationReady) return;
+    // Start generating questions as soon as we have some lesson content
+    // Don't wait for explanationReady to improve parallel loading
     if (hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
     const lessonPayload = (lessonMd || '').trim();
-    if (lessonPayload.length < 50) return;
+    if (lessonPayload.length < 50) {
+      // If no lesson content yet, retry when it arrives
+      return;
+    }
     // Prevent duplicate generations (e.g., StrictMode double invoke / re-mounts)
     const reserved = reserveQuestions ? reserveQuestions(subtopicId) : true;
     if (!reserved) return;
@@ -747,28 +870,43 @@ function QuizPanel({
     (async () => {
       let success = false;
       try {
-        let needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
-        const generated: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
-        let tries = 0;
-        const MAX_TRIES = 4 * Math.max(1, needed);
-        while (needed > 0 && tries < MAX_TRIES) {
-          tries++;
-          const res = await fetch('/api/quiz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lessonMd: lessonPayload, difficulty: 'hard', subtopicTitle, lectureId, overview }),
-          });
-          if (!res.ok) continue;
-          const data = (await res.json()) as {
-            questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-            debug?: any;
-          };
-          try { if (data?.debug) console.debug('[quiz]', { subtopicId, debug: data.debug }); } catch {}
-          const q = data.questions?.[0];
-          if (!q) continue;
-          generated.push({ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation });
-          needed--;
+        const needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
+        if (needed === 0) {
+          setHardLoaded(true);
+          return;
         }
+
+        // Generate questions in parallel
+        const promises = Array.from({ length: needed }, async () => {
+          try {
+            const res = await fetch('/api/quiz', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                lessonMd: lessonPayload,
+                difficulty: 'hard',
+                subtopicTitle,
+                lectureId,
+                overview,
+                subtopicId,
+                avoidPrompts: (Array.isArray(items) ? items : []).map((q) => q.prompt).filter(Boolean),
+              }),
+            });
+            if (!res.ok) return null;
+            const data = (await res.json()) as {
+              questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+              debug?: any;
+            };
+            try { if (data?.debug) console.debug('[quiz]', { subtopicId, debug: data.debug }); } catch {}
+            return data.questions?.[0] || null;
+          } catch {
+            return null;
+          }
+        });
+
+        const results = await Promise.all(promises);
+        const generated = results.filter((q): q is NonNullable<typeof q> => q !== null);
+
         if (generated.length) {
           // Persist to DB so these questions have stable IDs and survive reloads
           const save = await fetch('/api/quiz/questions', {
@@ -782,14 +920,30 @@ function QuizPanel({
             };
             const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
             if (saved.length) {
-              setItems(saved);
+              const processed = saved.map(shuffleForDisplay) as unknown as QuizQuestion[];
+              setItems(processed);
               setAnswers([]);
               setRevealed(false);
+              setVersion(v => v + 1); // Force re-render
               success = true;
               // Inform parent so future mounts use the saved questions and avoid re-generating
-              try { onQuestionsSaved?.(saved as unknown as QuizQuestion[]); } catch {}
+              try { onQuestionsSaved?.(processed as unknown as QuizQuestion[]); } catch {}
             }
           }
+          // Fallback: if not saved to DB, still show the generated questions with temporary IDs
+          if (!success) {
+            const temp = generated.map((q, idx) => ({ ...q, id: `${subtopicId}-temp-${Date.now()}-${idx}` })) as unknown as QuizQuestion[];
+            const processed = temp.map(shuffleForDisplay);
+            setItems(processed);
+            setAnswers([]);
+            setRevealed(false);
+            setVersion(v => v + 1);
+            success = true;
+          }
+        }
+        // If nothing could be generated/saved, mark as loaded to avoid infinite spinner
+        if (!success) {
+          setHardLoaded(true);
         }
       } catch {
         // swallow
@@ -798,71 +952,98 @@ function QuizPanel({
         try { releaseQuestions?.(subtopicId); } catch {}
       }
     })();
-  }, [explanationReady, lessonMd, hardLoaded, items.length, subtopicId, subtopicTitle, reserveQuestions, releaseQuestions]);
+  }, [lessonMd, hardLoaded, items.length, subtopicId, subtopicTitle, reserveQuestions, releaseQuestions, onQuestionsSaved]);
 
   const askAnother = async () => {
     setLoadingAnother(true);
     try {
       const payload = (lessonMd || '').trim();
       if (payload.length < 50) throw new Error('lesson too short');
-      const res = await fetch('/api/quiz', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonMd: payload, difficulty: 'hard', subtopicTitle, lectureId, overview }),
+
+      // Fetch questions in parallel for better performance
+      const promises = Array.from({ length: REQUIRED_QUESTIONS }, async () => {
+        try {
+          const res = await fetch('/api/quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lessonMd: payload,
+              difficulty: 'hard',
+              subtopicTitle,
+              lectureId,
+              overview,
+              subtopicId,
+              avoidPrompts: (Array.isArray(items) ? items : []).map((q) => q.prompt).filter(Boolean),
+            }),
+          });
+          if (!res.ok) return null;
+          const data = (await res.json()) as {
+            questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+            debug?: any;
+          };
+          try { if (data?.debug) console.debug('[quiz/another]', { subtopicId, debug: data.debug }); } catch {}
+          return data.questions?.[0] || null;
+        } catch {
+          return null;
+        }
       });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.error || `HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as {
-        questions: Array<{ prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-        debug?: any;
-      };
-      try { if (data?.debug) console.debug('[quiz/another]', { subtopicId, debug: data.debug }); } catch {}
-      const q = data.questions?.[0];
-      if (!q) throw new Error('No question returned');
-      // Persist the one we generated if we still need more
-      if (items.length < REQUIRED_QUESTIONS) {
+
+      const results = await Promise.all(promises);
+      const generated = results.filter((q): q is NonNullable<typeof q> => q !== null);
+
+      if (generated.length === 0) throw new Error('No questions returned');
+
+      // Persist the newly generated set so they have stable IDs
+      let saved: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
+      try {
         const save = await fetch('/api/quiz/questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subtopicId,
-            questions: [{ prompt: q.prompt, options: q.options, answerIndex: q.answerIndex, explanation: q.explanation }],
-          }),
+          body: JSON.stringify({ subtopicId, questions: generated, replace: true }),
         });
         if (save.ok) {
           const payload = (await save.json()) as {
             questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
           };
-          const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
-          if (saved.length) {
-            setItems(saved);
-            setAnswers([]);
-            setRevealed(false);
-            try { onQuestionsSaved?.(saved as unknown as QuizQuestion[]); } catch {}
-          }
+          saved = payload.questions || [];
         }
+      } catch {}
+
+      const nextItemsRaw = (saved.length > 0
+        ? saved
+        : generated.map((q, idx) => ({ ...q, id: `${subtopicId}-temp-${Date.now()}-${idx}` }))
+      ) as unknown as QuizQuestion[];
+      const nextItems = nextItemsRaw.map(shuffleForDisplay);
+
+      // Update state and ensure re-render
+      setItems(nextItems);
+      setAnswers([]);
+      setRevealed(false);
+      setVersion(v => v + 1); // Force re-render
+      
+      // Notify parent if questions were saved
+      if (saved.length > 0) {
+        try { onQuestionsSaved?.(nextItems); } catch {}
       }
     } catch (_e) {
-      // Fallback: rotate options of the first question
+      // Fallback: rotate options of the first question if generation failed
       if (items && items.length > 0) {
         const base = items[0];
         const rotated = [...base.options];
         rotated.push(rotated.shift() as string);
         const newAnswer = (base.answerIndex - 1 + rotated.length) % rotated.length;
-        setItems([
-          {
-            ...base,
-            id: `${base.id}-v${Date.now()}`,
-            prompt: `${base.prompt} (Variant)`,
-            options: rotated,
-            answerIndex: newAnswer,
-            explanation: base.explanation,
-          },
-        ]);
+        const fallbackItem = {
+          ...base,
+          id: `${base.id}-v${Date.now()}`,
+          prompt: `${base.prompt} (Variant)`,
+          options: rotated,
+          answerIndex: newAnswer,
+          explanation: base.explanation,
+        };
+        setItems([fallbackItem]);
         setAnswers([]);
         setRevealed(false);
+        setVersion(v => v + 1); // Force re-render
       }
     } finally {
       setLoadingAnother(false);
@@ -874,11 +1055,22 @@ function QuizPanel({
 
 
   if (explanationReady && (!items || items.length === 0) && hardLoaded) {
-    return <p className="text-sm text-neutral-400">No quiz questions for this subtopic.</p>;
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-neutral-400">No quiz questions for this subtopic.</p>
+        <button
+          onClick={askAnother}
+          disabled={loadingAnother}
+          className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {loadingAnother ? 'Generating…' : 'Generate questions'}
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" key={`quiz-${version}`}>
       <ul className="space-y-6">
         {items.map((q, i) => {
           const selected = answers[i];
@@ -966,6 +1158,13 @@ function QuizPanel({
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
             >
               Go to next subtopic
+            </button>
+            <button
+              onClick={askAnother}
+              disabled={loadingAnother}
+              className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+              {loadingAnother ? 'Generating...' : 'Another set of questions'}
             </button>
           </>
         )}

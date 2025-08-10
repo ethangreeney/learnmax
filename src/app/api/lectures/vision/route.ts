@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
 import prisma from '@/lib/prisma';
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
     const subs = Array.isArray(json?.subtopics) ? json.subtopics : [];
     const cappedSubs = subs.slice(0, 15);
 
-    const lecture = await prisma.lecture.create({ data: { title: topic, originalContent: 'PDF (vision) upload', userId } });
+    const lecture = await prisma.lecture.create({ data: { title: topic, originalContent: 'PDF (vision) upload', userId, lastOpenedAt: new Date() } });
     if (cappedSubs.length) {
       await prisma.subtopic.createMany({
         data: cappedSubs.map((s: any, idx: number) => ({
@@ -91,6 +92,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try { revalidateTag(`user-stats:${userId}`); } catch {}
     return NextResponse.json({ lectureId: lecture.id });
   } catch (e: any) {
     console.error('VISION_UPLOAD_ERROR', e);

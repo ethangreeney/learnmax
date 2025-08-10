@@ -71,11 +71,12 @@ model Lecture {
   originalContent String   @db.Text
   createdAt       DateTime @default(now())
   starred         Boolean  @default(false)
+  lastOpenedAt    DateTime?
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   subtopics       Subtopic[]
 
-  @@index([userId, starred, createdAt])
+  @@index([userId, starred, lastOpenedAt, createdAt])
 }
 
 model Subtopic {
