@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
 export async function GET(
   _req: Request,
@@ -40,10 +41,8 @@ export async function GET(
     const accuracy = total ? Math.round((correct / total) * 100) : 0;
 
     // Determine rank based on ELO
-    const rank = await prisma.rank.findFirst({
-      where: { minElo: { lte: user.elo } },
-      orderBy: { minElo: 'desc' },
-    });
+    const ranks = await getRanksSafe();
+    const rank = pickRankForElo(ranks, user.elo);
 
     return NextResponse.json({
       user: {

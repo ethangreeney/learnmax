@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
+import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -108,12 +109,10 @@ export async function GET() {
     const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
     const accuracy = total ? Math.round((correct / total) * 100) : 0;
 
-    // Determine rank based on ELO
+    // Determine rank based on ELO (safe if Rank table missing)
     const userElo = user.elo;
-    const rank = await prisma.rank.findFirst({
-      where: { minElo: { lte: userElo } },
-      orderBy: { minElo: 'desc' },
-    });
+    const ranks = await getRanksSafe();
+    const rr = pickRankForElo(ranks, userElo);
     const isAdmin = isAdminEmail((session.user as any)?.email || null);
     return NextResponse.json({
       user: {
@@ -127,12 +126,12 @@ export async function GET() {
         leaderboardOptOut: (user as any).leaderboardOptOut ?? false,
         masteredCount: user._count.masteredSubtopics,
         quiz: { totalAttempts: total, correct, accuracy },
-        rank: rank
+        rank: rr
           ? {
-              slug: rank.slug,
-              name: rank.name,
-              minElo: rank.minElo,
-              iconUrl: rank.iconUrl,
+              slug: rr.slug,
+              name: rr.name,
+              minElo: rr.minElo,
+              iconUrl: rr.iconUrl,
             }
           : null,
         isAdmin,

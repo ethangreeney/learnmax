@@ -1,11 +1,11 @@
 import { requireAdmin } from '@/lib/admin';
-import prisma from '@/lib/prisma';
+import { getRanksSafe } from '@/lib/ranks';
 import RankManagerClient from './Client';
 
 async function getRanks() {
   // Query DB directly to avoid server-fetching relative URLs
-  const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
-  return ranks as Array<{
+  const ranks = await getRanksSafe();
+  return (ranks as any[]) as Array<{
     slug: string;
     name: string;
     minElo: number;

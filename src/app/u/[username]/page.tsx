@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import prisma from '@/lib/prisma';
 import { notFound } from 'next/navigation';
+import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
 function getRankColor(slug?: string | null): string {
     switch (slug) {
@@ -30,7 +31,8 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
     });
     if (!user) notFound();
 
-    const rank = await prisma.rank.findFirst({ where: { minElo: { lte: user.elo } }, orderBy: { minElo: 'desc' } });
+    const ranks = await getRanksSafe();
+    const rank = pickRankForElo(ranks, user.elo);
     const rankColor = getRankColor(rank?.slug);
 
     return (
