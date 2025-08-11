@@ -2,6 +2,8 @@
   "name": "learnmax",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev": "next dev --turbopack",
     "migrate:deploy": "prisma migrate deploy || prisma db push",
