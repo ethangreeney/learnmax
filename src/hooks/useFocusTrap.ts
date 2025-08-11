@@ -5,8 +5,8 @@ import { useEffect } from 'react';
  * - Cycles Tab/Shift+Tab between first/last focusable elements
  * - Optionally focuses the container on activation
  */
-export default function useFocusTrap(
-  containerRef: React.RefObject<HTMLElement>,
+export default function useFocusTrap<T extends HTMLElement>(
+  containerRef: React.RefObject<T | null>,
   active: boolean,
   options?: { focusOnActivate?: boolean }
 ) {

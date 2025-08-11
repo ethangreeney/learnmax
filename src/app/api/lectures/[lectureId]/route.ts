@@ -1,6 +1,8 @@
 import { isSessionWithUser } from '@/lib/session-utils';
+
+export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { INTERACTIVE_TX_OPTIONS } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { revalidateTag } from 'next/cache';
 import { authOptions } from '@/lib/auth';
@@ -99,8 +101,38 @@ export async function DELETE(
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Cascade deletes will remove related Subtopics, QuizQuestions, and UserMastery via Prisma schema
-    await prisma.lecture.delete({ where: { id: lectureId } });
+    // Preflight: detect optional tables that might not exist in older dev DBs
+    const qaRows = (await prisma.$queryRaw<any[]>`SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'QuizAttempt'
+    ) AS exists`) || [];
+    const ulcRows = (await prisma.$queryRaw<any[]>`SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'UserLectureCompletion'
+    ) AS exists`) || [];
+    const hasQuizAttempt = Boolean(qaRows[0]?.exists);
+    const hasUserLectureCompletion = Boolean(ulcRows[0]?.exists);
+
+    // Robust cascade: explicitly remove dependent records to avoid issues across environments
+    await prisma.$transaction(async (tx) => {
+      // Attempts -> Questions -> Mastery -> Subtopics -> Completions -> Lecture
+      if (hasQuizAttempt) {
+        await tx.quizAttempt.deleteMany({
+          where: { question: { subtopic: { lectureId } } },
+        });
+      }
+      await tx.quizQuestion.deleteMany({ where: { subtopic: { lectureId } } });
+      await tx.userMastery.deleteMany({ where: { subtopic: { lectureId } } });
+      await tx.subtopic.deleteMany({ where: { lectureId } });
+      if (hasUserLectureCompletion) {
+        await tx.userLectureCompletion.deleteMany({ where: { lectureId } });
+        await tx.lecture.delete({ where: { id: lectureId } });
+      } else {
+        // In dev environments missing the completions table, bypass Prisma's
+        // relation engine to avoid it referencing the missing table.
+        await tx.$executeRaw`DELETE FROM "public"."Lecture" WHERE "id" = ${lectureId}`;
+      }
+    }, INTERACTIVE_TX_OPTIONS);
     try {
       revalidateTag(`user-lectures:${userId}`);
     } catch {}

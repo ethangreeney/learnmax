@@ -57,6 +57,9 @@ model User {
   username          String?       @unique
   bio               String?
   leaderboardOptOut Boolean       @default(false)
+  // Lifetime counters that persist even if the user deletes lectures/masteries
+  lifetimeLecturesCreated      Int @default(0)
+  lifetimeSubtopicsMastered    Int @default(0)
   accounts          Account[]
   sessions          Session[]
   lectures          Lecture[]
@@ -66,6 +69,10 @@ model User {
   // Social graph
   following  Follow[] @relation("UserFollows")
   followedBy Follow[] @relation("UserFollowedBy")
+
+  // Aggregates and activity
+  eloEvents                 EloEvent[]
+  lectureCompletions        UserLectureCompletion[]
 }
 
 model Lecture {
@@ -78,6 +85,7 @@ model Lecture {
   userId          String
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   subtopics       Subtopic[]
+  completions     UserLectureCompletion[]
 
   @@index([userId, starred, createdAt])
   @@index([userId, starred, lastOpenedAt, createdAt], map: "Lecture_userId_starred_lastOpened_createdAt_idx")
@@ -135,6 +143,31 @@ model QuizAttempt {
 
   @@index([userId, createdAt])
   @@index([userId, isCorrect, createdAt])
+}
+
+model EloEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  kind      String   // e.g., "revise-short", "lecture-complete"
+  ref       String   // stable reference (e.g., hash or lectureId)
+  delta     Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, ref])
+  @@index([userId, createdAt])
+}
+
+model UserLectureCompletion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  lectureId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture   Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lectureId])
+  @@index([userId, createdAt])
 }
 
 model Follow {

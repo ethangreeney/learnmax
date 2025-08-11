@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { bumpDailyStreak } from '@/lib/streak';
 import { requireSession } from '@/lib/auth';
+import { revalidateTag } from 'next/cache';
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
     });
     // Bump streak on any attempt
     await bumpDailyStreak(userId);
+    try {
+      revalidateTag(`user-stats:${userId}`);
+    } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(

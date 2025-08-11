@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
+import { revalidateTag } from 'next/cache';
 
 export async function POST(req: NextRequest) {
   try {
@@ -90,6 +91,7 @@ ${userQuestion}
             if (userId && !demoMode) {
               try {
                 await bumpDailyStreak(userId);
+                try { revalidateTag(`user-stats:${userId}`); } catch {}
               } catch {}
             }
             if (METRICS) {
@@ -143,6 +145,7 @@ ${userQuestion}
     // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
     if (userId && !demoMode) {
       await bumpDailyStreak(userId);
+      try { revalidateTag(`user-stats:${userId}`); } catch {}
     }
     if (METRICS) {
       try {

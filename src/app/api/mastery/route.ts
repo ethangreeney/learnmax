@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { INTERACTIVE_TX_OPTIONS } from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
+import { revalidateTag } from 'next/cache';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
 
@@ -12,10 +13,32 @@ export async function POST(req: NextRequest) {
     }
     const userId = session.user.id;
 
-    const { subtopicId, eloDelta = 5 } = (await req.json()) as {
-      subtopicId: string;
+    const parsed = (await req.json().catch(() => ({}))) as {
+      subtopicId?: string;
       eloDelta?: number;
+      firstPerfect?: boolean;
     };
+    const subtopicId = String(parsed?.subtopicId || '').trim();
+    const clientDelta =
+      typeof parsed?.eloDelta === 'number' && Number.isFinite(parsed.eloDelta)
+        ? Math.trunc(parsed.eloDelta as number)
+        : undefined;
+    const firstPerfect = Boolean(parsed?.firstPerfect);
+
+    const ELO_MASTERY_FIRST = parseInt(
+      process.env.ELO_MASTERY_FIRST || '20',
+      10
+    );
+    const ELO_MASTERY_LATER = parseInt(
+      process.env.ELO_MASTERY_LATER || '0',
+      10
+    );
+    const eloDelta =
+      clientDelta !== undefined
+        ? clientDelta
+        : firstPerfect
+          ? ELO_MASTERY_FIRST
+          : ELO_MASTERY_LATER;
 
     if (!subtopicId) {
       return NextResponse.json(
@@ -28,10 +51,12 @@ export async function POST(req: NextRequest) {
     const { created } = await prisma.$transaction(async (tx) => {
       try {
         await tx.userMastery.create({ data: { userId, subtopicId } });
-        await tx.user.update({
-          where: { id: userId },
-          data: { elo: { increment: eloDelta } },
-        });
+        if (eloDelta && Number.isFinite(eloDelta) && eloDelta !== 0) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { elo: { increment: eloDelta } },
+          });
+        }
         return { created: true };
       } catch (e: any) {
         // Unique constraint violation => already mastered; do not increment Elo
@@ -40,12 +65,16 @@ export async function POST(req: NextRequest) {
         }
         throw e;
       }
-    });
+    }, INTERACTIVE_TX_OPTIONS);
 
     // Keep streak behavior unchanged
     await bumpDailyStreak(userId);
+    // Ensure dashboard/profile caches reflect new mastery counts
+    try {
+      revalidateTag(`user-stats:${userId}`);
+    } catch {}
 
-    return NextResponse.json({ ok: true, eloIncremented: created });
+    return NextResponse.json({ ok: true, eloIncremented: created, eloDelta: created ? eloDelta : 0 });
   } catch (e: any) {
     console.error('MASTERY_API_ERROR:', e);
     return NextResponse.json(

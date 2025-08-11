@@ -7,6 +7,89 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import ChatPanel from '@/components/ChatPanel';
+import dynamic from 'next/dynamic';
+
+function GeneratingOverlayFallback(props: any) {
+  const visible = Boolean(props?.visible);
+  const hasError = Boolean(props?.hasError);
+  const ariaLabel = hasError ? 'Generation failed' : 'Generating lesson…';
+  if (!visible && !hasError) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" aria-hidden={!visible}>
+      <div className={`absolute inset-0 ${visible ? 'opacity-100' : 'opacity-0'} bg-black/60 transition-opacity duration-200`} />
+      <div
+        className={`rounded-xl border border-neutral-800 bg-neutral-950/70 shadow-2xl backdrop-blur-sm w-[92%] max-w-[520px] p-5 md:p-6 text-neutral-200 transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`}
+        role="status"
+        aria-live="polite"
+        aria-label={ariaLabel}
+      >
+        {!hasError ? (
+          <div className="flex flex-col items-center text-center">
+            <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-neutral-800">
+              <div className="h-2 w-1/3 animate-[bar_1.2s_ease_infinite] rounded-full bg-[rgb(var(--accent))]" />
+            </div>
+            <div className="mt-4 text-base font-medium">Preparing your lesson…</div>
+            <div className="mt-2 text-xs text-neutral-400">This can take up to a minute.</div>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              {props?.onCancel && (
+                <button
+                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm hover:bg-neutral-800"
+                  onClick={props.onCancel}
+                >
+                  Cancel
+                </button>
+              )}
+              {props?.onBack && (
+                <button
+                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm hover:bg-neutral-800"
+                  onClick={props.onBack}
+                >
+                  Go back
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center">
+            <div className="text-base font-semibold text-red-300">Generation failed</div>
+            <p className="mt-2 text-sm text-neutral-300">{props?.errorMessage || 'Something went wrong.'}</p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              {props?.onRetry && (
+                <button
+                  className="rounded-md bg-[rgb(var(--accent))] px-3 py-1.5 text-sm font-semibold text-black hover:brightness-110"
+                  onClick={props.onRetry}
+                >
+                  Retry
+                </button>
+              )}
+              {props?.onBack && (
+                <button
+                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm hover:bg-neutral-800"
+                  onClick={props.onBack}
+                >
+                  Back
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <style jsx>{`
+          @keyframes bar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+          }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+const GeneratingOverlay = dynamic<any>(() => import('@/components/GeneratingOverlay'), {
+  ssr: false,
+  loading: (props: any) => <GeneratingOverlayFallback {...props} />,
+});
+// Delete option removed inside lesson; available on dashboard only
+// Icons not needed since deletion controls were removed from this view
 import {
   deriveUnlockedIndex,
   type LearnLecture,
@@ -14,7 +97,7 @@ import {
   type LearnSubtopic,
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
-// import useBodyScrollLock from '@/hooks/useBodyScrollLock';
+import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 
 /** Normalize model output so it never renders as one giant code block. */
 function sanitizeMarkdown(md: string): string {
@@ -172,6 +255,54 @@ export default function LearnView({
   const [showSparkle, setShowSparkle] = useState(false);
   const [streaming, setStreaming] = useState(false);
 
+  // Generation overlay state for initial lesson build
+  const [genVisible, setGenVisible] = useState(false);
+  const [genHasError, setGenHasError] = useState(false);
+  const [genErrorMessage, setGenErrorMessage] = useState<string>('');
+  const genStartAtRef = useRef<number>(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const ttfbSentRef = useRef<boolean>(false);
+  const genStartedRef = useRef<boolean>(false);
+  // Track in-flight explanation streams per subtopic so we can cancel stale ones
+  const explainControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Track a run ID per subtopic to discard stale chunks from earlier streams
+  const explainRunIdRef = useRef<Map<string, string>>(new Map());
+
+  // Cleanup: abort any active streams on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        if (abortRef.current) abortRef.current.abort();
+      } catch {}
+      try {
+        for (const [, ctl] of explainControllersRef.current) ctl.abort();
+      } catch {}
+      explainControllersRef.current.clear();
+      explainRunIdRef.current.clear();
+    };
+  }, []);
+
+  const postTelemetry = useCallback(
+    (event: string, data?: Record<string, unknown>) => {
+      try {
+        void fetch('/api/telemetry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event,
+            lectureId: initial.id,
+            ts: Date.now(),
+            ...data,
+          }),
+        });
+      } catch {}
+    },
+    [initial.id]
+  );
+
+  // Lock body scroll while overlay is visible
+  useBodyScrollLock(genVisible);
+
   // Maintain a reactive questions map keyed by subtopicId so UI updates immediately
   const [questionsById, setQuestionsById] = useState<
     Record<string, QuizQuestion[]>
@@ -236,72 +367,114 @@ export default function LearnView({
     )
   );
 
-  // On first mount, if there are no subtopics yet, stream them in progressively
+  // Start streaming missing subtopics (used on mount and on retry)
+  const startStreaming = useCallback(async () => {
+    if (readonly) return;
+    if (streaming || genStartedRef.current) return;
+    genStartedRef.current = true;
+    setGenHasError(false);
+    setGenErrorMessage('');
+    setStreaming(true);
+    setGenVisible(true);
+    genStartAtRef.current = Date.now();
+    ttfbSentRef.current = false;
+    // Approximate time-to-first-frame of overlay
+    try {
+      const t0 = performance.now ? performance.now() : Date.now();
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => {
+          const dt = (performance.now ? performance.now() : Date.now()) - t0;
+          if (!ttfbSentRef.current) {
+            ttfbSentRef.current = true;
+            postTelemetry('gen_overlay_ttfb', { ms: Math.max(0, Math.round(dt)) });
+          }
+        });
+      }
+    } catch {}
+
+    const qs = new URLSearchParams({ lectureId: initial.id });
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const res = await fetch('/api/lectures/stream?' + qs.toString(), {
+        signal: ac.signal,
+      });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const event = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 2);
+          if (!event.startsWith('data:')) continue;
+          const json = event.slice(5).trim();
+          let payload: any;
+          try {
+            payload = JSON.parse(json);
+          } catch {
+            continue;
+          }
+          if (payload?.type === 'subtopic' && payload.subtopic) {
+            const s = payload.subtopic as any;
+            (initial.subtopics as any).push({
+              id: s.id,
+              order: s.order,
+              title: s.title,
+              importance: s.importance,
+              difficulty: s.difficulty,
+              overview: s.overview || '',
+              explanation: s.explanation || '',
+              mastered: false,
+              questions: [],
+            });
+            ui.setState((st) => ({
+              ...st,
+              currentIndex: st.currentIndex,
+              unlockedIndex: Math.max(st.unlockedIndex, st.currentIndex),
+            }));
+            setExplanations((e) => ({ ...e, [s.id]: s.explanation || '' }));
+          } else if (payload?.type === 'title' && typeof payload.title === 'string') {
+            setTitle(String(payload.title));
+          } else if (payload?.type === 'done') {
+            // finished initial stream
+          } else if (payload?.type === 'error') {
+            throw new Error(payload?.error || 'stream error');
+          }
+        }
+      }
+      const totalMs = Math.max(0, Date.now() - (genStartAtRef.current || Date.now()));
+      postTelemetry('gen_total_wait', { ms: totalMs });
+      setGenVisible(false);
+    } catch (e: any) {
+      const isAbort = e?.name === 'AbortError';
+      if (isAbort) {
+        postTelemetry('gen_cancel');
+        setGenHasError(true);
+        setGenErrorMessage('Generation was cancelled.');
+        setGenVisible(true);
+      } else {
+        postTelemetry('gen_error', { message: String(e?.message || e) });
+        setGenHasError(true);
+        setGenErrorMessage(String(e?.message || 'Generation failed'));
+        setGenVisible(true);
+      }
+    } finally {
+      setStreaming(false);
+      abortRef.current = null;
+      genStartedRef.current = false;
+    }
+  }, [readonly, streaming, initial.id, ui, setExplanations, postTelemetry]);
+
+  // On first mount, if there are no subtopics yet, stream them progressively
   useEffect(() => {
     if (readonly) return;
     if (!initial.subtopics || initial.subtopics.length === 0) {
-      (async () => {
-        try {
-          setStreaming(true);
-          const qs = new URLSearchParams({ lectureId: initial.id });
-          const res = await fetch('/api/lectures/stream?' + qs.toString());
-          if (!res.ok || !res.body) return;
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            let idx: number;
-            while ((idx = buffer.indexOf('\n\n')) !== -1) {
-              const event = buffer.slice(0, idx).trim();
-              buffer = buffer.slice(idx + 2);
-              if (!event.startsWith('data:')) continue;
-              const json = event.slice(5).trim();
-              let payload: any;
-              try {
-                payload = JSON.parse(json);
-              } catch {
-                continue;
-              }
-              if (payload?.type === 'subtopic' && payload.subtopic) {
-                const s = payload.subtopic as any;
-                // append into our local initial.subtopics clone
-                (initial.subtopics as any).push({
-                  id: s.id,
-                  order: s.order,
-                  title: s.title,
-                  importance: s.importance,
-                  difficulty: s.difficulty,
-                  overview: s.overview || '',
-                  explanation: s.explanation || '',
-                  mastered: false,
-                  questions: [],
-                });
-                // Keep unlocked to currentIndex
-                ui.setState((st) => ({
-                  ...st,
-                  currentIndex: st.currentIndex,
-                  unlockedIndex: Math.max(st.unlockedIndex, st.currentIndex),
-                }));
-                setExplanations((e) => ({ ...e, [s.id]: s.explanation || '' }));
-              } else if (
-                payload?.type === 'title' &&
-                typeof payload.title === 'string'
-              ) {
-                setTitle(String(payload.title));
-              } else if (payload?.type === 'done') {
-                // finished initial stream
-              } else if (payload?.type === 'error') {
-                // swallow
-              }
-            }
-          }
-        } finally {
-          setStreaming(false);
-        }
-      })();
+      void startStreaming();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -406,7 +579,6 @@ export default function LearnView({
       if (!reserveExplanation(targetId)) {
         return;
       }
-      setExplanations((e) => ({ ...e, [targetId]: '' }));
       try {
         const targetIndex = Math.max(
           0,
@@ -418,6 +590,17 @@ export default function LearnView({
                 .slice(0, targetIndex)
                 .map((st) => ({ title: st.title, overview: st.overview }))
             : [];
+        // Prepare abort + run guard for this subtopic
+        const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        explainRunIdRef.current.set(targetId, runId);
+        // Abort any previous stream for this same subtopic
+        try {
+          const prev = explainControllersRef.current.get(targetId);
+          if (prev) prev.abort();
+        } catch {}
+        const ac = new AbortController();
+        explainControllersRef.current.set(targetId, ac);
+
         const qs = new URLSearchParams({ stream: '1' });
         const res = await fetch('/api/explain-db?' + qs.toString(), {
           method: 'POST',
@@ -432,11 +615,13 @@ export default function LearnView({
             covered,
             style,
           }),
+          signal: ac.signal,
         });
         if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let started = false;
         const yieldFrame = () =>
           new Promise<void>((r) => {
             if (typeof requestAnimationFrame !== 'undefined')
@@ -471,30 +656,52 @@ export default function LearnView({
                 const activeId = initial.subtopics[activeIndex]?.id;
                 stillActive = activeId === targetId;
               } catch {}
-              if (stillActive) {
-                setExplanations((e) => ({
-                  ...e,
-                  [targetId]: mergeStreamChunk(
-                    e[targetId] || '',
-                    payload.delta
-                  ),
-                }));
+              // Guard: ensure this chunk belongs to the latest run for this subtopic
+              const isLatestRun =
+                explainRunIdRef.current.get(targetId) === runId;
+              if (stillActive && isLatestRun) {
+                const delta = payload.delta as string;
+                if (!started) {
+                  started = true;
+                  setExplanations((e) => ({
+                    ...e,
+                    [targetId]: sanitizeMarkdown(delta),
+                  }));
+                } else {
+                  setExplanations((e) => ({
+                    ...e,
+                    [targetId]: mergeStreamChunk(e[targetId] || '', delta),
+                  }));
+                }
                 // Let the browser paint between chunks to avoid "all at once" dumps
                 await yieldFrame();
               }
             } else if (payload?.type === 'done') {
-              setExplanationDone((m) => ({ ...m, [targetId]: true }));
+              const isLatestRun =
+                explainRunIdRef.current.get(targetId) === runId;
+              if (isLatestRun) {
+                setExplanationDone((m) => ({ ...m, [targetId]: true }));
+              }
             } else if (payload?.type === 'error') {
               throw new Error(payload.error || 'stream error');
             }
           }
         }
       } catch (e: any) {
-        setExplanations((ex) => ({
-          ...ex,
-          [targetId]: 'Could not generate explanation. ' + (e?.message || ''),
-        }));
+        // If aborted, do not overwrite any existing content with an error message
+        if (e?.name !== 'AbortError') {
+          setExplanations((ex) => ({
+            ...ex,
+            [targetId]: 'Could not generate explanation. ' + (e?.message || ''),
+          }));
+        }
       } finally {
+        try {
+          const c = explainControllersRef.current.get(targetId);
+          if (c) c.abort();
+        } catch {}
+        explainControllersRef.current.delete(targetId);
+        explainRunIdRef.current.delete(targetId);
         releaseExplanation(targetId);
       }
     },
@@ -515,30 +722,19 @@ export default function LearnView({
     [currentSubtopic, fetchExplanationFor]
   );
 
-  // On initial mount, proactively regenerate the FIRST subtopic explanation once.
-  // This guards against any stale/mismapped persisted content for index 0.
-  useEffect(() => {
-    if (forceFirstFixRef.current) return;
-    if (!initial.subtopics || initial.subtopics.length === 0) return;
-    // Only act if we are at the first subtopic
-    // deferred: handled when explanation is ready to run in parallel with quiz
-    return;
-    const first = initial.subtopics[0];
-    if (!first) return;
-    forceFirstFixRef.current = true;
-    // Clear then regenerate to ensure fresh, correct content
-    setExplanations((e) => ({ ...e, [first.id]: '' }));
-    void fetchExplanationFor(first, 'default');
-
-    // Note: prefetch of second subtopic is handled by other effects to avoid
-    // duplicate requests and potential content mixups on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Remove previously-deferred first-subtopic auto-regeneration to avoid
+  // accidental double streams on mount.
 
   // On subtopic change: fetch explanation once and scroll to top
   useEffect(() => {
     if (readonly) return;
     const s = currentSubtopic;
+    // Cancel any background streams for other subtopics when switching
+    try {
+      for (const [id, ctl] of explainControllersRef.current) {
+        if (s && id !== s.id) ctl.abort();
+      }
+    } catch {}
     if (s && !explanations[s.id]) {
       // Start fetching explanation immediately
       fetchExplanationFor(s, 'default');
@@ -726,11 +922,14 @@ export default function LearnView({
   return (
     <div className="grid grid-cols-1 gap-8 px-2 md:px-4 lg:grid-cols-12 lg:gap-10 xl:gap-12">
       {/* Left: Outline */}
-      <aside className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:col-span-3 lg:p-7 xl:p-8">
+      <aside
+        className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:col-span-3 lg:p-7 xl:p-8"
+        data-tour="outline"
+      >
         <h2 className="text-xl font-semibold">Lecture</h2>
 
         {/* Progress bar */}
-        <div className="mt-2">
+        <div className="mt-2" data-tour="progress">
           <div className="mb-1 flex items-center justify-between text-xs text-neutral-400">
             <span>Progress</span>
             <span>
@@ -762,6 +961,10 @@ export default function LearnView({
           <div className="text-lg font-semibold">{title}</div>
         </div>
 
+        {/* Deletion is managed on the dashboard; no delete button here */}
+
+        {/* No deletion error state in lesson view */}
+
         <ul className="space-y-1">
           {initial.subtopics.map((s, i) => (
             <li key={s.id}>
@@ -787,10 +990,11 @@ export default function LearnView({
       <main
         ref={mainRef}
         className={`lg:col-span-6 ${readonly ? 'lg:col-span-9' : ''}`}
+        aria-busy={genVisible ? true : undefined}
       >
         {currentSubtopic ? (
           <div className="space-y-8">
-            <div className="card p-6 md:p-8 xl:p-10">
+            <div className="card p-6 md:p-8 xl:p-10" data-tour="content-pane">
               <h3 className="text-3xl font-bold tracking-tight">
                 {currentSubtopic.title}
               </h3>
@@ -858,7 +1062,7 @@ export default function LearnView({
                 ).trim();
                 const hasLesson = lessonMd.length >= 50;
                 return (
-                  <div className="quiz-panel card p-6 md:p-8 xl:p-10">
+                  <div className="quiz-panel card p-6 md:p-8 xl:p-10" data-tour="quiz-panel">
                     <h3 className="mb-6 text-2xl font-bold tracking-tight">
                       Mastery Check
                     </h3>
@@ -885,7 +1089,7 @@ export default function LearnView({
                       reserveQuestions={reserveQuestions}
                       releaseQuestions={releaseQuestions}
                       disablePersistence={demo}
-                      onPassed={async () => {
+                      onPassed={async (firstPerfect) => {
                         const id = currentSubtopic.id;
                         if (!countedIdsRef.current.has(id)) {
                           countedIdsRef.current.add(id);
@@ -898,11 +1102,13 @@ export default function LearnView({
                         // Persist mastery only outside demo
                         if (!demo) {
                           try {
+                            // Determine if the first check for this set was a perfect 2/2
                             void fetch('/api/mastery', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
                                 subtopicId: currentSubtopic.id,
+                                firstPerfect,
                               }),
                             });
                           } catch {}
@@ -966,7 +1172,10 @@ export default function LearnView({
 
       {/* Right: AI Tutor */}
       {!readonly && (
-        <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+        <aside
+          className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3"
+          data-tour="chat-panel"
+        >
           <ChatPanel
             documentContent={
               demo
@@ -978,6 +1187,46 @@ export default function LearnView({
           />
         </aside>
       )}
+
+      {/* Live region for screen readers */}
+      {/* Screen reader messages for deletion are no longer needed here */}
+
+      {/* Deletion overlay removed from lesson view */}
+
+      {/* Lesson generation overlay */}
+      <GeneratingOverlay
+        visible={genVisible}
+        hasError={genHasError}
+        errorMessage={genErrorMessage}
+        onCancel={() => {
+          try {
+            if (abortRef.current) {
+              const ok = typeof window !== 'undefined' ? window.confirm('Cancel generation?') : true;
+              if (ok) abortRef.current.abort();
+            }
+          } catch {}
+        }}
+        onRetry={() => {
+          setGenHasError(false);
+          setGenErrorMessage('');
+          void startStreaming();
+          postTelemetry('gen_retry');
+        }}
+        onBack={() => {
+          try {
+            router.push('/dashboard');
+          } catch {}
+        }}
+      />
+
+      {/* No-JS fallback: show static informative state on initial generation */}
+      <noscript>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70">
+          <div className="rounded-md border border-neutral-800 bg-neutral-950 px-5 py-4 text-neutral-200">
+            <div className="text-sm">Generating your lesson… This can take up to a minute.</div>
+          </div>
+        </div>
+      </noscript>
     </div>
   );
 }
@@ -1005,7 +1254,7 @@ function QuizPanel({
   lectureId: string;
   lessonMd?: string;
   questions: QuizQuestion[];
-  onPassed: () => void;
+  onPassed: (firstPerfect: boolean) => void;
   onQuestionsSaved?: (saved: QuizQuestion[]) => void;
   reserveQuestions?: (id: string) => boolean;
   releaseQuestions?: (id: string) => void;
@@ -1098,7 +1347,46 @@ function QuizPanel({
     answers[0] === items[0]?.answerIndex &&
     answers[1] === items[1]?.answerIndex;
 
-  const check = () => setRevealed(true);
+  const firstCheckRef = useRef<{ done: boolean; wasPerfect: boolean }>({
+    done: false,
+    wasPerfect: false,
+  });
+
+  useEffect(() => {
+    // Reset the first-check tracker whenever the question set changes
+    firstCheckRef.current = { done: false, wasPerfect: false };
+  }, [items.map((q) => q.id).join('|')]);
+
+  const check = () => {
+    if (!firstCheckRef.current.done) {
+      const twoNow =
+        items.length >= REQUIRED_QUESTIONS &&
+        answers[0] === items[0]?.answerIndex &&
+        answers[1] === items[1]?.answerIndex;
+      firstCheckRef.current = { done: true, wasPerfect: Boolean(twoNow) };
+    }
+    setRevealed(true);
+    // Persist attempts for the current selections at check-time (not on every click)
+    try {
+      if (!disablePersistence) {
+        for (let i = 0; i < items.length; i++) {
+          const q = items[i];
+          const sel = answers[i];
+          if (typeof sel === 'number' && q && q.id) {
+            void fetch('/api/quiz/attempt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                questionId: q.id,
+                selectedIndex: sel,
+                isCorrect: sel === q.answerIndex,
+              }),
+            });
+          }
+        }
+      }
+    } catch {}
+  };
   const tryAgain = () => setRevealed(false);
 
   // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
@@ -1476,21 +1764,6 @@ function QuizPanel({
                       key={j}
                       onClick={async () => {
                         setAns(i, j);
-                        try {
-                          // Skip persistence in demo/ephemeral mode to avoid 401/500s
-                          if (!disablePersistence) {
-                            // Record attempt (fire-and-forget)
-                            void fetch('/api/quiz/attempt', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                questionId: q.id,
-                                selectedIndex: j,
-                                isCorrect: j === q.answerIndex,
-                              }),
-                            });
-                          }
-                        } catch {}
                       }}
                       className={buttonClass}
                       disabled={revealed && isAllCorrect}
@@ -1536,7 +1809,11 @@ function QuizPanel({
         {!revealed && (
           <button
             onClick={check}
-            disabled={items.length === 0}
+            disabled={
+              items.length === 0 ||
+              answers.length < items.length ||
+              answers.some((a) => typeof a !== 'number')
+            }
             className="rounded-md bg-[rgb(var(--accent))] px-5 py-2 font-semibold text-black disabled:opacity-50"
           >
             Check Answer
@@ -1546,7 +1823,7 @@ function QuizPanel({
         {revealed && twoCorrect && (
           <>
             <button
-              onClick={onPassed}
+              onClick={() => onPassed(firstCheckRef.current.wasPerfect)}
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
             >
               Go to next subtopic

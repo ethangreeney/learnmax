@@ -14,11 +14,13 @@ function StatCard({
   label,
   value,
   color,
+  sub,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   color: string;
+  sub?: string;
 }) {
   return (
     <div className="card flex flex-col gap-4 p-6">
@@ -27,6 +29,7 @@ function StatCard({
         <Icon className={`h-6 w-6 ${color}`} />
       </div>
       <p className="text-4xl font-bold">{value}</p>
+      {sub && <p className="-mt-2 text-sm text-neutral-500">{sub}</p>}
     </div>
   );
 }
@@ -38,16 +41,16 @@ async function getData() {
   }
   const userId = session.user.id;
 
-  const [{ user: userLite, masteredCount }, lectures] = await Promise.all([
+  const [{ user: userLite, masteredCount, lifetime, lectureCount }, lectures] = await Promise.all([
     getUserStatsCached(userId),
     getLecturesCached(userId),
   ]);
 
-  return { user: userLite, masteredCount, lectures };
+  return { user: userLite, masteredCount, lifetime, lectureCount, lectures };
 }
 
 export default async function Dashboard() {
-  const { user, masteredCount, lectures } = await getData();
+  const { user, masteredCount, lifetime, lectureCount, lectures } = await getData();
   type LectureItem = (typeof lectures)[number];
   const clientLectures: ClientLecture[] = lectures.map((l: any) => ({
     id: l.id,
@@ -72,14 +75,15 @@ export default async function Dashboard() {
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
           <StatCard
-            label="Lectures Created"
-            value={lectures.length}
+            label="Lectures"
+            value={lectureCount ?? lectures.length}
+            sub={`Lifetime ${lifetime?.lecturesCreated ?? 0}`}
             icon={BookOpen}
             color="text-blue-400"
           />
           <StatCard
-            label="Subtopics Mastered"
-            value={masteredCount ?? 0}
+            label="Subtopics Mastered (Lifetime)"
+            value={lifetime?.subtopicsMastered ?? masteredCount ?? 0}
             icon={Target}
             color="text-green-400"
           />

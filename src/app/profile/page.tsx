@@ -13,6 +13,8 @@ type PublicProfile = {
   elo: number;
   streak: number;
   masteredCount: number;
+  lifetimeLecturesCreated?: number;
+  lifetimeSubtopicsMastered?: number;
   quiz: { totalAttempts: number; correct: number; accuracy: number };
   isAdmin?: boolean;
   leaderboardOptOut?: boolean;
@@ -111,6 +113,10 @@ export default async function ProfilePage() {
                     ? `@${me.username}`
                     : 'Pick a username to claim your handle'}
                 </p>
+                <p className="mt-2 text-xs text-neutral-500">
+                  Lifetime: {me.lifetimeLecturesCreated ?? 0} lectures created •{' '}
+                  {me.lifetimeSubtopicsMastered ?? me.masteredCount} subtopics mastered
+                </p>
               </div>
             </div>
 
@@ -119,7 +125,7 @@ export default async function ProfilePage() {
                 icon={Flame}
                 label={`${me.streak} day${me.streak === 1 ? '' : 's'} streak`}
               />
-              <Chip icon={Target} label={`${me.masteredCount} mastered`} />
+            <Chip icon={Target} label={`${me.masteredCount} mastered`} />
             </div>
           </div>
         </div>
@@ -132,8 +138,9 @@ export default async function ProfilePage() {
           <h2 className="mb-4 text-xl font-semibold">Learning Stats</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <Stat
-              label="Mastered"
-              value={String(me.masteredCount)}
+              label="Subtopics Mastered"
+              value={String(me.lifetimeSubtopicsMastered ?? me.masteredCount)}
+              sub={me.lifetimeSubtopicsMastered !== undefined ? `Current ${me.masteredCount}` : undefined}
               icon={Target}
             />
             <Stat

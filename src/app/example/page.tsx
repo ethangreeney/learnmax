@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import LearnView from '@/components/LearnView';
+import ExampleHelpAndTour from './ExampleHelpAndTour';
 import { exampleLesson } from './generated';
 
 // Public, read-only example lesson
@@ -15,12 +16,15 @@ export default function ExampleLessonPage() {
             <h1 className="text-2xl font-bold tracking-tight">
               Example Lesson
             </h1>
-            <Link
-              href="/"
-              className="text-sm text-neutral-300 hover:text-white"
-            >
-              ← Back to Home
-            </Link>
+            <div className="flex items-center gap-3">
+              <ExampleHelpAndTour />
+              <Link
+                href="/"
+                className="text-sm text-neutral-300 hover:text-white"
+              >
+                ← Back to Home
+              </Link>
+            </div>
           </div>
         </div>
 

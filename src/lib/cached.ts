@@ -5,17 +5,47 @@ import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 export async function getUserStatsCached(userId: string) {
   const fn = unstable_cache(
     async () => {
-      const [userLite, masteredCount] = await Promise.all([
+      const [userLite, masteredCount, currentLectureCount] = await Promise.all([
         prisma.user.findUnique({
           where: { id: userId },
-          select: { id: true, name: true, elo: true, streak: true },
+          select: {
+            id: true,
+            name: true,
+            elo: true,
+            streak: true,
+          },
         }),
         prisma.userMastery.count({ where: { userId } }),
+        prisma.lecture.count({ where: { userId } }),
       ]);
-      return { user: userLite, masteredCount };
+      let lifetimeLecturesCreated = currentLectureCount;
+      let lifetimeSubtopicsMastered = masteredCount;
+      try {
+        const rows = (await prisma.$queryRaw`SELECT "lifetimeLecturesCreated" AS lec, "lifetimeSubtopicsMastered" AS sub FROM "User" WHERE "id" = ${userId} LIMIT 1`) as Array<{ lec: number | null; sub: number | null }>;
+        if (Array.isArray(rows) && rows[0]) {
+          const r = rows[0];
+          if (typeof r.lec === 'number') lifetimeLecturesCreated = r.lec;
+          if (typeof r.sub === 'number') lifetimeSubtopicsMastered = r.sub;
+          // Persist max so lifetime never decreases even if current does
+          try {
+            await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = GREATEST(COALESCE("lifetimeLecturesCreated", 0), ${currentLectureCount}), "lifetimeSubtopicsMastered" = GREATEST(COALESCE("lifetimeSubtopicsMastered", 0), ${masteredCount}) WHERE "id" = ${userId}`;
+          } catch {}
+          lifetimeLecturesCreated = Math.max(lifetimeLecturesCreated, currentLectureCount);
+          lifetimeSubtopicsMastered = Math.max(lifetimeSubtopicsMastered, masteredCount);
+        }
+      } catch {}
+      return {
+        user: userLite,
+        masteredCount,
+        lectureCount: currentLectureCount,
+        lifetime: {
+          lecturesCreated: lifetimeLecturesCreated,
+          subtopicsMastered: lifetimeSubtopicsMastered,
+        },
+      };
     },
     ['user-stats', userId],
-    { revalidate: 15, tags: [`user-stats:${userId}`] }
+    { revalidate: 1, tags: [`user-stats:${userId}`] }
   );
   return fn();
 }
@@ -117,8 +147,9 @@ export async function getProfileForUser(
     }
   }
 
-  const [masteredCount, quizAgg] = await Promise.all([
-    prisma.userMastery.count({ where: { userId } }),
+  // Align profile stats with the dashboard by sourcing the same counters
+  const [stats, quizAgg] = await Promise.all([
+    getUserStatsCached(userId),
     prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId }, _count: { _all: true } }),
   ]);
   const ranks = await getRanksSafe();
@@ -141,7 +172,10 @@ export async function getProfileForUser(
     image,
     elo: user.elo,
     streak: user.streak,
-    masteredCount,
+    masteredCount: stats.masteredCount,
+    // Surface lifetime counters from the same source used on the dashboard
+    lifetimeLecturesCreated: stats.lifetime?.lecturesCreated,
+    lifetimeSubtopicsMastered: stats.lifetime?.subtopicsMastered,
     quiz: { totalAttempts: total, correct, accuracy },
     rank: rank
       ? {

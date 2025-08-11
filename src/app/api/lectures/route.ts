@@ -463,6 +463,10 @@ export async function POST(req: NextRequest) {
           lastOpenedAt: new Date(),
         },
       });
+      // Lifetime: increment created counter (do not decrement on deletes)
+      try {
+        await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = "lifetimeLecturesCreated" + 1 WHERE "id" = ${userId}`;
+      } catch {}
       try {
         await bumpDailyStreak(userId);
       } catch {}
@@ -608,6 +612,9 @@ export async function POST(req: NextRequest) {
             userId,
           },
         });
+        try {
+          await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = "lifetimeLecturesCreated" + 1 WHERE "id" = ${userId}`;
+        } catch {}
         // Count lecture generation towards streak
         await bumpDailyStreak(userId);
         if (bdFromVision.subtopics.length) {
@@ -767,6 +774,9 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
         },
       });
       try {
+        await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = "lifetimeLecturesCreated" + 1 WHERE "id" = ${userId}`;
+      } catch {}
+      try {
         await bumpDailyStreak(userId);
       } catch {}
       // Ensure dashboard caches reflect the new lecture immediately
@@ -898,6 +908,9 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
         lastOpenedAt: new Date(),
       },
     });
+    try {
+      await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = "lifetimeLecturesCreated" + 1 WHERE "id" = ${userId}`;
+    } catch {}
     // Count lecture generation towards streak
     await bumpDailyStreak(userId);
 

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
+import { revalidateTag } from 'next/cache';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
     const aiResponse = await generateJSON(prompt, model);
     if (userId) {
       await bumpDailyStreak(userId);
+      try { revalidateTag(`user-stats:${userId}`); } catch {}
     }
     return NextResponse.json(aiResponse);
   } catch (error: any) {

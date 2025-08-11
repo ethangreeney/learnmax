@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import useBodyScrollLock from '@/hooks/useBodyScrollLock';
+import { useParams } from 'next/navigation';
 
 /** Measure real header height so we center below it */
 function useHeaderHeightVar() {
@@ -24,6 +25,21 @@ function useHeaderHeightVar() {
 
 export default function CompletePage() {
   useBodyScrollLock(true);
+  const params = useParams() as { lectureId?: string };
+  useEffect(() => {
+    // Fire-and-forget: award one-time lecture completion ELO
+    const id = String(params?.lectureId || '').trim();
+    if (!id) return;
+    (async () => {
+      try {
+        await fetch('/api/lectures/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lectureId: id }),
+        });
+      } catch {}
+    })();
+  }, [params?.lectureId]);
   useHeaderHeightVar();
 
   useEffect(() => {

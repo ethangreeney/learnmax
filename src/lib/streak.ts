@@ -37,8 +37,15 @@ export async function bumpDailyStreak(
   const currentStreak = user?.streak ?? 0;
 
   if (last && isSameUTCDay(last, now)) {
-    // Already counted today
-    return currentStreak || 1;
+    // Already counted today. If persisted streak is missing/zero, set it to 1 once.
+    if (!currentStreak || currentStreak < 1) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { streak: 1, lastStudiedAt: now },
+      });
+      return 1;
+    }
+    return currentStreak;
   }
 
   let nextStreak = 1;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { INTERACTIVE_TX_OPTIONS } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
             if (e?.code !== 'P2002') throw e;
           }
         }
-      });
+      }, INTERACTIVE_TX_OPTIONS);
     } else {
       // Create individually so we can return IDs
       for (const q of toInsert) {
