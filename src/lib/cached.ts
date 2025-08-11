@@ -76,4 +76,103 @@ export async function getProfileForUser(userId: string, opts?: { email?: string 
   };
 }
 
+export type LeaderboardPeriod = 'all' | '30d';
+export type LeaderboardScope = 'global' | 'friends';
+export type LeaderboardItem = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  image: string | null;
+  elo: number;
+  rank: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
+  masteries30d?: number;
+  lastActiveISO: string | null;
+};
+
+export async function getLeaderboardCached(period: LeaderboardPeriod, scope: LeaderboardScope = 'global', viewerId?: string | null) {
+  const fn = unstable_cache(
+    async () => {
+      const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
+      const toRank = (elo: number) => {
+        let match: LeaderboardItem['rank'] = null;
+        for (const r of ranks) {
+          if (elo >= r.minElo) match = { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl };
+          else break;
+        }
+        return match;
+      };
+
+      let friendIds: string[] | null = null;
+      if (scope === 'friends' && viewerId) {
+        try {
+          const rows = await (prisma as any).follow.findMany({
+            where: { followerId: viewerId },
+            select: { followingId: true },
+          });
+          friendIds = [viewerId, ...rows.map((r: any) => r.followingId)];
+        } catch {
+          friendIds = [viewerId];
+        }
+      }
+
+      if (period === '30d') {
+        const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const baseWhere: any = { createdAt: { gte: since } };
+        if (friendIds && friendIds.length > 0) baseWhere.userId = { in: friendIds };
+        const grouped = await prisma.userMastery.groupBy({
+          by: ['userId'],
+          where: baseWhere,
+          _count: { userId: true },
+          orderBy: { _count: { userId: 'desc' } },
+          take: 50,
+        });
+        const userIds = grouped.map((g) => g.userId);
+        const users = await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
+        });
+        const idToUser = new Map(users.map((u) => [u.id, u]));
+        const items: LeaderboardItem[] = grouped
+          .map((g) => {
+            const u = idToUser.get(g.userId);
+            if (!u) return null;
+            return {
+              id: u.id,
+              name: u.name,
+              username: (u as any).username ?? null,
+              image: u.image,
+              elo: u.elo,
+              rank: toRank(u.elo),
+              masteries30d: (g as any)._count?.userId ?? 0,
+              lastActiveISO: (u as any).lastStudiedAt ? (u as any).lastStudiedAt.toISOString() : null,
+            } as LeaderboardItem;
+          })
+          .filter(Boolean) as LeaderboardItem[];
+        return items;
+      }
+
+      // Default: all-time ordered by Elo
+      const users = await prisma.user.findMany({
+        where: friendIds && friendIds.length > 0 ? { id: { in: friendIds } } : undefined,
+        select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
+        orderBy: { elo: 'desc' },
+        take: 50,
+      });
+      const items: LeaderboardItem[] = users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        username: (u as any).username ?? null,
+        image: u.image,
+        elo: u.elo,
+        rank: toRank(u.elo),
+        lastActiveISO: (u as any).lastStudiedAt ? (u as any).lastStudiedAt.toISOString() : null,
+      }));
+      return items;
+    },
+    ['leaderboard', period, scope, viewerId || 'anon'],
+    { revalidate: 60, tags: [`leaderboard:${period}:${scope}:${viewerId || 'anon'}`] }
+  );
+  return fn();
+}
+
 

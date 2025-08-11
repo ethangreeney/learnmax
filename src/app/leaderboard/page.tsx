@@ -1,17 +1,79 @@
-import { Suspense } from 'react';
-import LeaderboardClient from './ui/Client';
-
+import Image from 'next/image';
+import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 
-export default function LeaderboardPage() {
+function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'friends' }) {
+  const pill = 'px-3 py-1 rounded hover:bg-neutral-900/60';
+  const active = 'bg-neutral-900/80 ring-1 ring-neutral-800';
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 text-sm">
+        <a href="/leaderboard" className={`${pill} ${scope === 'global' ? active : ''}`}>Global</a>
+        <a href="/leaderboard?scope=friends" className={`${pill} ${scope === 'friends' ? active : ''}`}>Friends</a>
+      </div>
+      <div className="h-5 w-px bg-neutral-800" />
+      <div className="flex items-center gap-2 text-sm">
+        <a href="/leaderboard" className={`${pill} ${period === 'all' ? active : ''}`}>All-time</a>
+        <a href="/leaderboard?period=30d" className={`${pill} ${period === '30d' ? active : ''}`}>30 days</a>
+      </div>
+    </div>
+  );
+}
+
+export default async function LeaderboardPage({ searchParams }: { searchParams?: Promise<{ period?: string; scope?: string }> }) {
+  const sp = (await searchParams) || {};
+  const period = sp.period === '30d' ? '30d' : 'all';
+  const scope: 'global' | 'friends' = sp.scope === 'friends' ? 'friends' : 'global';
+  const session = await getServerSession(authOptions).catch(() => null);
+  const viewerId = (session as any)?.user?.id as string | undefined;
+  const items: LeaderboardItem[] = await getLeaderboardCached(period, scope, viewerId || null);
+
   return (
     <div className="container-narrow space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Leaderboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Leaderboard</h1>
+        <Tabs period={period} scope={scope} />
       </div>
-      <Suspense fallback={<div className="card h-40 animate-pulse" />}>
-        <LeaderboardClient />
-      </Suspense>
+
+      <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 divide-y divide-neutral-800">
+        {items.map((u, idx) => (
+          <div key={u.id} className="flex items-center justify-between px-4 py-4 md:px-6">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="w-8 text-center text-neutral-400 tabular-nums">{idx + 1}</div>
+              <div className="h-10 w-10 rounded-full overflow-hidden bg-neutral-900 ring-2 ring-neutral-800">
+                {u.image ? (
+                  <Image src={u.image} alt={u.name || ''} width={40} height={40} className="h-full w-full object-cover" unoptimized />
+                ) : (
+                  <div className="h-full w-full" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="truncate text-lg font-semibold">{u.name || 'Unnamed'}</div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 ring-1 ring-neutral-800 text-neutral-400">#{idx + 1}</span>
+                </div>
+                <div className="text-sm text-neutral-500 flex items-center gap-2">
+                  {u.username ? <a href={`/u/${u.username}`} className="hover:underline">Profile</a> : <span>Profile</span>}
+                  <span className="opacity-50">•</span>
+                  <span>last active {u.lastActiveISO ? new Date(u.lastActiveISO).toLocaleDateString() : '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs">
+                {u.rank?.iconUrl && (
+                  <Image src={u.rank.iconUrl} alt={u.rank.name} width={14} height={14} className="h-3.5 w-3.5 object-contain" unoptimized />
+                )}
+                <span className="font-semibold">{u.rank?.name || 'Unranked'}</span>
+                <span className="text-neutral-400">Elo {u.elo}</span>
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -7,7 +7,8 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'lh4.googleusercontent.com' },
       { protocol: 'https', hostname: 'lh5.googleusercontent.com' },
       { protocol: 'https', hostname: 'lh6.googleusercontent.com' },
-      { protocol: 'https', hostname: 'public.blob.vercel-storage.com' },
+      // Allow Vercel Blob subdomains for public storage (avatars, rank icons)
+      { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
     ],
   },
 };
