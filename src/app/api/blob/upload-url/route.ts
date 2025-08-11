@@ -16,7 +16,8 @@ export async function POST(req: Request) {
         if (typeof pathname === 'string' && pathname.startsWith('ranks/')) {
           await requireAdmin();
         }
-        const isAvatar = typeof pathname === 'string' && pathname.startsWith('avatars/');
+        const isAvatar =
+          typeof pathname === 'string' && pathname.startsWith('avatars/');
         const allowedImages = isAvatar
           ? ['image/png', 'image/jpeg', 'image/webp'] // no GIFs for avatars
           : ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
@@ -40,5 +41,3 @@ export async function POST(req: Request) {
     );
   }
 }
-
-

@@ -8,8 +8,6 @@ LearnMax is a full-stack web application built with Next.js that revolutionizes 
 <img width="1470" height="789" alt="image" src="https://github.com/user-attachments/assets/5af0e37a-c1bb-4262-bf60-757bd4c7cfcc" />
 <img width="725" height="575" alt="image" src="https://github.com/user-attachments/assets/8b784b6d-8fa2-4a49-a4d8-12aec793ef46" />
 
-
-
 ---
 
 ## 🚀 About The Project
@@ -18,12 +16,12 @@ This application is designed to create a hyper-efficient study path from any tex
 
 ### Core Features
 
-*   **📚 AI Content Deconstruction**: Upload a PDF or paste raw text. The AI analyzes the material and structures it into a logical learning path of subtopics, ordered by importance and difficulty.
-*   **💡 Guided Mastery Learning**: Tackle one core concept at a time. The app provides AI-generated explanations in various styles (simplified, detailed, or with examples) to prevent cognitive overload and embed knowledge effectively.
-*   **🎯 Verified Comprehension**: Before advancing, pass a targeted, AI-generated quiz to prove you've mastered the current concept. This guarantees a rock-solid foundation for lasting knowledge.
-*   **💬 Interactive AI Tutor**: Have a question? An AI tutor is available in a side panel, ready to answer questions about the source material or related general knowledge topics.
-*   **📊 Personalized Dashboard**: Keep track of your learning journey. View stats like your total lectures, mastered subtopics, and even a "Learning Elo" score that reflects your progress.
-*   **🔐 Secure Authentication**: User accounts and sessions are securely managed using NextAuth.js with Google as an OAuth provider.
+- **📚 AI Content Deconstruction**: Upload a PDF or paste raw text. The AI analyzes the material and structures it into a logical learning path of subtopics, ordered by importance and difficulty.
+- **💡 Guided Mastery Learning**: Tackle one core concept at a time. The app provides AI-generated explanations in various styles (simplified, detailed, or with examples) to prevent cognitive overload and embed knowledge effectively.
+- **🎯 Verified Comprehension**: Before advancing, pass a targeted, AI-generated quiz to prove you've mastered the current concept. This guarantees a rock-solid foundation for lasting knowledge.
+- **💬 Interactive AI Tutor**: Have a question? An AI tutor is available in a side panel, ready to answer questions about the source material or related general knowledge topics.
+- **📊 Personalized Dashboard**: Keep track of your learning journey. View stats like your total lectures, mastered subtopics, and even a "Learning Elo" score that reflects your progress.
+- **🔐 Secure Authentication**: User accounts and sessions are securely managed using NextAuth.js with Google as an OAuth provider.
 
 ---
 
@@ -31,15 +29,15 @@ This application is designed to create a hyper-efficient study path from any tex
 
 This project leverages a modern, powerful tech stack:
 
-*   **Framework**: [Next.js](https://nextjs.org/) (v15) with App Router
-*   **Language**: [TypeScript](https://www.typescriptlang.org/)
-*   **AI**: [Google Gemini API](https://ai.google.dev/)
-*   **Database**: [PostgreSQL](https://www.postgresql.org/)
-*   **ORM**: [Prisma](https://www.prisma.io/)
-*   **Authentication**: [NextAuth.js](https://next-auth.js.org/)
-*   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-*   **Client-side State**: [Zustand](https://github.com/pmndrs/zustand)
-*   **Icons**: [Lucide React](https://lucide.dev/)
+- **Framework**: [Next.js](https://nextjs.org/) (v15) with App Router
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **AI**: [Google Gemini API](https://ai.google.dev/)
+- **Database**: [PostgreSQL](https://www.postgresql.org/)
+- **ORM**: [Prisma](https://www.prisma.io/)
+- **Authentication**: [NextAuth.js](https://next-auth.js.org/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Client-side State**: [Zustand](https://github.com/pmndrs/zustand)
+- **Icons**: [Lucide React](https://lucide.dev/)
 
 ---
 
@@ -49,19 +47,21 @@ To get a local copy up and running, follow these simple steps.
 
 ### Prerequisites
 
-*   **Node.js**: v20.x or higher
-*   **pnpm**: `npm install -g pnpm`
-*   **PostgreSQL**: A running instance of PostgreSQL.
+- **Node.js**: v20.x or higher
+- **pnpm**: `npm install -g pnpm`
+- **PostgreSQL**: A running instance of PostgreSQL.
 
 ### Installation & Setup
 
 1.  **Clone the repository:**
+
     ```sh
     git clone https://github.com/your-username/learnmax.git
     cd learnmax
     ```
 
 2.  **Install dependencies:**
+
     ```sh
     pnpm install
     ```
@@ -91,6 +91,7 @@ To get a local copy up and running, follow these simple steps.
 
 4.  **Run database migrations:**
     This will sync the Prisma schema with your PostgreSQL database.
+
     ```sh
     pnpm prisma migrate dev
     ```
@@ -108,18 +109,18 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The codebase is organized to be clean and maintainable:
 
-*   `prisma/`: Contains the database `schema.prisma` and migration files.
-*   `public/`: Static assets like images and SVGs.
-*   `src/app/`: The core of the Next.js application, using the App Router.
-    *   `(pages)/`: Main routes like `/`, `/dashboard`, and `/learn`.
-    *   `api/`: All backend API endpoints, organized by resource.
-*   `src/components/`: Shared, reusable React components used across the application.
-*   `src/lib/`: Essential logic and utilities.
-    *   `ai.ts`: Functions for interacting with the Google Gemini API.
-    *   `auth.ts`: NextAuth.js configuration.
-    *   `prisma.ts`: Prisma client instance.
-    *   `client/`: Client-side specific helpers and state stores (Zustand).
-*   `src/types/`: TypeScript type definitions.
+- `prisma/`: Contains the database `schema.prisma` and migration files.
+- `public/`: Static assets like images and SVGs.
+- `src/app/`: The core of the Next.js application, using the App Router.
+  - `(pages)/`: Main routes like `/`, `/dashboard`, and `/learn`.
+  - `api/`: All backend API endpoints, organized by resource.
+- `src/components/`: Shared, reusable React components used across the application.
+- `src/lib/`: Essential logic and utilities.
+  - `ai.ts`: Functions for interacting with the Google Gemini API.
+  - `auth.ts`: NextAuth.js configuration.
+  - `prisma.ts`: Prisma client instance.
+  - `client/`: Client-side specific helpers and state stores (Zustand).
+- `src/types/`: TypeScript type definitions.
 
 ---
 

@@ -15,26 +15,37 @@ export async function GET(req: NextRequest) {
   try {
     const session = await requireSession();
     if (!isSessionWithUser(session)) {
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), { status: 401 });
+      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
+        status: 401,
+      });
     }
     const url = new URL(req.url);
     const lectureId = String(url.searchParams.get('lectureId') || '').trim();
-    const preferredModel = String(url.searchParams.get('model') || '').trim() || undefined;
+    // Ignore client-selected model for breakdown/subtopic generation
+    const preferredModel = undefined;
     if (!lectureId) {
-      return new Response(JSON.stringify({ error: 'lectureId required' }), { status: 400 });
+      return new Response(JSON.stringify({ error: 'lectureId required' }), {
+        status: 400,
+      });
     }
     const userId = session.user.id;
     const lecture = await prisma.lecture.findFirst({
       where: { id: lectureId, userId },
       select: { id: true, title: true, originalContent: true },
     });
-    if (!lecture) return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+    if (!lecture)
+      return new Response(JSON.stringify({ error: 'not found' }), {
+        status: 404,
+      });
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
-          const existing = await prisma.subtopic.findMany({ where: { lectureId }, orderBy: { order: 'asc' } });
+          const existing = await prisma.subtopic.findMany({
+            where: { lectureId },
+            orderBy: { order: 'asc' },
+          });
           const offset = existing.length;
           // Emit already-present subtopics immediately
           for (const s of existing) {
@@ -51,8 +62,8 @@ export async function GET(req: NextRequest) {
                     overview: s.overview,
                     explanation: s.explanation || '',
                   },
-                })}\n\n`,
-              ),
+                })}\n\n`
+              )
             );
           }
 
@@ -84,14 +95,28 @@ ${text}
           `;
           const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
           const DEFAULT_TITLE = 'Generating lesson... Please Wait';
-          const topic = typeof bdRaw?.topic === 'string' && bdRaw.topic.trim() ? bdRaw.topic.trim() : DEFAULT_TITLE;
-          const subtopics: Array<{ title: string; importance: string; difficulty: number; overview?: string }>
-            = Array.isArray(bdRaw?.subtopics) ? bdRaw.subtopics : [];
+          const topic =
+            typeof bdRaw?.topic === 'string' && bdRaw.topic.trim()
+              ? bdRaw.topic.trim()
+              : DEFAULT_TITLE;
+          const subtopics: Array<{
+            title: string;
+            importance: string;
+            difficulty: number;
+            overview?: string;
+          }> = Array.isArray(bdRaw?.subtopics) ? bdRaw.subtopics : [];
 
           // Update title if different
           if (topic && topic !== lecture.title) {
-            await prisma.lecture.update({ where: { id: lectureId }, data: { title: topic } });
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'title', title: topic })}\n\n`));
+            await prisma.lecture.update({
+              where: { id: lectureId },
+              data: { title: topic },
+            });
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'title', title: topic })}\n\n`
+              )
+            );
           }
 
           // Select the most important subtopics instead of the first ones
@@ -136,17 +161,23 @@ ${text}
                     overview: created.overview,
                     explanation: '',
                   },
-                })}\n\n`,
-              ),
+                })}\n\n`
+              )
             );
             // Small delay for UI pacing
             await new Promise((r) => setTimeout(r, 50));
           }
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
+          );
           controller.close();
         } catch (e: any) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`));
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`
+            )
+          );
           controller.close();
         }
       },
@@ -161,8 +192,8 @@ ${text}
       },
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message || 'failed' }), { status: 500 });
+    return new Response(JSON.stringify({ error: e?.message || 'failed' }), {
+      status: 500,
+    });
   }
 }
-
-

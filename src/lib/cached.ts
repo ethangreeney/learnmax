@@ -6,7 +6,10 @@ export async function getUserStatsCached(userId: string) {
   const fn = unstable_cache(
     async () => {
       const [userLite, masteredCount] = await Promise.all([
-        prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, elo: true, streak: true } }),
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, name: true, elo: true, streak: true },
+        }),
         prisma.userMastery.count({ where: { userId } }),
       ]);
       return { user: userLite, masteredCount };
@@ -22,10 +25,7 @@ export async function getLecturesCached(userId: string) {
     async () => {
       const lectures = await prisma.lecture.findMany({
         where: { userId },
-        orderBy: [
-          { starred: 'desc' },
-          { createdAt: 'desc' },
-        ],
+        orderBy: [{ starred: 'desc' }, { createdAt: 'desc' }],
         take: 50,
         include: { _count: { select: { subtopics: true } } },
       });
@@ -37,8 +37,10 @@ export async function getLecturesCached(userId: string) {
   return fn();
 }
 
-
-export async function getProfileForUser(userId: string, opts?: { email?: string | null; providerImage?: string | null }) {
+export async function getProfileForUser(
+  userId: string,
+  opts?: { email?: string | null; providerImage?: string | null }
+) {
   let user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -53,34 +55,58 @@ export async function getProfileForUser(userId: string, opts?: { email?: string 
     },
   });
   if (!user) {
-    // Fallback: try locate by email (DBs merged or session id drift)
     const email = opts?.email || undefined;
     if (email) {
       const byEmail = await prisma.user.findUnique({
         where: { email },
-        select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          bio: true,
+          image: true,
+          elo: true,
+          streak: true,
+          email: true,
+        },
       });
       if (byEmail) {
         user = byEmail;
       } else {
-        // As a last resort, create a row for this session so profile can load
         try {
           user = await prisma.user.create({
             data: {
-              id: userId, // preserve session id to keep consistency across queries
+              id: userId,
               email,
               name: null,
               image: opts?.providerImage || null,
               elo: 1000,
               streak: 0,
             },
-            select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              bio: true,
+              image: true,
+              elo: true,
+              streak: true,
+              email: true,
+            },
           });
         } catch {
-          // Creation may fail due to unique constraints; re-fetch by email
           const retry = await prisma.user.findUnique({
             where: { email },
-            select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              bio: true,
+              image: true,
+              elo: true,
+              streak: true,
+              email: true,
+            },
           });
           if (!retry) throw new Error('Not found');
           user = retry;
@@ -98,11 +124,15 @@ export async function getProfileForUser(userId: string, opts?: { email?: string 
   const ranks = await getRanksSafe();
   const r = pickRankForElo(ranks, user.elo);
   const rank = r ? { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl } : null;
-  const total = quizAgg.reduce((acc: number, row: { _count: { _all: number } }) => acc + row._count._all, 0);
-  const correct = (quizAgg.find((r: any) => r.isCorrect)?._count._all) || 0;
+  const total = quizAgg.reduce(
+    (acc: number, row: { _count: { _all: number } }) => acc + row._count._all,
+    0
+  );
+  const correct = quizAgg.find((rr: any) => rr.isCorrect)?._count._all || 0;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
   const image = user.image || opts?.providerImage || null;
-  const isAdmin = !!opts?.email && (await import('@/lib/admin')).isAdminEmail(opts.email);
+  const isAdmin =
+    !!opts?.email && (await import('@/lib/admin')).isAdminEmail(opts.email);
   return {
     id: user.id,
     name: user.name,
@@ -113,7 +143,14 @@ export async function getProfileForUser(userId: string, opts?: { email?: string 
     streak: user.streak,
     masteredCount,
     quiz: { totalAttempts: total, correct, accuracy },
-    rank: rank ? { slug: (rank as any).slug, name: (rank as any).name, minElo: (rank as any).minElo, iconUrl: (rank as any).iconUrl } : null,
+    rank: rank
+      ? {
+          slug: (rank as any).slug,
+          name: (rank as any).name,
+          minElo: (rank as any).minElo,
+          iconUrl: (rank as any).iconUrl,
+        }
+      : null,
     isAdmin,
   };
 }
@@ -212,5 +249,3 @@ export async function getLeaderboardCached(period: LeaderboardPeriod, scope: Lea
   );
   return fn();
 }
-
-

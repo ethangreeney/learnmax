@@ -11,7 +11,9 @@ function isSameUTCDay(a: Date, b: Date): boolean {
 }
 
 function isYesterdayUTC(last: Date, now: Date): boolean {
-  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+  const prev = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)
+  );
   return isSameUTCDay(last, prev);
 }
 
@@ -22,7 +24,10 @@ function isYesterdayUTC(last: Date, now: Date): boolean {
  * - Older: reset streak to 1
  * Always updates `lastStudiedAt` to now when incrementing/resetting.
  */
-export async function bumpDailyStreak(userId: string, now: Date = new Date()): Promise<number> {
+export async function bumpDailyStreak(
+  userId: string,
+  now: Date = new Date()
+): Promise<number> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { lastStudiedAt: true, streak: true },
@@ -48,5 +53,3 @@ export async function bumpDailyStreak(userId: string, now: Date = new Date()): P
 
   return nextStreak;
 }
-
-

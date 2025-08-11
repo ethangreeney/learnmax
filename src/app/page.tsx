@@ -14,16 +14,14 @@ const PillarCard = ({
   title: string;
   children: React.ReactNode;
 }) => (
-  <div className="flex flex-col text-left gap-3 p-5 rounded-lg border border-neutral-800 bg-neutral-900/50 h-full">
+  <div className="flex h-full flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 p-5 text-left">
     <div className="flex items-center gap-3">
-      <div className="flex-shrink-0 flex h-9 w-9 items-center justify-center rounded-md bg-neutral-700/50 text-white">
-        <Icon className="w-5 h-5" />
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-neutral-700/50 text-white">
+        <Icon className="h-5 w-5" />
       </div>
       <h3 className="text-md font-semibold">{title}</h3>
     </div>
-    <p className="text-sm text-neutral-400 leading-relaxed">
-      {children}
-    </p>
+    <p className="text-sm leading-relaxed text-neutral-400">{children}</p>
   </div>
 );
 
@@ -41,47 +39,57 @@ export default function HomePage() {
     const router = useRouter();
     useEffect(() => {
       ['/dashboard', '/learn', '/example'].forEach((r) => {
-        try { router.prefetch(r); } catch {}
+        try {
+          router.prefetch(r);
+        } catch {}
       });
     }, [router]);
     return null;
   }
   return (
-    <div className="container-narrow" style={{ minHeight: 'calc(100svh - 120px)' }}>
+    <div
+      className="container-narrow"
+      style={{ minHeight: 'calc(100svh - 120px)' }}
+    >
       <PrefetchRoutes />
-      <div className="flex flex-col items-center justify-center text-center min-h-[calc(100svh-160px)] max-w-6xl mx-auto">
+      <div className="mx-auto flex min-h-[calc(100svh-160px)] max-w-6xl flex-col items-center justify-center text-center">
         <div className="w-full">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-200 to-neutral-400 leading-[1.18] md:leading-[1.14] lg:leading-[1.12] pb-1.5">
+          <h1 className="bg-gradient-to-b from-white via-neutral-200 to-neutral-400 bg-clip-text pb-1.5 text-4xl leading-[1.18] font-bold tracking-tight text-transparent md:text-5xl md:leading-[1.14] lg:leading-[1.12]">
             The Science of Learning, Perfected by AI.
           </h1>
-          <p className="mt-4 max-w-3xl mx-auto text-base md:text-lg text-neutral-300">
-            Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science to build a hyper-efficient study path, ensuring you master every concept with minimal time and effort.
+          <p className="mx-auto mt-4 max-w-3xl text-base text-neutral-300 md:text-lg">
+            Stop wasting hours on inefficient rereading. LearnMax applies proven
+            cognitive science to build a hyper-efficient study path, ensuring
+            you master every concept with minimal time and effort.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
-    <Link
-      href="/learn"
-      className="btn-primary shadow-lg hover:scale-105"
-    >
-      Optimize Your First Lecture
-    </Link>
-    <Link
-      href="/example"
-      className="btn-ghost border border-neutral-700 hover:border-neutral-500"
-    >
-      View example lesson
-    </Link>
-  </div>
+            <Link
+              href="/learn"
+              className="btn-primary shadow-lg hover:scale-105"
+            >
+              Optimize Your First Lecture
+            </Link>
+            <Link
+              href="/example"
+              className="btn-ghost border border-neutral-700 hover:border-neutral-500"
+            >
+              View example lesson
+            </Link>
+          </div>
         </div>
-        <div className="w-full mt-12">
+        <div className="mt-12 w-full">
           <div className="grid gap-5 md:grid-cols-3">
             <PillarCard icon={FileSearch} title="AI Deconstruction">
-              Our models find the optimal learning path through dense material, so you study the right concepts in the right order.
+              Our models find the optimal learning path through dense material,
+              so you study the right concepts in the right order.
             </PillarCard>
             <PillarCard icon={BrainCircuit} title="Guided Mastery Learning">
-              Based on proven science, you focus on one core idea at a time. This prevents cognitive overload and embeds knowledge effectively.
+              Based on proven science, you focus on one core idea at a time.
+              This prevents cognitive overload and embeds knowledge effectively.
             </PillarCard>
             <PillarCard icon={Target} title="Verified Comprehension">
-              Pass a targeted quiz to prove you&apos;ve mastered the concept. This guarantees a rock-solid foundation for lasting knowledge.
+              Pass a targeted quiz to prove you&apos;ve mastered the concept.
+              This guarantees a rock-solid foundation for lasting knowledge.
             </PillarCard>
           </div>
         </div>
@@ -89,4 +97,3 @@ export default function HomePage() {
     </div>
   );
 }
-

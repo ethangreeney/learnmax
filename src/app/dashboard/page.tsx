@@ -21,10 +21,10 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="card p-6 flex flex-col gap-4">
+    <div className="card flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <span className="text-neutral-400">{label}</span>
-        <Icon className={`w-6 h-6 ${color}`} />
+        <Icon className={`h-6 w-6 ${color}`} />
       </div>
       <p className="text-4xl font-bold">{value}</p>
     </div>
@@ -48,12 +48,14 @@ async function getData() {
 
 export default async function Dashboard() {
   const { user, masteredCount, lectures } = await getData();
-  type LectureItem = typeof lectures[number];
+  type LectureItem = (typeof lectures)[number];
   const clientLectures: ClientLecture[] = lectures.map((l: any) => ({
     id: l.id,
     title: l.title,
     createdAtISO: new Date(l.createdAt).toISOString(),
-    lastOpenedAtISO: l.lastOpenedAt ? new Date(l.lastOpenedAt).toISOString() : null,
+    lastOpenedAtISO: l.lastOpenedAt
+      ? new Date(l.lastOpenedAt).toISOString()
+      : null,
     subtopicCount: l._count.subtopics,
     starred: l.starred ?? false,
   }));
@@ -62,12 +64,13 @@ export default async function Dashboard() {
     <div className="container-narrow space-y-12">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Your Dashboard</h1>
-        <p className="text-neutral-400 mt-2">
-          Welcome back{user?.name ? `, ${user.name}` : ''}! Here&apos;s a summary of your learning journey.
+        <p className="mt-2 text-neutral-400">
+          Welcome back{user?.name ? `, ${user.name}` : ''}! Here&apos;s a
+          summary of your learning journey.
         </p>
       </header>
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:col-span-2">
           <StatCard
             label="Lectures Created"
             value={lectures.length}
@@ -93,14 +96,14 @@ export default async function Dashboard() {
             color="text-orange-400"
           />
         </div>
-        <div className="card p-6 flex flex-col items-center justify-center text-center gap-4">
+        <div className="card flex flex-col items-center justify-center gap-4 p-6 text-center">
           <h3 className="text-xl font-semibold">Ready to Learn?</h3>
-          <p className="text-neutral-400 text-sm">
+          <p className="text-sm text-neutral-400">
             Create a lecture from text or PDF in the Learn Workspace.
           </p>
           <Link
             href="/learn"
-            className="w-full btn-primary px-6 py-3 font-semibold transition-transform hover:scale-105"
+            className="btn-primary w-full px-6 py-3 font-semibold transition-transform hover:scale-105"
           >
             Go to Workspace
           </Link>
@@ -108,12 +111,21 @@ export default async function Dashboard() {
       </section>
       <section>
         <h2 className="text-2xl font-semibold">Your Lectures</h2>
-        <Suspense fallback={<div className="mt-6 text-sm text-neutral-500">Loading your lectures…</div>}>
+        <Suspense
+          fallback={
+            <div className="mt-6 text-sm text-neutral-500">
+              Loading your lectures…
+            </div>
+          }
+        >
           {/* Already fetched above, but Suspense boundary lets the header paint instantly if cache misses */}
           <LectureList initialLectures={clientLectures} />
         </Suspense>
         {lectures.length >= 50 && (
-          <p className="mt-2 text-sm text-neutral-500">Showing latest 50. Older lectures are available via search; we can add paging if you need it.</p>
+          <p className="mt-2 text-sm text-neutral-500">
+            Showing latest 50. Older lectures are available via search; we can
+            add paging if you need it.
+          </p>
         )}
       </section>
     </div>

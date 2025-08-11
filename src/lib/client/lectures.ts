@@ -1,12 +1,10 @@
 export async function createLectureFromText(
   content: string
 ): Promise<{ lectureId: string }> {
-  let model: string | undefined;
-  try { model = localStorage.getItem('ai:model') || undefined; } catch {}
   const res = await fetch('/api/lectures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, model }),
+    body: JSON.stringify({ content }),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
@@ -26,7 +24,12 @@ export async function createLectureFromPdf(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       type: 'blob.generate-client-token',
-      payload: { pathname, callbackUrl: '', multipart: file.size > 5_000_000, clientPayload: null },
+      payload: {
+        pathname,
+        callbackUrl: '',
+        multipart: file.size > 5_000_000,
+        clientPayload: null,
+      },
     }),
   });
   if (!tokenRes.ok) {
@@ -34,7 +37,10 @@ export async function createLectureFromPdf(
     throw new Error(e.error || `Failed to init upload (${tokenRes.status})`);
   }
   const tokenData = await tokenRes.json();
-  if (tokenData?.type !== 'blob.generate-client-token' || !tokenData?.clientToken) {
+  if (
+    tokenData?.type !== 'blob.generate-client-token' ||
+    !tokenData?.clientToken
+  ) {
     throw new Error('Invalid upload token response');
   }
   // Use client-side SDK put with token
@@ -46,7 +52,6 @@ export async function createLectureFromPdf(
     multipart: file.size > 10_000_000,
   } as any);
   const body: any = { blobUrl: uploaded.url };
-  try { const m = localStorage.getItem('ai:model'); if (m) body.model = m; } catch {}
   const res = await fetch('/api/lectures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -64,8 +69,10 @@ export async function createLectureFromPdfVision(
 ): Promise<{ lectureId: string }> {
   const form = new FormData();
   form.append('file', file);
-  try { const m = localStorage.getItem('ai:model'); if (m) form.append('model', m); } catch {}
-  const res = await fetch('/api/lectures/vision', { method: 'POST', body: form });
+  const res = await fetch('/api/lectures/vision', {
+    method: 'POST',
+    body: form,
+  });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error(e.error || `Failed: ${res.status}`);

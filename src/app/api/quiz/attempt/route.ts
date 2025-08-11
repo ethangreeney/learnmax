@@ -12,7 +12,11 @@ export async function POST(req: NextRequest) {
       selectedIndex: number;
       isCorrect: boolean;
     };
-    if (!questionId || typeof selectedIndex !== 'number' || typeof isCorrect !== 'boolean') {
+    if (
+      !questionId ||
+      typeof selectedIndex !== 'number' ||
+      typeof isCorrect !== 'boolean'
+    ) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
@@ -23,8 +27,9 @@ export async function POST(req: NextRequest) {
     await bumpDailyStreak(userId);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }
-
-

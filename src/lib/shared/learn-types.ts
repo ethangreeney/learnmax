@@ -27,6 +27,9 @@ export type LearnLecture = {
 
 export function deriveUnlockedIndex(subtopics: LearnSubtopic[]): number {
   // Highest mastered index + 1 (at least 0)
-  const lastMastered = subtopics.reduce((acc, s, i) => (s.mastered ? i : acc), -1);
+  const lastMastered = subtopics.reduce(
+    (acc, s, i) => (s.mastered ? i : acc),
+    -1
+  );
   return Math.min(lastMastered + 1, Math.max(0, subtopics.length - 1));
 }

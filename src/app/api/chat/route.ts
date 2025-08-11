@@ -11,36 +11,53 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const userId = isSessionWithUser(session) ? session.user.id : null;
-    const { userQuestion, documentContent, model, demoMode } = await req.json() as { userQuestion: string, documentContent: string, model?: string, demoMode?: boolean };
+    const { userQuestion, documentContent, model, demoMode } =
+      (await req.json()) as {
+        userQuestion: string;
+        documentContent: string;
+        model?: string;
+        demoMode?: boolean;
+      };
 
     if (!userQuestion) {
-      return NextResponse.json({ error: 'A question is required.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'A question is required.' },
+        { status: 400 }
+      );
     }
 
     const systemPrompt = `
-      You are an expert academic tutor. Your primary goal is to help the user learn, both by explaining the provided study material and by answering general knowledge questions that aid in their understanding.
+You are an expert academic tutor. Ground your answers first in the CURRENT SUBTOPIC content provided below, and otherwise in your general knowledge.
 
-      **YOUR BEHAVIOR:**
-      1.  **Prioritize the Document:** First, check if the user's question can be answered using the "DOCUMENT CONTENT" provided below. If it can, base your answer primarily on the document.
-      2.  **Use General Knowledge:** If the question is about a general topic or is unrelated to the document, use your own extensive knowledge to provide an accurate and helpful answer.
-      3.  **Acknowledge Your Source (If Possible):** When it feels natural, clarify the source of your information. For example:
-          - "According to the provided text, the xv6 operating system..."
-          - "That's a great general question. Apple Silicon processors are based on the ARM architecture, not RISC-V. Here's a bit more on that..."
-      4.  **Be a Helpful Tutor:** Your tone should always be encouraging, clear, and helpful.
+STYLE AND BEHAVIOR
+- Be clear, direct, and encouraging.
+- Use the provided subtopic content as your primary reference when relevant.
+- If information extends beyond the provided content, answer confidently without calling out that the content may be incomplete.
+- Avoid hedging or meta commentary. Do not say phrases like: "the input document only says...", "I'm not sure", or "based on general knowledge". Just answer succinctly and professionally.
 
-      ---
-      **DOCUMENT CONTENT (for context, if available):**
-      ${documentContent && documentContent.trim().length > 0
-        ? documentContent
-        : (demoMode ? 'Demo note: The lesson content should be available. If this appears, proceed using general knowledge but do not claim the document is empty.'
-          : 'No document has been provided yet.')}
-      ---
-      
-      **USER'S QUESTION:**
-      ${userQuestion}
-    `;
+---
+CURRENT SUBTOPIC CONTENT
+${
+  documentContent && documentContent.trim().length > 0
+    ? documentContent
+    : demoMode
+      ? 'Demo note: Proceed using general knowledge without commenting on missing content.'
+      : 'No lesson content provided. Proceed with general knowledge without disclaimers.'
+}
+---
+
+USER QUESTION
+${userQuestion}
+`;
 
     const t0 = Date.now();
+    const METRICS =
+      process.env.AI_METRICS === '1' || process.env.LOG_AI === '1';
+    // Prefer explicit client selection; otherwise allow overriding via env for tutor only.
+    const tutorDefaultModel =
+      process.env.AI_TUTOR_MODEL?.trim() ||
+      (process.env.NODE_ENV === 'production' ? 'gpt-5' : undefined);
+    const chosenModel = (model && model.trim()) || tutorDefaultModel;
 
     // If query param stream=1, return Server-Sent Events style text/event-stream
     const url = new URL(req.url);
@@ -51,18 +68,59 @@ export async function POST(req: NextRequest) {
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           try {
-            for await (const chunk of streamTextChunks(systemPrompt, model)) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`));
+            for await (const chunk of streamTextChunks(
+              systemPrompt,
+              chosenModel
+            )) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`
+                )
+              );
             }
             const ms = Date.now() - t0;
-            const used = model || process.env.GEMINI_MODEL || 'default';
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', debug: { model: used, ms } })}\n\n`));
+            const used = chosenModel || process.env.GEMINI_MODEL || 'default';
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'done', debug: { model: used, ms } })}\n\n`
+              )
+            );
             controller.close();
             // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
-            if (userId && !demoMode) { try { await bumpDailyStreak(userId); } catch {} }
+            if (userId && !demoMode) {
+              try {
+                await bumpDailyStreak(userId);
+              } catch {}
+            }
+            if (METRICS) {
+              try {
+                console.log(
+                  'CHAT_METRICS',
+                  JSON.stringify({ ok: true, stream: true, ms, model: used })
+                );
+              } catch {}
+            }
           } catch (e: any) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`));
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`
+              )
+            );
             controller.close();
+            if (METRICS) {
+              try {
+                console.log(
+                  'CHAT_METRICS',
+                  JSON.stringify({
+                    ok: false,
+                    stream: true,
+                    ms: Date.now() - t0,
+                    model: chosenModel || 'default',
+                    error: String(e?.message || 'stream failed'),
+                  })
+                );
+              } catch {}
+            }
           }
         },
       });
@@ -73,22 +131,54 @@ export async function POST(req: NextRequest) {
           'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
+          'X-AI-Model': String(chosenModel || 'default'),
         },
       });
     }
 
     // Fallback: non-streaming JSON
-    const aiTextResponse = await generateText(systemPrompt, model);
+    const aiTextResponse = await generateText(systemPrompt, chosenModel);
     const ms = Date.now() - t0;
-    const used = model || process.env.GEMINI_MODEL || 'default';
+    const used = chosenModel || process.env.GEMINI_MODEL || 'default';
     // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
     if (userId && !demoMode) {
       await bumpDailyStreak(userId);
     }
-    return NextResponse.json({ response: aiTextResponse, debug: { model: used, ms } });
-
+    if (METRICS) {
+      try {
+        console.log(
+          'CHAT_METRICS',
+          JSON.stringify({ ok: true, stream: false, ms, model: used })
+        );
+      } catch {}
+    }
+    return new NextResponse(
+      JSON.stringify({ response: aiTextResponse, debug: { model: used, ms } }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'X-AI-Model': String(used),
+          'X-Response-Time': String(ms),
+        },
+      }
+    );
   } catch (error: any) {
-    console.error("Error in chat API:", error);
+    console.error('Error in chat API:', error);
+    try {
+      if (process.env.AI_METRICS === '1' || process.env.LOG_AI === '1') {
+        console.log(
+          'CHAT_METRICS',
+          JSON.stringify({
+            ok: false,
+            stream: false,
+            ms: 0,
+            model: 'unknown',
+            error: String(error?.message || 'error'),
+          })
+        );
+      }
+    } catch {}
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -9,11 +9,14 @@ export async function PATCH(req: NextRequest) {
     const userId = (session.user as any)?.id as string;
     const body = await req.json().catch(() => ({}));
     const data: any = {};
-    if (typeof body.name === 'string') data.name = body.name.trim().slice(0, 80);
-    if (typeof body.username === 'string') data.username = body.username.trim().slice(0, 40).toLowerCase();
+    if (typeof body.name === 'string')
+      data.name = body.name.trim().slice(0, 80);
+    if (typeof body.username === 'string')
+      data.username = body.username.trim().slice(0, 40).toLowerCase();
     if (typeof body.bio === 'string') data.bio = body.bio.trim().slice(0, 280);
     if (typeof body.image === 'string') data.image = body.image.trim();
-    if (typeof body.leaderboardOptOut === 'boolean') data.leaderboardOptOut = !!body.leaderboardOptOut;
+    if (typeof body.leaderboardOptOut === 'boolean')
+      data.leaderboardOptOut = !!body.leaderboardOptOut;
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
@@ -21,14 +24,34 @@ export async function PATCH(req: NextRequest) {
 
     // Ensure username unique if provided
     if (data.username) {
-      const exists = await prisma.user.findFirst({ where: { username: data.username, NOT: { id: userId } }, select: { id: true } });
-      if (exists) return NextResponse.json({ error: 'Username taken' }, { status: 409 });
+      const exists = await prisma.user.findFirst({
+        where: { username: data.username, NOT: { id: userId } },
+        select: { id: true },
+      });
+      if (exists)
+        return NextResponse.json({ error: 'Username taken' }, { status: 409 });
     }
 
-    const user = await prisma.user.update({ where: { id: userId }, data, select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, leaderboardOptOut: true } });
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        bio: true,
+        image: true,
+        elo: true,
+        streak: true,
+        leaderboardOptOut: true,
+      },
+    });
     return NextResponse.json({ ok: true, user });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }
 
@@ -49,7 +72,8 @@ export async function GET() {
         _count: { select: { masteredSubtopics: true } },
       },
     });
-    if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!user)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     // If no stored avatar, fall back to provider (e.g., Google) and persist once
     const providerImage = (session.user as any)?.image as string | undefined;
@@ -86,7 +110,10 @@ export async function GET() {
 
     // Determine rank based on ELO
     const userElo = user.elo;
-    const rank = await prisma.rank.findFirst({ where: { minElo: { lte: userElo } }, orderBy: { minElo: 'desc' } });
+    const rank = await prisma.rank.findFirst({
+      where: { minElo: { lte: userElo } },
+      orderBy: { minElo: 'desc' },
+    });
     const isAdmin = isAdminEmail((session.user as any)?.email || null);
     return NextResponse.json({
       user: {
@@ -100,13 +127,21 @@ export async function GET() {
         leaderboardOptOut: (user as any).leaderboardOptOut ?? false,
         masteredCount: user._count.masteredSubtopics,
         quiz: { totalAttempts: total, correct, accuracy },
-        rank: rank ? { slug: rank.slug, name: rank.name, minElo: rank.minElo, iconUrl: rank.iconUrl } : null,
+        rank: rank
+          ? {
+              slug: rank.slug,
+              name: rank.name,
+              minElo: rank.minElo,
+              iconUrl: rank.iconUrl,
+            }
+          : null,
         isAdmin,
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }
-
-

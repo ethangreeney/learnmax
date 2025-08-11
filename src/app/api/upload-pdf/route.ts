@@ -37,7 +37,10 @@ export async function POST(req: NextRequest) {
 
     if (!text) {
       return NextResponse.json(
-        { error: 'Could not extract text from the PDF. The file may only contain images.' },
+        {
+          error:
+            'Could not extract text from the PDF. The file may only contain images.',
+        },
         { status: 422 } // Unprocessable Entity
       );
     }
@@ -47,11 +50,14 @@ export async function POST(req: NextRequest) {
       pages: data.numpages,
       content: text,
     });
-
   } catch (e: any) {
     // Log the full error on the server for easier debugging.
     console.error('UPLOAD_PDF_ERROR:', e?.stack || e?.message || e);
-    const errorMessage = e.message || 'An unknown error occurred during processing.';
-    return NextResponse.json({ error: `Failed to process PDF: ${errorMessage}` }, { status: 500 });
+    const errorMessage =
+      e.message || 'An unknown error occurred during processing.';
+    return NextResponse.json(
+      { error: `Failed to process PDF: ${errorMessage}` },
+      { status: 500 }
+    );
   }
 }

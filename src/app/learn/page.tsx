@@ -7,12 +7,10 @@ import { createLectureFromPdf } from '@/lib/client/lectures';
 async function createLectureFromText(
   content: string
 ): Promise<{ lectureId: string }> {
-  let model: string | undefined;
-  try { model = localStorage.getItem('ai:model') || undefined; } catch {}
   const res = await fetch('/api/lectures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, model }),
+    body: JSON.stringify({ content }),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
@@ -54,9 +52,9 @@ export default function LearnWorkspacePage() {
         </p>
       </header>
 
-      <div className="space-y-4 card p-5">
+      <div className="card space-y-4 p-5">
         <textarea
-          className="min-h-[160px] input"
+          className="input min-h-[160px]"
           placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -83,37 +81,61 @@ export default function LearnWorkspacePage() {
         <div className="pt-2">
           <div
             className={`rounded-md border-2 border-dashed p-6 text-center transition-colors ${
-              dragOver ? 'border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.06)]' : 'border-neutral-700'
+              dragOver
+                ? 'border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.06)]'
+                : 'border-neutral-700'
             }`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={async (e) => {
-              e.preventDefault(); setDragOver(false);
+              e.preventDefault();
+              setDragOver(false);
               const f = e.dataTransfer.files?.[0];
               if (!f) return;
-              if (!/pdf$/i.test(f.name)) { setErr('Please drop a single PDF file.'); return; }
+              if (!/pdf$/i.test(f.name)) {
+                setErr('Please drop a single PDF file.');
+                return;
+              }
               try {
-                setUploading(true); setErr(null);
+                setUploading(true);
+                setErr(null);
                 const { lectureId } = await createLectureFromPdf(f);
                 window.location.href = `/learn/${lectureId}`;
               } catch (e: any) {
                 setErr(e.message || 'Upload failed');
-              } finally { setUploading(false); }
+              } finally {
+                setUploading(false);
+              }
             }}
           >
-            <p className="text-sm text-neutral-300">Drag & drop a PDF here to create a lecture</p>
+            <p className="text-sm text-neutral-300">
+              Drag & drop a PDF here to create a lecture
+            </p>
             <div className="mt-3 flex items-center justify-center gap-2">
-              <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                try {
-                  setUploading(true); setErr(null);
-                  const { lectureId } = await createLectureFromPdf(f);
-                  window.location.href = `/learn/${lectureId}`;
-                } catch (e: any) {
-                  setErr(e.message || 'Upload failed');
-                } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
-              }} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  try {
+                    setUploading(true);
+                    setErr(null);
+                    const { lectureId } = await createLectureFromPdf(f);
+                    window.location.href = `/learn/${lectureId}`;
+                  } catch (e: any) {
+                    setErr(e.message || 'Upload failed');
+                  } finally {
+                    setUploading(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }
+                }}
+              />
               <button
                 type="button"
                 className="btn-ghost"

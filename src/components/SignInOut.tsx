@@ -14,7 +14,7 @@ export default function SignInOut() {
     return (
       <button
         onClick={() => signIn('google')}
-        className="rounded-md bg-white px-3 py-1.5 text-black text-sm font-medium"
+        className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black"
       >
         Sign In
       </button>
@@ -23,7 +23,6 @@ export default function SignInOut() {
 
   return (
     <div className="flex items-center gap-3">
-   
       <button
         onClick={() => signOut()}
         className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm"

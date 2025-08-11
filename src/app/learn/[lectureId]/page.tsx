@@ -6,7 +6,11 @@ import { isSessionWithUser } from '@/lib/session-utils';
 import LearnView from '@/components/LearnView';
 import { revalidateTag } from 'next/cache';
 
-export default async function LearnPage({ params }: { params: Promise<{ lectureId: string }> }) {
+export default async function LearnPage({
+  params,
+}: {
+  params: Promise<{ lectureId: string }>;
+}) {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
     redirect('/api/auth/signin');
@@ -31,8 +35,13 @@ export default async function LearnPage({ params }: { params: Promise<{ lectureI
 
   // Update lastOpenedAt for ordering; then revalidate cached lecture list
   try {
-    await prisma.lecture.update({ where: { id: lecture.id }, data: { lastOpenedAt: new Date() } });
-    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    await prisma.lecture.update({
+      where: { id: lecture.id },
+      data: { lastOpenedAt: new Date() },
+    });
+    try {
+      revalidateTag(`user-lectures:${userId}`);
+    } catch {}
   } catch {}
 
   const initial = {

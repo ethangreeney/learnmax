@@ -13,11 +13,19 @@ export async function GET(req: NextRequest) {
     const session = await requireSession();
     const meId = (session.user as any)?.id as string;
     const { searchParams } = new URL(req.url);
-    const scope = (searchParams.get('scope') || 'global').toLowerCase() as 'global' | 'friends';
+    const scope = (searchParams.get('scope') || 'global').toLowerCase() as
+      | 'global'
+      | 'friends';
     const timeframe = parseTimeframe(searchParams.get('timeframe'));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 50)));
+    const limit = Math.min(
+      100,
+      Math.max(1, Number(searchParams.get('limit') || 50))
+    );
 
-    const since = timeframe === '30d' ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) : null;
+    const since =
+      timeframe === '30d'
+        ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        : null;
 
     // Determine candidate user IDs if friends scope
     let candidateUserIds: string[] | null = null;
@@ -42,12 +50,26 @@ export async function GET(req: NextRequest) {
     // Simpler: filter attempts in 30d to compute last activity; fallback to lastStudiedAt
 
     // Compute lastActivityAt per user when timeframe=30d
-    let users: { id: string; name: string | null; username: string | null; image: string | null; elo: number; lastStudiedAt: Date | null }[] = [];
+    let users: {
+      id: string;
+      name: string | null;
+      username: string | null;
+      image: string | null;
+      elo: number;
+      lastStudiedAt: Date | null;
+    }[] = [];
     if (timeframe === '30d') {
       // Get candidates first (by elo to bound result set) then compute activity
       const topCandidates = await prisma.user.findMany({
         where: baseWhere,
-        select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          image: true,
+          elo: true,
+          lastStudiedAt: true,
+        },
         orderBy: [{ elo: 'desc' }, { lastStudiedAt: 'desc' }, { id: 'asc' }],
         take: 500,
       });
@@ -63,12 +85,22 @@ export async function GET(req: NextRequest) {
         if (!lastByUser.has(a.userId)) lastByUser.set(a.userId, a.createdAt);
       }
       users = topCandidates
-        .map((u) => ({ ...u, lastStudiedAt: lastByUser.get(u.id) || u.lastStudiedAt }))
+        .map((u) => ({
+          ...u,
+          lastStudiedAt: lastByUser.get(u.id) || u.lastStudiedAt,
+        }))
         .filter((u) => (u.lastStudiedAt ? u.lastStudiedAt >= since! : false));
     } else {
       users = await prisma.user.findMany({
         where: baseWhere,
-        select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          image: true,
+          elo: true,
+          lastStudiedAt: true,
+        },
         orderBy: [{ elo: 'desc' }, { lastStudiedAt: 'desc' }, { id: 'asc' }],
         take: 500,
       });
@@ -94,8 +126,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ users: sliced });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }
-
-

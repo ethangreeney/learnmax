@@ -82,5 +82,3 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
     </div>
   );
 }
-
-

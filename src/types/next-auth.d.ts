@@ -20,4 +20,3 @@ declare module 'next-auth/jwt' {
     sub?: string;
   }
 }
-

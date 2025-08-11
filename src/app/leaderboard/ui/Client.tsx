@@ -13,11 +13,30 @@ type LBUser = {
 };
 
 function getTier(elo: number): { name: string; gradient: string } {
-  if (elo >= 2000) return { name: 'Legend', gradient: 'from-yellow-300 via-amber-200 to-rose-300' };
-  if (elo >= 1700) return { name: 'Master', gradient: 'from-purple-300 via-indigo-300 to-cyan-300' };
-  if (elo >= 1400) return { name: 'Expert', gradient: 'from-green-300 via-emerald-300 to-teal-300' };
-  if (elo >= 1200) return { name: 'Skilled', gradient: 'from-blue-300 via-cyan-300 to-sky-300' };
-  return { name: 'Learner', gradient: 'from-neutral-300 via-neutral-200 to-neutral-100' };
+  if (elo >= 2000)
+    return {
+      name: 'Legend',
+      gradient: 'from-yellow-300 via-amber-200 to-rose-300',
+    };
+  if (elo >= 1700)
+    return {
+      name: 'Master',
+      gradient: 'from-purple-300 via-indigo-300 to-cyan-300',
+    };
+  if (elo >= 1400)
+    return {
+      name: 'Expert',
+      gradient: 'from-green-300 via-emerald-300 to-teal-300',
+    };
+  if (elo >= 1200)
+    return {
+      name: 'Skilled',
+      gradient: 'from-blue-300 via-cyan-300 to-sky-300',
+    };
+  return {
+    name: 'Learner',
+    gradient: 'from-neutral-300 via-neutral-200 to-neutral-100',
+  };
 }
 
 export default function LeaderboardClient() {
@@ -31,7 +50,11 @@ export default function LeaderboardClient() {
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams({ scope, timeframe: timeframe === '30d' ? '30d' : 'all', limit: '50' });
+      const qs = new URLSearchParams({
+        scope,
+        timeframe: timeframe === '30d' ? '30d' : 'all',
+        limit: '50',
+      });
       const res = await fetch(`/api/leaderboard?${qs.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load leaderboard');
@@ -51,7 +74,7 @@ export default function LeaderboardClient() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-md overflow-hidden ring-1 ring-neutral-800">
+        <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800">
           <button
             className={`px-3 py-1 text-sm ${scope === 'global' ? 'bg-neutral-800 text-white' : 'bg-neutral-900 text-neutral-300'}`}
             onClick={() => setScope('global')}
@@ -65,7 +88,7 @@ export default function LeaderboardClient() {
             Friends
           </button>
         </div>
-        <div className="inline-flex rounded-md overflow-hidden ring-1 ring-neutral-800">
+        <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800">
           <button
             className={`px-3 py-1 text-sm ${timeframe === 'all' ? 'bg-neutral-800 text-white' : 'bg-neutral-900 text-neutral-300'}`}
             onClick={() => setTimeframe('all')}
@@ -85,34 +108,53 @@ export default function LeaderboardClient() {
         {loading ? (
           <div className="p-6">Loading…</div>
         ) : error ? (
-          <div className="p-6 text-red-400 text-sm">{error}</div>
+          <div className="p-6 text-sm text-red-400">{error}</div>
         ) : users.length === 0 ? (
           <div className="p-6 text-sm text-neutral-400">No users yet.</div>
         ) : (
           <ul className="divide-y divide-neutral-900">
             {users.map((u) => {
-              const href = u.username ? `/users/${encodeURIComponent(u.username)}` : `/users/id/${encodeURIComponent(u.id)}`;
+              const href = u.username
+                ? `/users/${encodeURIComponent(u.username)}`
+                : `/users/id/${encodeURIComponent(u.id)}`;
               return (
                 <li key={u.id}>
-                  <Link href={href} className="flex items-center gap-4 p-4 hover:bg-neutral-900/50 transition-colors">
-                    <div className="w-8 text-right pr-2 tabular-nums text-neutral-400">{u.rank}</div>
-                    <div className="h-10 w-10 rounded-full overflow-hidden bg-neutral-900 ring-1 ring-neutral-800">
+                  <Link
+                    href={href}
+                    className="flex items-center gap-4 p-4 transition-colors hover:bg-neutral-900/50"
+                  >
+                    <div className="w-8 pr-2 text-right text-neutral-400 tabular-nums">
+                      {u.rank}
+                    </div>
+                    <div className="h-10 w-10 overflow-hidden rounded-full bg-neutral-900 ring-1 ring-neutral-800">
                       {u.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={u.image} alt="avatar" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                        <img
+                          src={u.image}
+                          alt="avatar"
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
                       ) : (
                         <div className="h-full w-full" />
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="font-medium truncate">{u.name || u.username || 'Learner'}</div>
-                        <span className="text-[10px] text-neutral-500 bg-neutral-900 rounded px-1.5 py-0.5 ring-1 ring-neutral-800">#{u.rank}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="truncate font-medium">
+                          {u.name || u.username || 'Learner'}
+                        </div>
+                        <span className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 ring-1 ring-neutral-800">
+                          #{u.rank}
+                        </span>
                       </div>
                       <div className="text-xs text-neutral-500">
                         {u.username ? `@${u.username}` : 'Profile'}
                         {u.lastActiveAt && (
-                          <span className="ml-2">• last active {new Date(u.lastActiveAt).toLocaleDateString()}</span>
+                          <span className="ml-2">
+                            • last active{' '}
+                            {new Date(u.lastActiveAt).toLocaleDateString()}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -120,9 +162,17 @@ export default function LeaderboardClient() {
                       {(() => {
                         const { name, gradient } = getTier(u.elo);
                         return (
-                          <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}>
-                            <span className={`bg-gradient-to-r ${gradient} bg-clip-text text-transparent font-semibold`}>{name}</span>
-                            <span className="text-neutral-400">Elo {u.elo}</span>
+                          <span
+                            className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800`}
+                          >
+                            <span
+                              className={`bg-gradient-to-r ${gradient} bg-clip-text font-semibold text-transparent`}
+                            >
+                              {name}
+                            </span>
+                            <span className="text-neutral-400">
+                              Elo {u.elo}
+                            </span>
                           </span>
                         );
                       })()}
@@ -137,5 +187,3 @@ export default function LeaderboardClient() {
     </div>
   );
 }
-
-

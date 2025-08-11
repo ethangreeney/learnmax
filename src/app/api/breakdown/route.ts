@@ -12,7 +12,10 @@ export async function POST(req: NextRequest) {
     const { content, model } = await req.json();
 
     if (!content) {
-      return NextResponse.json({ error: 'Content is required.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Content is required.' },
+        { status: 400 }
+      );
     }
 
     // A detailed prompt for generating a topic breakdown.
@@ -37,9 +40,8 @@ export async function POST(req: NextRequest) {
       await bumpDailyStreak(userId);
     }
     return NextResponse.json(aiResponse);
-
   } catch (error: any) {
-    console.error("Error in breakdown API:", error);
+    console.error('Error in breakdown API:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

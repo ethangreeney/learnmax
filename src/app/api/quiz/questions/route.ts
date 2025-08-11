@@ -13,22 +13,74 @@ type IncomingQuestion = {
 
 // Basic near-duplicate detection for prompts to prevent storing very similar questions
 const STOP = new Set([
-  'the','a','an','and','or','of','for','to','in','on','at','by','is','are','was',
-  'were','be','with','as','that','this','it','its','from','into','than','then',
-  'but','not','if','any','all','no','one','two','there','their','between','you',
-  'can','will','have','has','had','which'
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'of',
+  'for',
+  'to',
+  'in',
+  'on',
+  'at',
+  'by',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'with',
+  'as',
+  'that',
+  'this',
+  'it',
+  'its',
+  'from',
+  'into',
+  'than',
+  'then',
+  'but',
+  'not',
+  'if',
+  'any',
+  'all',
+  'no',
+  'one',
+  'two',
+  'there',
+  'their',
+  'between',
+  'you',
+  'can',
+  'will',
+  'have',
+  'has',
+  'had',
+  'which',
 ]);
-const SIMILARITY_THRESHOLD: number = Number(process.env.QUIZ_SIMILARITY_THRESHOLD || '') || 0.6;
-function words(s: string): string[] { return (s.toLowerCase().match(/[a-z0-9]+/g) || []); }
-function significantWords(s: string): string[] { return words(s).filter((w) => w.length >= 4 && !STOP.has(w)); }
+const SIMILARITY_THRESHOLD: number =
+  Number(process.env.QUIZ_SIMILARITY_THRESHOLD || '') || 0.6;
+function words(s: string): string[] {
+  return s.toLowerCase().match(/[a-z0-9]+/g) || [];
+}
+function significantWords(s: string): string[] {
+  return words(s).filter((w) => w.length >= 4 && !STOP.has(w));
+}
 function jaccardSimilarity(a: string[], b: string[]): number {
   if (!a.length || !b.length) return 0;
-  const A = new Set(a); const B = new Set(b);
-  let intersect = 0; for (const w of A) if (B.has(w)) intersect++;
+  const A = new Set(a);
+  const B = new Set(b);
+  let intersect = 0;
+  for (const w of A) if (B.has(w)) intersect++;
   const union = A.size + B.size - intersect;
   return union > 0 ? intersect / union : 0;
 }
-function isPromptSimilarToAny(prompt: string, existing: string[], threshold = SIMILARITY_THRESHOLD): boolean {
+function isPromptSimilarToAny(
+  prompt: string,
+  existing: string[],
+  threshold = SIMILARITY_THRESHOLD
+): boolean {
   if (!prompt || !existing?.length) return false;
   const ta = significantWords(prompt);
   for (const ex of existing) {
@@ -41,7 +93,7 @@ function isPromptSimilarToAny(prompt: string, existing: string[], threshold = SI
 
 function shuffleOptionsWithAnswer(
   options: string[],
-  answerIndex: number,
+  answerIndex: number
 ): { options: string[]; answerIndex: number } {
   const pairs = options.map((opt, idx) => ({ opt, idx }));
   for (let i = pairs.length - 1; i > 0; i--) {
@@ -69,7 +121,10 @@ export async function POST(req: NextRequest) {
     const subtopicId = String(body?.subtopicId || '').trim();
     const questions = Array.isArray(body?.questions) ? body.questions : [];
     if (!subtopicId) {
-      return NextResponse.json({ error: 'subtopicId is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'subtopicId is required' },
+        { status: 400 }
+      );
     }
 
     // Ensure ownership: subtopic belongs to a lecture owned by the current user
@@ -84,7 +139,13 @@ export async function POST(req: NextRequest) {
     // Fetch existing questions for this subtopic
     const existing = await prisma.quizQuestion.findMany({
       where: { subtopicId },
-      select: { id: true, prompt: true, options: true, answerIndex: true, explanation: true },
+      select: {
+        id: true,
+        prompt: true,
+        options: true,
+        answerIndex: true,
+        explanation: true,
+      },
     });
 
     // Cap at two questions per subtopic for now (to match UI expectation)
@@ -104,18 +165,30 @@ export async function POST(req: NextRequest) {
 
     // Validate incoming payload; only take what we need to fill up to REQUIRED
     const toInsert: IncomingQuestion[] = [];
-    const existingPrompts = existing.map((q) => String(q.prompt || '').trim()).filter(Boolean);
+    const existingPrompts = existing
+      .map((q) => String(q.prompt || '').trim())
+      .filter(Boolean);
     for (const q of questions) {
       const ok =
         q &&
-        typeof q.prompt === 'string' && q.prompt.trim() &&
-        Array.isArray(q.options) && q.options.length === 4 &&
-        typeof q.answerIndex === 'number' && q.answerIndex >= 0 && q.answerIndex < 4 &&
+        typeof q.prompt === 'string' &&
+        q.prompt.trim() &&
+        Array.isArray(q.options) &&
+        q.options.length === 4 &&
+        typeof q.answerIndex === 'number' &&
+        q.answerIndex >= 0 &&
+        q.answerIndex < 4 &&
         typeof q.explanation === 'string';
       if (ok) {
         // Skip near-duplicates against existing and already staged insertions
-        const dupAgainstExisting = isPromptSimilarToAny(q.prompt, existingPrompts);
-        const dupAgainstNew = isPromptSimilarToAny(q.prompt, toInsert.map((x) => x.prompt));
+        const dupAgainstExisting = isPromptSimilarToAny(
+          q.prompt,
+          existingPrompts
+        );
+        const dupAgainstNew = isPromptSimilarToAny(
+          q.prompt,
+          toInsert.map((x) => x.prompt)
+        );
         if (dupAgainstExisting || dupAgainstNew) {
           continue;
         }
@@ -137,7 +210,27 @@ export async function POST(req: NextRequest) {
       await prisma.$transaction(async (tx) => {
         await tx.quizQuestion.deleteMany({ where: { subtopicId } });
         for (const q of toInsert) {
-          await tx.quizQuestion.create({
+          try {
+            await tx.quizQuestion.create({
+              data: {
+                prompt: q.prompt,
+                options: q.options as unknown as any,
+                answerIndex: q.answerIndex,
+                explanation: q.explanation,
+                subtopicId,
+              },
+            });
+          } catch (e: any) {
+            // Ignore unique conflicts that can occur under concurrent requests
+            if (e?.code !== 'P2002') throw e;
+          }
+        }
+      });
+    } else {
+      // Create individually so we can return IDs
+      for (const q of toInsert) {
+        try {
+          await prisma.quizQuestion.create({
             data: {
               prompt: q.prompt,
               options: q.options as unknown as any,
@@ -146,26 +239,22 @@ export async function POST(req: NextRequest) {
               subtopicId,
             },
           });
+        } catch (e: any) {
+          // Ignore unique conflicts (another request saved the same prompt)
+          if (e?.code !== 'P2002') throw e;
         }
-      });
-    } else {
-      // Create individually so we can return IDs
-      for (const q of toInsert) {
-        await prisma.quizQuestion.create({
-          data: {
-            prompt: q.prompt,
-            options: q.options as unknown as any,
-            answerIndex: q.answerIndex,
-            explanation: q.explanation,
-            subtopicId,
-          },
-        });
       }
     }
 
     const final = await prisma.quizQuestion.findMany({
       where: { subtopicId },
-      select: { id: true, prompt: true, options: true, answerIndex: true, explanation: true },
+      select: {
+        id: true,
+        prompt: true,
+        options: true,
+        answerIndex: true,
+        explanation: true,
+      },
     });
     return NextResponse.json({
       questions: final.map((q) => ({
@@ -177,8 +266,9 @@ export async function POST(req: NextRequest) {
       })),
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
-
-

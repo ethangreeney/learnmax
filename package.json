@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack",
     "migrate:deploy": "prisma migrate deploy || prisma db push",
     "build": "pnpm run migrate:deploy && next build --no-lint",
+    "build:vercel": "next build --no-lint",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",

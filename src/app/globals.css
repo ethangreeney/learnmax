@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   --background: #0a0a0a;
@@ -21,16 +21,27 @@ body {
 }
 
 body {
-  background: radial-gradient(120% 80% at 20% -10%, rgba(34, 197, 94, 0.06) 0%, rgba(0,0,0,0) 50%), rgb(var(--bg));
+  background:
+    radial-gradient(
+      120% 80% at 20% -10%,
+      rgba(34, 197, 94, 0.06) 0%,
+      rgba(0, 0, 0, 0) 50%
+    ),
+    rgb(var(--bg));
   /* Prevent the radial gradient from tiling, which causes repeating green bands */
   background-repeat: no-repeat, no-repeat;
   /* Keep the gradient anchored to the viewport */
   background-attachment: fixed, fixed;
   /* Make the gradient cover the viewport width; keep the base color layer auto */
-  background-size: 160% 100%, auto;
+  background-size:
+    160% 100%,
+    auto;
   color: rgb(245 245 245);
 }
-html, body { height: 100%; }
+html,
+body {
+  height: 100%;
+}
 
 .container-narrow {
   @apply mx-auto max-w-5xl px-4 md:px-6;
@@ -41,22 +52,66 @@ html, body { height: 100%; }
 }
 
 /* UI primitives */
-.card { background: rgba(var(--panel), 0.7); border: 1px solid rgb(var(--border)); border-radius: 14px; }
-.btn { @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all; }
-.btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all; color: #020617; background: rgb(var(--accent)); box-shadow: 0 4px 14px rgba(34, 197, 94, 0.16), 0 0 24px rgba(34, 197, 94, 0.24), 0 -4px 14px rgba(34, 197, 94, 0.18); }
-.btn-primary:hover { filter: brightness(1.04); transform: translateY(-0.5px); box-shadow: 0 6px 18px rgba(34, 197, 94, 0.18), 0 0 36px rgba(34, 197, 94, 0.30), 0 -6px 18px rgba(34, 197, 94, 0.22); }
-.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all border border-neutral-700/60 text-neutral-200; }
-.btn-ghost:hover { @apply bg-neutral-800/60; }
-.input { @apply w-full rounded-md bg-neutral-900/80 px-3 py-2 ring-1 ring-neutral-700 outline-none text-sm; }
-.muted { color: rgb(var(--muted)); }
+.card {
+  background: rgba(var(--panel), 0.7);
+  border: 1px solid rgb(var(--border));
+  border-radius: 14px;
+}
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all;
+}
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all;
+  color: #020617;
+  background: rgb(var(--accent));
+  box-shadow:
+    0 4px 14px rgba(34, 197, 94, 0.16),
+    0 0 24px rgba(34, 197, 94, 0.24),
+    0 -4px 14px rgba(34, 197, 94, 0.18);
+}
+.btn-primary:hover {
+  filter: brightness(1.04);
+  transform: translateY(-0.5px);
+  box-shadow:
+    0 6px 18px rgba(34, 197, 94, 0.18),
+    0 0 36px rgba(34, 197, 94, 0.3),
+    0 -6px 18px rgba(34, 197, 94, 0.22);
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-md border border-neutral-700/60 px-4 py-2 text-sm font-medium text-neutral-200 transition-all;
+}
+.btn-ghost:hover {
+  @apply bg-neutral-800/60;
+}
+.input {
+  @apply w-full rounded-md bg-neutral-900/80 px-3 py-2 text-sm ring-1 ring-neutral-700 outline-none;
+}
+.muted {
+  color: rgb(var(--muted));
+}
 
 /* Compact markdown for chat bubbles */
-.chat-md p, .chat-md ul, .chat-md ol { margin-top: 0.25rem; margin-bottom: 0.25rem; }
-.chat-md p:first-child, .chat-md ul:first-child, .chat-md ol:first-child { margin-top: 0; }
-.chat-md p:last-child, .chat-md ul:last-child, .chat-md ol:last-child { margin-bottom: 0; }
+.chat-md p,
+.chat-md ul,
+.chat-md ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.chat-md p:first-child,
+.chat-md ul:first-child,
+.chat-md ol:first-child {
+  margin-top: 0;
+}
+.chat-md p:last-child,
+.chat-md ul:last-child,
+.chat-md ol:last-child {
+  margin-bottom: 0;
+}
 
 /* Size modifiers */
-.btn-xl { @apply text-lg px-6 py-3; }
+.btn-xl {
+  @apply px-6 py-3 text-lg;
+}
 
 /* BEGIN markdown-typography (Tailwind v4 safe) */
 .markdown {
@@ -312,20 +367,38 @@ html, body { height: 100%; }
 /* learnmax-quiz-gate */
 
 /* learnmax-quiz-gate (fixed) */
-body:not([data-content="ready"]) .quiz-panel { display: none; }
+body:not([data-content='ready']) .quiz-panel {
+  display: none;
+}
 
 /* quiz gate */
-body:not([data-content="ready"]) .quiz-panel { display: none; }
-body[data-content="ready"] .quiz-panel { display: block !important; }
+body:not([data-content='ready']) .quiz-panel {
+  display: none;
+}
+body[data-content='ready'] .quiz-panel {
+  display: block !important;
+}
 
 /* quiz gate */
-body:not([data-content="ready"]) .quiz-panel { display: none; }
-body[data-content="ready"] .quiz-panel { display: block !important; }
+body:not([data-content='ready']) .quiz-panel {
+  display: none;
+}
+body[data-content='ready'] .quiz-panel {
+  display: block !important;
+}
 
 /* learnmax-complete-noscroll */
 /* Only while the completion page is mounted */
-body[data-page="complete"] { overflow: hidden !important; overscroll-behavior: contain; }
-body[data-page="complete"] footer { display: none !important; }
+body[data-page='complete'] {
+  overflow: hidden !important;
+  overscroll-behavior: contain;
+}
+body[data-page='complete'] footer {
+  display: none !important;
+}
 
 /* Home page: disable scroll */
-body[data-page="home"] { overflow: hidden !important; overscroll-behavior: none; }
+body[data-page='home'] {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}

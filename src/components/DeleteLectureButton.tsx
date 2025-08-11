@@ -17,7 +17,10 @@ export default function DeleteLectureButton({
 
   const onDelete = async () => {
     if (busy || isPending) return;
-    const ok = typeof window !== 'undefined' ? window.confirm('Delete this lecture? This cannot be undone.') : false;
+    const ok =
+      typeof window !== 'undefined'
+        ? window.confirm('Delete this lecture? This cannot be undone.')
+        : false;
     if (!ok) return;
 
     try {
@@ -25,7 +28,9 @@ export default function DeleteLectureButton({
       // Optimistic removal: update UI immediately
       if (onDeleted) onDeleted();
       // Perform delete in background
-      const res = await fetch(`/api/lectures/${lectureId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/lectures/${lectureId}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error || 'Failed to delete');
@@ -33,7 +38,7 @@ export default function DeleteLectureButton({
       // If no optimistic handler, fall back to refresh
       if (!onDeleted) startTransition(() => router.refresh());
     } catch (e) {
-      // eslint-disable-next-line no-alert
+       
       alert((e as Error)?.message || 'Failed to delete');
       // Re-sync UI from server in case optimistic update removed item locally
       startTransition(() => router.refresh());
@@ -51,10 +56,8 @@ export default function DeleteLectureButton({
       aria-disabled={busy || isPending}
       title="Delete lecture"
     >
-      <Trash2 className="w-4 h-4" />
+      <Trash2 className="h-4 w-4" />
       Delete
     </button>
   );
 }
-
-

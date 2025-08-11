@@ -7,7 +7,10 @@ import { authOptions } from '@/lib/auth';
 
 type Params = { lectureId: string };
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) {
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<Params> }
+) {
   try {
     const session = await getServerSession(authOptions);
     if (!isSessionWithUser(session)) {
@@ -17,7 +20,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) 
     const { lectureId } = await ctx.params;
     const userId = session.user.id;
 
-    const body = await req.json().catch(() => ({} as any));
+    const body = await req.json().catch(() => ({}) as any);
     const { title, starred } = body as { title?: string; starred?: boolean };
     const data: Record<string, any> = {};
     if (typeof title !== 'undefined') {
@@ -31,12 +34,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) 
     }
     if (typeof starred !== 'undefined') {
       if (typeof starred !== 'boolean') {
-        return NextResponse.json({ error: 'Invalid starred value' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'Invalid starred value' },
+          { status: 400 }
+        );
       }
       data.starred = starred;
     }
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'No valid fields to update' },
+        { status: 400 }
+      );
     }
 
     const owned = await prisma.lecture.findFirst({
@@ -52,8 +61,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) 
       data,
       select: { id: true, title: true, starred: true },
     });
-    try { revalidateTag(`user-lectures:${userId}`); } catch {}
-    try { revalidateTag(`user-stats:${userId}`); } catch {}
+    try {
+      revalidateTag(`user-lectures:${userId}`);
+    } catch {}
+    try {
+      revalidateTag(`user-stats:${userId}`);
+    } catch {}
     return NextResponse.json({ ok: true, lecture: updated });
   } catch (e: any) {
     console.error('LECTURE_PATCH_ERROR', e);
@@ -64,7 +77,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<Params> }) 
   }
 }
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<Params> }) {
+export async function DELETE(
+  req: NextRequest,
+  ctx: { params: Promise<Params> }
+) {
   try {
     const session = await getServerSession(authOptions);
     if (!isSessionWithUser(session)) {
@@ -85,8 +101,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<Params> })
 
     // Cascade deletes will remove related Subtopics, QuizQuestions, and UserMastery via Prisma schema
     await prisma.lecture.delete({ where: { id: lectureId } });
-    try { revalidateTag(`user-lectures:${userId}`); } catch {}
-    try { revalidateTag(`user-stats:${userId}`); } catch {}
+    try {
+      revalidateTag(`user-lectures:${userId}`);
+    } catch {}
+    try {
+      revalidateTag(`user-stats:${userId}`);
+    } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error('LECTURE_DELETE_ERROR', e);

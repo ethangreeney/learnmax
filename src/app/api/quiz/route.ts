@@ -20,9 +20,12 @@ type CleanQ = {
 };
 
 // Allow tuning via env vars
-const GEN_TIMEOUT_MS: number = Number(process.env.QUIZ_GEN_TIMEOUT_MS || '') || 20000;
-const AUDIT_TIMEOUT_MS: number = Number(process.env.QUIZ_AUDIT_TIMEOUT_MS || '') || 8000;
-const ALLOW_SECOND_TRY: boolean = (process.env.QUIZ_ALLOW_SECOND_TRY || '0') === '1';
+const GEN_TIMEOUT_MS: number =
+  Number(process.env.QUIZ_GEN_TIMEOUT_MS || '') || 20000;
+const AUDIT_TIMEOUT_MS: number =
+  Number(process.env.QUIZ_AUDIT_TIMEOUT_MS || '') || 8000;
+const ALLOW_SECOND_TRY: boolean =
+  (process.env.QUIZ_ALLOW_SECOND_TRY || '0') === '1';
 
 // Clip helper to keep prompts bounded for latency and cost
 function clip(text: string, max = 8000): string {
@@ -39,13 +42,14 @@ function toClean(q: RawQ): CleanQ | null {
   const answerIndex = Number(q.answerIndex);
   if (!prompt || !explanation) return null;
   if (options.length !== 4) return null;
-  if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) return null;
+  if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3)
+    return null;
   return { prompt, options, answerIndex, explanation };
 }
 
 function shuffleOptionsWithAnswer(
   options: string[],
-  answerIndex: number,
+  answerIndex: number
 ): { options: string[]; answerIndex: number } {
   const pairs = options.map((opt, idx) => ({ opt, idx }));
   for (let i = pairs.length - 1; i > 0; i--) {
@@ -60,14 +64,55 @@ function shuffleOptionsWithAnswer(
 /* ------------------------ Grounding helpers ------------------------ */
 
 const STOP = new Set([
-  'the','a','an','and','or','of','for','to','in','on','at','by','is','are','was',
-  'were','be','with','as','that','this','it','its','from','into','than','then',
-  'but','not','if','any','all','no','one','two','there','their','between','you',
-  'can','will','have','has','had','which'
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'of',
+  'for',
+  'to',
+  'in',
+  'on',
+  'at',
+  'by',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'with',
+  'as',
+  'that',
+  'this',
+  'it',
+  'its',
+  'from',
+  'into',
+  'than',
+  'then',
+  'but',
+  'not',
+  'if',
+  'any',
+  'all',
+  'no',
+  'one',
+  'two',
+  'there',
+  'their',
+  'between',
+  'you',
+  'can',
+  'will',
+  'have',
+  'has',
+  'had',
+  'which',
 ]);
 
 function words(s: string): string[] {
-  return (s.toLowerCase().match(/[a-z0-9]+/g) || []);
+  return s.toLowerCase().match(/[a-z0-9]+/g) || [];
 }
 function keywords(s: string, max = 12): string[] {
   const freq = new Map<string, number>();
@@ -81,7 +126,11 @@ function keywords(s: string, max = 12): string[] {
     .map(([w]) => w);
 }
 
-function containsNgramQuote(explanation: string, lesson: string, n = 4): boolean {
+function containsNgramQuote(
+  explanation: string,
+  lesson: string,
+  n = 4
+): boolean {
   // normalized, punctuation-free comparison
   const lw = words(lesson);
   const ew = words(explanation);
@@ -102,7 +151,8 @@ function overlapCount(text: string, kws: string[]): number {
 }
 
 // -------------------------- Similarity helpers --------------------------
-const SIMILARITY_THRESHOLD: number = Number(process.env.QUIZ_SIMILARITY_THRESHOLD || '') || 0.6;
+const SIMILARITY_THRESHOLD: number =
+  Number(process.env.QUIZ_SIMILARITY_THRESHOLD || '') || 0.6;
 
 function significantWords(s: string): string[] {
   return words(s).filter((w) => w.length >= 4 && !STOP.has(w));
@@ -118,7 +168,11 @@ function jaccardSimilarity(a: string[], b: string[]): number {
   return union > 0 ? intersect / union : 0;
 }
 
-function isPromptSimilarToAny(prompt: string, existing: string[], threshold = SIMILARITY_THRESHOLD): boolean {
+function isPromptSimilarToAny(
+  prompt: string,
+  existing: string[],
+  threshold = SIMILARITY_THRESHOLD
+): boolean {
   if (!prompt || !existing?.length) return false;
   const ta = significantWords(prompt);
   for (const ex of existing) {
@@ -150,7 +204,7 @@ function scoreCandidate(q: CleanQ, lessonMd: string, kws: string[]): number {
 async function hasExactlyOneCorrect(
   q: CleanQ,
   lessonMd: string,
-  model: string,
+  model: string
 ): Promise<boolean> {
   const auditPrompt = `You are auditing a multiple-choice question for strict single-correctness.
 
@@ -173,17 +227,24 @@ ${q.prompt}
 OPTIONS (0-based):
 ${JSON.stringify(q.options, null, 2)}
 `;
-  const withTimeout = <T,>(p: Promise<T>, ms = 4000): Promise<T> =>
+  const withTimeout = <T>(p: Promise<T>, ms = 4000): Promise<T> =>
     Promise.race([
       p,
-      new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+      new Promise<T>((_, rej) =>
+        setTimeout(() => rej(new Error('timeout')), ms)
+      ),
     ]);
   try {
-    const res = await withTimeout(generateJSON(auditPrompt, model), AUDIT_TIMEOUT_MS);
+    const res = await withTimeout(
+      generateJSON(auditPrompt, model),
+      AUDIT_TIMEOUT_MS
+    );
     const arr = Array.isArray(res?.correctIndices)
       ? res.correctIndices
           .map((n: any) => Number(n))
-          .filter((n: any) => Number.isInteger(n) && n >= 0 && n < q.options.length)
+          .filter(
+            (n: any) => Number.isInteger(n) && n >= 0 && n < q.options.length
+          )
       : [];
     if (arr.length !== 1) return false;
     return arr[0] === q.answerIndex;
@@ -195,9 +256,13 @@ ${JSON.stringify(q.options, null, 2)}
 /* Deterministic fallback: builds a grounded T/F MCQ from the lesson text */
 function pickDeclarativeSentence(md: string): string | null {
   // Split on sentence-ish boundaries and pick something medium length
-  const pieces = (md.replace(/\s+/g, ' ').trim().match(/[^.?!]+[.?!]/g) || [])
-    .map(s => s.trim());
-  const candidates = pieces.filter(s => {
+  const pieces = (
+    md
+      .replace(/\s+/g, ' ')
+      .trim()
+      .match(/[^.?!]+[.?!]/g) || []
+  ).map((s) => s.trim());
+  const candidates = pieces.filter((s) => {
     const wc = words(s).length;
     return wc >= 8 && wc <= 24 && !/:$/.test(s);
   });
@@ -222,37 +287,60 @@ export async function POST(req: Request) {
     const overview = String((body as any)?.overview || '').trim();
     const difficulty = String(body?.difficulty || 'hard').toLowerCase();
     const subtopicId = String((body as any)?.subtopicId || '').trim();
-    const avoidPromptsFromClient: string[] = Array.isArray((body as any)?.avoidPrompts)
-      ? ((body as any).avoidPrompts as string[]).map((s) => String(s || '').trim()).filter(Boolean)
+    // Allow callers to request up to 2 questions at once to reduce overlap
+    const requestedCountRaw = Number((body as any)?.count);
+    const requestedCount = Number.isFinite(requestedCountRaw)
+      ? Math.min(2, Math.max(1, Math.floor(requestedCountRaw)))
+      : 1;
+    const avoidPromptsFromClient: string[] = Array.isArray(
+      (body as any)?.avoidPrompts
+    )
+      ? ((body as any).avoidPrompts as string[])
+          .map((s) => String(s || '').trim())
+          .filter(Boolean)
       : [];
 
     // If lesson is short, try to augment from server-side stored original content using lectureId
     if (lessonMd.length < 50 && lectureId) {
       try {
-        const lec = await prisma.lecture.findUnique({ where: { id: lectureId }, select: { originalContent: true } });
+        const lec = await prisma.lecture.findUnique({
+          where: { id: lectureId },
+          select: { originalContent: true },
+        });
         const original = String(lec?.originalContent || '').trim();
-        const composite = [overview, lessonMd, original].filter(Boolean).join('\n\n');
+        const composite = [overview, lessonMd, original]
+          .filter(Boolean)
+          .join('\n\n');
         if (composite.length >= 50) lessonMd = composite;
       } catch {}
     }
     if (lessonMd.length < 50) {
-      return NextResponse.json({ error: 'lessonMd (≥50 chars) is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'lessonMd (≥50 chars) is required' },
+        { status: 400 }
+      );
     }
 
     const kws = keywords(lessonMd, 12);
-    const kwHint = kws.length ? `Use the lesson’s domain. Keywords you should naturally touch: ${kws.slice(0, 8).join(', ')}.` : '';
+    const kwHint = kws.length
+      ? `Use the lesson’s domain. Keywords you should naturally touch: ${kws.slice(0, 8).join(', ')}.`
+      : '';
 
     // Collect existing prompts to encourage diversity
     let existingPrompts: string[] = [];
     if (subtopicId) {
       try {
-        const existing = await prisma.quizQuestion.findMany({ where: { subtopicId }, select: { prompt: true } });
+        const existing = await prisma.quizQuestion.findMany({
+          where: { subtopicId },
+          select: { prompt: true },
+        });
         existingPrompts.push(
-          ...existing.map((q) => String(q?.prompt || '').trim()).filter(Boolean),
+          ...existing.map((q) => String(q?.prompt || '').trim()).filter(Boolean)
         );
       } catch {}
     }
-    if (avoidPromptsFromClient.length) existingPrompts.push(...avoidPromptsFromClient);
+    if (avoidPromptsFromClient.length)
+      existingPrompts.push(...avoidPromptsFromClient);
     existingPrompts = Array.from(new Set(existingPrompts.filter(Boolean)));
     const existingSection = existingPrompts.length
       ? `EXISTING QUESTIONS (avoid repeating their topics/wording):\n${existingPrompts
@@ -267,7 +355,7 @@ export async function POST(req: Request) {
         : 'Keep it focused and fair, not trivial.';
 
     const basePrompt = `
-You are an exacting exam writer. Using ONLY the LESSON MARKDOWN below, write exactly ONE multiple-choice question ${subtopicTitle ? `that specifically tests the subtopic "${subtopicTitle}".` : 'about its core idea.'}
+You are an exacting exam writer. Using ONLY the LESSON MARKDOWN below, write exactly ${requestedCount} multiple-choice question${requestedCount === 1 ? '' : 's'} ${subtopicTitle ? `that specifically test${requestedCount === 1 ? 's' : ''} the subtopic "${subtopicTitle}".` : 'about its core idea.'}
 
 Return ONE JSON object in this shape:
 {
@@ -279,6 +367,7 @@ Return ONE JSON object in this shape:
 Rules:
 - ${rigor}
 - ${kwHint}
+- Produce questions that are CLEARLY different from each other in topic and wording. Use different mechanisms or scenarios. Do not write two variants of the same idea.
 - In the explanation, include a short DIRECT quote (6–12 words) from the lesson, in "double quotes". The quote must be verbatim and not generic filler.
 - Do NOT invent facts not supported by the lesson.
 - Do NOT prefix options with letters or numbers.
@@ -286,8 +375,8 @@ Rules:
 - Exactly ONE option must be correct; the other three must be clearly incorrect given the LESSON.
 - Avoid ambiguous, overlapping, or "All/None of the above" answers.
 - Prefer conceptual or applied questions over trivial factual restatement.
- - If the section "EXISTING QUESTIONS" appears below, your question must be meaningfully different in both topic and wording. Choose a different mechanism, constraint, cause/effect, or scenario than any listed.
- - Vary the question style relative to existing ones (e.g., application scenario, diagnose an error, compare/contrast, cause-and-effect, ordering/steps).
+- If the section "EXISTING QUESTIONS" appears below, your questions must be meaningfully different in both topic and wording. Choose different mechanisms, constraints, causes/effects, or scenarios than any listed.
+- Vary the question style relative to existing ones (e.g., application scenario, diagnose an error, compare/contrast, cause-and-effect, ordering/steps).
 
 Context hints to avoid triviality:
 - Do not ask "is this sentence true" questions.
@@ -299,14 +388,17 @@ LESSON MARKDOWN (truncated):
 ${clip(lessonMd, 4500)}
 ---`.trim();
 
-    const withTimeout = <T,>(p: Promise<T>, ms = GEN_TIMEOUT_MS): Promise<T> =>
+    const withTimeout = <T>(p: Promise<T>, ms = GEN_TIMEOUT_MS): Promise<T> =>
       Promise.race([
         p,
-        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+        new Promise<T>((_, rej) =>
+          setTimeout(() => rej(new Error('timeout')), ms)
+        ),
       ]);
 
     // First attempt (with timeout)
-    let attempt1Ms = 0; let timedOut1 = false;
+    let attempt1Ms = 0;
+    let timedOut1 = false;
     let json: any = {};
     try {
       const a0 = Date.now();
@@ -314,37 +406,72 @@ ${clip(lessonMd, 4500)}
       attempt1Ms = Date.now() - a0;
     } catch (e: any) {
       attempt1Ms = attempt1Ms || 0;
-      timedOut1 = String(e?.message || '').toLowerCase().includes('timeout');
+      timedOut1 = String(e?.message || '')
+        .toLowerCase()
+        .includes('timeout');
       json = {} as any;
     }
     let raw = Array.isArray(json?.questions) ? json.questions : [];
     let cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
     if (existingPrompts.length && cleaned.length) {
-      cleaned = cleaned.filter((q) => !isPromptSimilarToAny(q.prompt, existingPrompts));
+      cleaned = cleaned.filter(
+        (q) => !isPromptSimilarToAny(q.prompt, existingPrompts)
+      );
+    }
+    // Ensure the batch is internally diverse
+    if (cleaned.length > 1) {
+      const picked: CleanQ[] = [];
+      for (const q of cleaned) {
+        if (picked.some((p) => isPromptSimilarToAny(q.prompt, [p.prompt])))
+          continue;
+        picked.push(q);
+      }
+      cleaned = picked;
     }
     const cleaned1 = cleaned.slice();
-    const initiallyGrounded = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
+    const initiallyGrounded = cleaned.filter((q) =>
+      isGrounded(q, lessonMd, kws)
+    );
 
-    // Fast path: if we have at least one grounded candidate, accept the best-scoring one without LLM audit
+    // Fast path: if we have at least one grounded candidate, accept up to requestedCount best-scoring ones without LLM audit
     if (initiallyGrounded.length) {
-      const best = initiallyGrounded
+      const sorted = initiallyGrounded
         .slice()
-        .sort((a, b) => scoreCandidate(b, lessonMd, kws) - scoreCandidate(a, lessonMd, kws))[0]!;
-      const shFast = shuffleOptionsWithAnswer(best.options, best.answerIndex);
-      const outFast = { ...best, options: shFast.options, answerIndex: shFast.answerIndex };
-      return NextResponse.json({
-        questions: [outFast],
-        debug: {
-          model: modelForQuiz,
-          ms: Date.now() - t0,
-          accepted: 'fast',
-          attempt1Ms,
-          timedOut1,
-          cleaned1: cleaned1.length,
-          grounded1: initiallyGrounded.length,
-          existing: existingPrompts.length,
-        },
+        .sort(
+          (a, b) =>
+            scoreCandidate(b, lessonMd, kws) - scoreCandidate(a, lessonMd, kws)
+        );
+      const selected: CleanQ[] = [];
+      for (const q of sorted) {
+        if (selected.some((p) => isPromptSimilarToAny(q.prompt, [p.prompt])))
+          continue;
+        selected.push(q);
+        if (selected.length >= requestedCount) break;
+      }
+      const outFast = selected.map((q) => {
+        const shFast = shuffleOptionsWithAnswer(q.options, q.answerIndex);
+        return {
+          ...q,
+          options: shFast.options,
+          answerIndex: shFast.answerIndex,
+        };
       });
+      if (outFast.length > 0) {
+        return NextResponse.json({
+          questions: outFast,
+          debug: {
+            model: modelForQuiz,
+            ms: Date.now() - t0,
+            accepted: 'fast',
+            attempt1Ms,
+            timedOut1,
+            cleaned1: cleaned1.length,
+            grounded1: initiallyGrounded.length,
+            existing: existingPrompts.length,
+            requested: requestedCount,
+          },
+        });
+      }
     }
 
     // Try auditing the first attempt's cleaned candidates before doing a second LLM try
@@ -353,15 +480,51 @@ ${clip(lessonMd, 4500)}
     if (cleaned1.length) {
       const auditStart1 = Date.now();
       const results1 = await Promise.allSettled(
-        cleaned1.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
+        cleaned1.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz))
       );
       auditMs += Date.now() - auditStart1;
-      const audited1 = cleaned1.filter((_, i) => results1[i].status === 'fulfilled' && (results1[i] as PromiseFulfilledResult<boolean>).value);
+      const audited1 = cleaned1.filter(
+        (_, i) =>
+          results1[i].status === 'fulfilled' &&
+          (results1[i] as PromiseFulfilledResult<boolean>).value
+      );
       if (audited1.length) {
-        const q0 = audited1[0];
-        const sh = shuffleOptionsWithAnswer(q0.options, q0.answerIndex);
-        const outQ = { ...q0, options: sh.options, answerIndex: sh.answerIndex };
-        return NextResponse.json({ questions: [outQ], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: 'audited1', attempt1Ms, timedOut1, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, existing: existingPrompts.length } });
+        // Sort and pick a diverse set up to requestedCount
+        const sorted = audited1
+          .slice()
+          .sort(
+            (a, b) =>
+              scoreCandidate(b, lessonMd, kws) -
+              scoreCandidate(a, lessonMd, kws)
+          );
+        const selected: CleanQ[] = [];
+        for (const q of sorted) {
+          if (selected.some((p) => isPromptSimilarToAny(q.prompt, [p.prompt])))
+            continue;
+          selected.push(q);
+          if (selected.length >= requestedCount) break;
+        }
+        const out = selected.map((q) => {
+          const sh = shuffleOptionsWithAnswer(q.options, q.answerIndex);
+          return { ...q, options: sh.options, answerIndex: sh.answerIndex };
+        });
+        if (out.length > 0) {
+          return NextResponse.json({
+            questions: out,
+            debug: {
+              model: modelForQuiz,
+              ms: Date.now() - t0,
+              auditMs,
+              accepted: 'audited1',
+              attempt1Ms,
+              timedOut1,
+              cleaned1: cleaned1.length,
+              grounded1: initiallyGrounded.length,
+              existing: existingPrompts.length,
+              requested: requestedCount,
+            },
+          });
+        }
       }
     }
 
@@ -371,14 +534,18 @@ ${clip(lessonMd, 4500)}
 Your previous attempt was rejected for not being grounded in the LESSON.
 Try again and follow these STRICT requirements:
 
-- The question and explanation MUST be consistent with the LESSON only.
+- Produce exactly ${requestedCount} question${requestedCount === 1 ? '' : 's'}. The question(s) and explanation(s) MUST be consistent with the LESSON only.
 - Include at least TWO of these keywords in the prompt or explanation: ${kws.join(', ')}.
 - In the explanation, include one exact quote (6–12 words) from the LESSON in "double quotes". The quote must be verbatim.
  - Exactly ONE option must be correct; ensure the other three are unambiguously incorrect.
  - Do NOT use "All of the above" or "None of the above".
  - Do NOT produce a boolean true/false wrapper around a copied sentence.
  - Prefer a question that requires understanding a relationship, mechanism, or constraint stated in the lesson.
- - Your question must be clearly different in topic AND wording from these existing ones (if any):\n${existingPrompts.slice(0, 8).map((p, i) => `${i + 1}. ${p}`).join('\n')}
+ - Your question must be clearly different in topic AND wording from these existing ones (if any):\n${existingPrompts
+   .slice(0, 8)
+   .map((p, i) => `${i + 1}. ${p}`)
+   .join('\n')}
+ - The questions you produce must also be clearly different from each other.
 
 Return ONLY the same JSON shape as before.
 
@@ -387,52 +554,136 @@ Return ONLY the same JSON shape as before.
       ${clip(lessonMd, 8000)}
       ---`.trim();
 
-      let attempt2Ms = 0; let timedOut2 = false;
+      let attempt2Ms = 0;
+      let timedOut2 = false;
       try {
         const b0 = Date.now();
         json = await withTimeout(generateJSON(retryPrompt, modelForQuiz));
         attempt2Ms = Date.now() - b0;
       } catch (e: any) {
         attempt2Ms = attempt2Ms || 0;
-        timedOut2 = String(e?.message || '').toLowerCase().includes('timeout');
+        timedOut2 = String(e?.message || '')
+          .toLowerCase()
+          .includes('timeout');
         json = {} as any;
       }
       raw = Array.isArray(json?.questions) ? json.questions : [];
       cleaned = raw.map(toClean).filter(Boolean) as CleanQ[];
       if (existingPrompts.length && cleaned.length) {
-        cleaned = cleaned.filter((q) => !isPromptSimilarToAny(q.prompt, existingPrompts));
+        cleaned = cleaned.filter(
+          (q) => !isPromptSimilarToAny(q.prompt, existingPrompts)
+        );
       }
       const cleaned2 = cleaned.slice();
       const groundedRetry = cleaned.filter((q) => isGrounded(q, lessonMd, kws));
       if (groundedRetry.length) {
         const auditStart2 = Date.now();
         const results2 = await Promise.allSettled(
-          groundedRetry.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz)),
+          groundedRetry.map((q) =>
+            hasExactlyOneCorrect(q, lessonMd, modelForQuiz)
+          )
         );
         auditMs += Date.now() - auditStart2;
-        const auditedRetry = groundedRetry.filter((_, i) => results2[i].status === 'fulfilled' && (results2[i] as PromiseFulfilledResult<boolean>).value);
-        grounded = auditedRetry.length ? auditedRetry : [];
+        const auditedRetry = groundedRetry.filter(
+          (_, i) =>
+            results2[i].status === 'fulfilled' &&
+            (results2[i] as PromiseFulfilledResult<boolean>).value
+        );
+        if (auditedRetry.length) {
+          const sorted = auditedRetry
+            .slice()
+            .sort(
+              (a, b) =>
+                scoreCandidate(b, lessonMd, kws) -
+                scoreCandidate(a, lessonMd, kws)
+            );
+          const selected: CleanQ[] = [];
+          for (const q of sorted) {
+            if (
+              selected.some((p) => isPromptSimilarToAny(q.prompt, [p.prompt]))
+            )
+              continue;
+            selected.push(q);
+            if (selected.length >= requestedCount) break;
+          }
+          grounded = selected;
+        } else {
+          grounded = [];
+        }
       } else {
         grounded = [];
       }
       const msTotal = Date.now() - t0;
       if (!grounded.length) {
-        return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: msTotal, auditMs, attempt1Ms, attempt2Ms, timedOut1, timedOut2, cleaned1: cleaned1.length, grounded1: initiallyGrounded.length, cleaned2: cleaned2.length, grounded2: groundedRetry.length, secondTry: true } }, { status: 422 });
+        return NextResponse.json(
+          {
+            error: 'no_acceptable_question',
+            debug: {
+              model: modelForQuiz,
+              ms: msTotal,
+              auditMs,
+              attempt1Ms,
+              attempt2Ms,
+              timedOut1,
+              timedOut2,
+              cleaned1: cleaned1.length,
+              grounded1: initiallyGrounded.length,
+              cleaned2: cleaned2.length,
+              grounded2: groundedRetry.length,
+              secondTry: true,
+            },
+          },
+          { status: 422 }
+        );
       }
     }
 
     // Decide acceptance path and return
     if (!grounded.length) {
-      return NextResponse.json({ error: 'no_acceptable_question', debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, attempt1Ms, timedOut1, cleaned1: cleaned.length, grounded1: initiallyGrounded.length, secondTry: false } }, { status: 422 });
+      return NextResponse.json(
+        {
+          error: 'no_acceptable_question',
+          debug: {
+            model: modelForQuiz,
+            ms: Date.now() - t0,
+            auditMs,
+            attempt1Ms,
+            timedOut1,
+            cleaned1: cleaned.length,
+            grounded1: initiallyGrounded.length,
+            secondTry: false,
+          },
+        },
+        { status: 422 }
+      );
     }
 
-    // Keep just one good question (already audited) and shuffle options
+    // Keep up to requestedCount good questions (already audited) and shuffle options
     const acceptPath = 'audited';
-    const q0 = grounded[0];
-    const sh = shuffleOptionsWithAnswer(q0.options, q0.answerIndex);
-    const outQ = { ...q0, options: sh.options, answerIndex: sh.answerIndex };
-    return NextResponse.json({ questions: [outQ], debug: { model: modelForQuiz, ms: Date.now() - t0, auditMs, accepted: acceptPath, attempt1Ms, timedOut1, cleaned1: cleaned?.length || 0, grounded1: initiallyGrounded?.length || 0, existing: existingPrompts.length } });
+    const chosen = grounded.slice(0, requestedCount);
+    const outQs = chosen.map((q) => {
+      const sh = shuffleOptionsWithAnswer(q.options, q.answerIndex);
+      return { ...q, options: sh.options, answerIndex: sh.answerIndex };
+    });
+    return NextResponse.json({
+      questions: outQs,
+      debug: {
+        model: modelForQuiz,
+        ms: Date.now() - t0,
+        auditMs,
+        accepted: acceptPath,
+        attempt1Ms,
+        timedOut1,
+        cleaned1: cleaned?.length || 0,
+        grounded1: initiallyGrounded?.length || 0,
+        existing: existingPrompts.length,
+        requested: requestedCount,
+      },
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'quiz failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'quiz failed' },
+      { status: 500 }
+    );
   }
 }

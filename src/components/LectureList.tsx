@@ -14,7 +14,11 @@ export type ClientLecture = {
   starred: boolean;
 };
 
-export default function LectureList({ initialLectures }: { initialLectures: ClientLecture[] }) {
+export default function LectureList({
+  initialLectures,
+}: {
+  initialLectures: ClientLecture[];
+}) {
   const [lectures, setLectures] = useState<ClientLecture[]>(initialLectures);
   // Keep local state in sync when server-provided lectures change (e.g., after navigation)
   useEffect(() => {
@@ -24,19 +28,34 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
   return (
     <div className="mt-6 space-y-4">
       {lectures.length === 0 && (
-        <div className="text-neutral-400 text-sm">No lectures yet. Create one in the Learn Workspace.</div>
+        <div className="text-sm text-neutral-400">
+          No lectures yet. Create one in the Learn Workspace.
+        </div>
       )}
       {lectures.map((lec) => (
-        <div key={lec.id} className="card p-4 flex items-center justify-between hover:bg-neutral-900 transition-colors">
+        <div
+          key={lec.id}
+          className="card flex items-center justify-between p-4 transition-colors hover:bg-neutral-900"
+        >
           <div>
             <h4 className="font-semibold">{lec.title}</h4>
             <p className="text-sm text-neutral-400">
-              {new Date(lec.createdAtISO).toLocaleString()} • {lec.subtopicCount} subtopics
+              {new Date(lec.createdAtISO).toLocaleString()} •{' '}
+              {lec.subtopicCount} subtopics
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link href={`/learn/${lec.id}`} className="text-sm font-medium text-white hover:underline">
+            <Link
+              href={`/learn/${lec.id}`}
+              className="text-sm font-medium text-white hover:underline"
+            >
               Open
+            </Link>
+            <Link
+              href={`/revise/${lec.id}`}
+              className="text-sm font-medium text-white hover:underline"
+            >
+              Revise
             </Link>
             <button
               type="button"
@@ -44,12 +63,18 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
                 try {
                   const next = !lec.starred;
                   setLectures((prev) => {
-                    const updated = prev.map((p) => (p.id === lec.id ? { ...p, starred: next } : p));
+                    const updated = prev.map((p) =>
+                      p.id === lec.id ? { ...p, starred: next } : p
+                    );
                     // Reorder: starred first, then by lastOpenedAt desc (fallback createdAt desc)
                     return [...updated].sort((a, b) => {
                       if (a.starred !== b.starred) return b.starred ? 1 : -1;
-                      const aOpen = a.lastOpenedAtISO ? Date.parse(a.lastOpenedAtISO) : 0;
-                      const bOpen = b.lastOpenedAtISO ? Date.parse(b.lastOpenedAtISO) : 0;
+                      const aOpen = a.lastOpenedAtISO
+                        ? Date.parse(a.lastOpenedAtISO)
+                        : 0;
+                      const bOpen = b.lastOpenedAtISO
+                        ? Date.parse(b.lastOpenedAtISO)
+                        : 0;
                       if (aOpen !== bOpen) return bOpen - aOpen;
                       const aCreated = Date.parse(a.createdAtISO);
                       const bCreated = Date.parse(b.createdAtISO);
@@ -75,22 +100,31 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
               }`}
               title={lec.starred ? 'Unstar' : 'Star'}
             >
-              {lec.starred ? <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" /> : <StarOff className="w-4 h-4" />}
+              {lec.starred ? (
+                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+              ) : (
+                <StarOff className="h-4 w-4" />
+              )}
               {lec.starred ? 'Starred' : 'Star'}
             </button>
             <button
               type="button"
               onClick={async () => {
-                const newTitle = typeof window !== 'undefined' ? window.prompt('Rename lecture', lec.title) : null;
+                const newTitle =
+                  typeof window !== 'undefined'
+                    ? window.prompt('Rename lecture', lec.title)
+                    : null;
                 if (!newTitle) return;
                 const t = newTitle.trim();
                 if (t.length < 3) {
-                  // eslint-disable-next-line no-alert
+                   
                   alert('Title must be at least 3 characters.');
                   return;
                 }
                 try {
-                  setLectures((prev) => prev.map((p) => (p.id === lec.id ? { ...p, title: t } : p)));
+                  setLectures((prev) =>
+                    prev.map((p) => (p.id === lec.id ? { ...p, title: t } : p))
+                  );
                   const res = await fetch(`/api/lectures/${lec.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -100,18 +134,20 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
                     throw new Error('Failed');
                   }
                 } catch (e) {
-                  // eslint-disable-next-line no-alert
+                   
                   alert((e as Error)?.message || 'Failed to rename');
                 }
               }}
               className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-700"
               title="Rename"
             >
-              <Pencil className="w-4 h-4" /> Rename
+              <Pencil className="h-4 w-4" /> Rename
             </button>
             <DeleteLectureButton
               lectureId={lec.id}
-              onDeleted={() => setLectures((prev) => prev.filter((l) => l.id !== lec.id))}
+              onDeleted={() =>
+                setLectures((prev) => prev.filter((l) => l.id !== lec.id))
+              }
             />
           </div>
         </div>
@@ -119,5 +155,3 @@ export default function LectureList({ initialLectures }: { initialLectures: Clie
     </div>
   );
 }
-
-

@@ -62,18 +62,20 @@ model User {
   lectures          Lecture[]
   masteredSubtopics UserMastery[]
   quizAttempts      QuizAttempt[]
-  following         Follow[]      @relation("UserFollows")
-  followedBy        Follow[]      @relation("UserFollowedBy")
+
+  // Social graph
+  following  Follow[] @relation("UserFollows")
+  followedBy Follow[] @relation("UserFollowedBy")
 }
 
 model Lecture {
   id              String     @id @default(cuid())
   title           String
-  originalContent String
+  originalContent String     @db.Text
   createdAt       DateTime   @default(now())
-  userId          String
   starred         Boolean    @default(false)
   lastOpenedAt    DateTime?
+  userId          String
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   subtopics       Subtopic[]
 
@@ -106,6 +108,8 @@ model QuizQuestion {
   subtopicId  String
   subtopic    Subtopic      @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
   attempts    QuizAttempt[]
+
+  @@unique([subtopicId, prompt])
 }
 
 model UserMastery {
@@ -137,10 +141,18 @@ model Follow {
   followerId  String
   followingId String
   createdAt   DateTime @default(now())
-  follower    User     @relation("UserFollows", fields: [followerId], references: [id], onDelete: Cascade)
-  following   User     @relation("UserFollowedBy", fields: [followingId], references: [id], onDelete: Cascade)
+
+  follower  User @relation("UserFollows", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowedBy", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followingId])
   @@index([followerId])
   @@index([followingId])
+}
+
+model Rank {
+  slug    String  @id
+  name    String
+  minElo  Int
+  iconUrl String?
 }

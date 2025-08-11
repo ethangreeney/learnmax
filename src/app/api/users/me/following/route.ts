@@ -12,8 +12,9 @@ export async function GET() {
     });
     return NextResponse.json({ following: rows.map((r) => r.followingId) });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }
-
-

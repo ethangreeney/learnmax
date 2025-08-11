@@ -18,14 +18,20 @@ export async function POST(req: NextRequest) {
     };
 
     if (!subtopicId) {
-      return NextResponse.json({ error: 'subtopicId is required.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'subtopicId is required.' },
+        { status: 400 }
+      );
     }
 
     // Increment Elo ONLY if a new mastery record is created.
     const { created } = await prisma.$transaction(async (tx) => {
       try {
         await tx.userMastery.create({ data: { userId, subtopicId } });
-        await tx.user.update({ where: { id: userId }, data: { elo: { increment: eloDelta } } });
+        await tx.user.update({
+          where: { id: userId },
+          data: { elo: { increment: eloDelta } },
+        });
         return { created: true };
       } catch (e: any) {
         // Unique constraint violation => already mastered; do not increment Elo
@@ -42,6 +48,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, eloIncremented: created });
   } catch (e: any) {
     console.error('MASTERY_API_ERROR:', e);
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: e?.status || 500 }
+    );
   }
 }

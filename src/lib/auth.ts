@@ -9,12 +9,12 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,       // or GOOGLE_CLIENT_ID
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET! // or GOOGLE_CLIENT_SECRET
+      clientId: process.env.GOOGLE_CLIENT_ID!, // or GOOGLE_CLIENT_ID
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!, // or GOOGLE_CLIENT_SECRET
     }),
   ],
   session: { strategy: 'jwt' }, // keep JWT sessions; adapter still persists User/Account
-  secret: process.env.NEXTAUTH_SECRET,       // REQUIRED in production
+  secret: process.env.NEXTAUTH_SECRET, // REQUIRED in production
   callbacks: {
     async jwt({ token, user }) {
       if (user?.id) {
@@ -25,7 +25,9 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id?: string }).id = (token.sub || token.id || '') as string;
+        (session.user as { id?: string }).id = (token.sub ||
+          token.id ||
+          '') as string;
       }
       return session;
     },

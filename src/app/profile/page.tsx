@@ -16,7 +16,12 @@ type PublicProfile = {
   quiz: { totalAttempts: number; correct: number; accuracy: number };
   isAdmin?: boolean;
   leaderboardOptOut?: boolean;
-  rank?: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
+  rank?: {
+    slug: string;
+    name: string;
+    minElo: number;
+    iconUrl: string | null;
+  } | null;
 };
 
 function getRankColor(slug?: string | null): string {
@@ -52,13 +57,13 @@ export default async function ProfilePage() {
 
   return (
     <div className="container-narrow space-y-10">
-      <section className="relative overflow-hidden card">
-        <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
-        <div className="relative z-10 p-5 md:p-6 pb-8 md:pb-10">
+      <section className="card relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
+        <div className="p-5 pb-8 md:p-6 md:pb-10">
           <div className="flex items-center justify-between gap-6">
-            <div className="flex items-center gap-4 min-w-0 flex-1">
-              <div className="relative self-center top-[6px]">
-                <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <div className="relative top-[6px] self-center">
+                <div className="h-20 w-20 overflow-hidden rounded-full bg-neutral-900 ring-2 ring-neutral-800">
                   {me.image ? (
                     <Image
                       src={me.image}
@@ -78,10 +83,12 @@ export default async function ProfilePage() {
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                     {me.name || 'Your Profile'}
                   </h1>
-                  <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}>
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800`}
+                  >
                     {me.rank?.iconUrl && (
                       <Image
                         src={me.rank.iconUrl}
@@ -91,20 +98,27 @@ export default async function ProfilePage() {
                         className="h-4 w-4 object-contain"
                       />
                     )}
-                    <span className={`bg-gradient-to-r ${rankColor} bg-clip-text text-transparent font-semibold`}>
+                    <span
+                      className={`bg-gradient-to-r ${rankColor} bg-clip-text font-semibold text-transparent`}
+                    >
                       {me.rank?.name || 'Unranked'}
                     </span>
                     <span className="text-neutral-400">Elo {me.elo}</span>
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-neutral-400">
-                  {me.username ? `@${me.username}` : 'Pick a username to claim your handle'}
+                  {me.username
+                    ? `@${me.username}`
+                    : 'Pick a username to claim your handle'}
                 </p>
               </div>
             </div>
 
-            <div className="hidden md:flex items-center gap-2 shrink-0 relative top-[2px]">
-              <Chip icon={Flame} label={`${me.streak} day${me.streak === 1 ? '' : 's'} streak`} />
+            <div className="relative top-[2px] hidden shrink-0 items-center gap-2 md:flex">
+              <Chip
+                icon={Flame}
+                label={`${me.streak} day${me.streak === 1 ? '' : 's'} streak`}
+              />
               <Chip icon={Target} label={`${me.masteredCount} mastered`} />
             </div>
           </div>
@@ -115,19 +129,35 @@ export default async function ProfilePage() {
         <ProfileClient initialUser={me} />
 
         <div className="card p-6">
-          <h2 className="text-xl font-semibold mb-4">Learning Stats</h2>
+          <h2 className="mb-4 text-xl font-semibold">Learning Stats</h2>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Stat label="Mastered" value={String(me.masteredCount)} icon={Target} />
-            <Stat label="Accuracy" value={`${me.quiz.accuracy}%`} sub={`${me.quiz.correct}/${me.quiz.totalAttempts}`} icon={BrainCircuit} />
+            <Stat
+              label="Mastered"
+              value={String(me.masteredCount)}
+              icon={Target}
+            />
+            <Stat
+              label="Accuracy"
+              value={`${me.quiz.accuracy}%`}
+              sub={`${me.quiz.correct}/${me.quiz.totalAttempts}`}
+              icon={BrainCircuit}
+            />
             <Stat label="Streak" value={String(me.streak)} icon={Flame} />
           </div>
         </div>
         {me?.isAdmin && (
           <div className="card p-6">
-            <h2 className="text-xl font-semibold mb-3">Admin Panel</h2>
-            <p className="text-neutral-400 text-sm mb-4">You have admin access.</p>
+            <h2 className="mb-3 text-xl font-semibold">Admin Panel</h2>
+            <p className="mb-4 text-sm text-neutral-400">
+              You have admin access.
+            </p>
             <div className="flex flex-wrap gap-3">
-              <a href="/admin" className="btn-primary px-4 py-2">Open Admin Panel</a>
+              <a href="/admin" className="btn-primary px-4 py-2">
+                Open Admin Panel
+              </a>
+              <a href="/admin/ranks" className="btn-ghost px-4 py-2">
+                Manage Rank Icons
+              </a>
             </div>
           </div>
         )}
@@ -136,7 +166,13 @@ export default async function ProfilePage() {
   );
 }
 
-function Chip({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
+function Chip({
+  icon: Icon,
+  label,
+}: {
+  icon: React.ElementType;
+  label: string;
+}) {
   return (
     <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800">
       <Icon className="h-3.5 w-3.5 text-neutral-300" />
@@ -145,7 +181,17 @@ function Chip({ icon: Icon, label }: { icon: React.ElementType; label: string })
   );
 }
 
-function Stat({ label, value, sub, icon: Icon }: { label: string; value: string; sub?: string; icon: React.ElementType }) {
+function Stat({
+  label,
+  value,
+  sub,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  icon: React.ElementType;
+}) {
   return (
     <div className="rounded-lg border border-neutral-800 p-4">
       <div className="flex items-center justify-between">
@@ -157,4 +203,3 @@ function Stat({ label, value, sub, icon: Icon }: { label: string; value: string;
     </div>
   );
 }
-
