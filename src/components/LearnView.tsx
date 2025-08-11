@@ -575,9 +575,17 @@ export default function LearnView({
           return;
         }
       } catch {}
-      // Guard: avoid duplicate in-flight generation for the same subtopic
+      // Guard: avoid duplicate in-flight generation for the same subtopic.
+      // If a background prefetch has reserved this ID (no controller), override it so active view wins.
       if (!reserveExplanation(targetId)) {
-        return;
+        const hasController = explainControllersRef.current.has(targetId);
+        if (!hasController) {
+          // Reservation likely from prefetch; take over
+          releaseExplanation(targetId);
+          if (!reserveExplanation(targetId)) return;
+        } else {
+          return;
+        }
       }
       try {
         const targetIndex = Math.max(
@@ -759,6 +767,12 @@ export default function LearnView({
     if (currentReady && nextIndex < initial.subtopics.length) {
       const next = initial.subtopics[nextIndex];
       if (next && !prefetchedNextRef.current.has(next.id)) {
+        // Reserve explanation to prevent a race with on-navigation streaming
+        const reservedExplain = reserveExplanation(next.id);
+        if (!reservedExplain) {
+          // Another generation already owns this subtopic; skip prefetch
+          return;
+        }
         // Mark as prefetched to guard against StrictMode double effects
         prefetchedNextRef.current.add(next.id);
         // fire-and-forget preload
@@ -773,8 +787,9 @@ export default function LearnView({
               body: JSON.stringify({
                 lectureTitle: title || initial.title,
                 subtopic: next.title,
-                subtopicId: demo ? '' : next.id,
-                lectureId: demo ? '' : initial.id,
+                // Do NOT persist during prefetch to avoid double-generating and overwriting when user navigates
+                subtopicId: '',
+                lectureId: '',
                 documentContent: initial.originalContent,
                 covered,
               }),
@@ -906,10 +921,12 @@ export default function LearnView({
               // swallow preloading errors
             } finally {
               releaseQuestions(next.id);
+              if (reservedExplain) releaseExplanation(next.id);
             }
           } catch {
             // If it failed early, allow retry on next navigation
             prefetchedNextRef.current.delete(next.id);
+            if (reservedExplain) releaseExplanation(next.id);
           }
         })();
       }
