@@ -53,8 +53,8 @@ export default async function ProfilePage() {
   return (
     <div className="container-narrow space-y-10">
       <section className="relative overflow-hidden card">
-        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
-        <div className="p-5 md:p-6 pb-8 md:pb-10">
+        <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
+        <div className="relative z-10 p-5 md:p-6 pb-8 md:pb-10">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-4 min-w-0 flex-1">
               <div className="relative self-center top-[6px]">
@@ -128,7 +128,6 @@ export default async function ProfilePage() {
             <p className="text-neutral-400 text-sm mb-4">You have admin access.</p>
             <div className="flex flex-wrap gap-3">
               <a href="/admin" className="btn-primary px-4 py-2">Open Admin Panel</a>
-              <a href="/admin/ranks" className="btn-ghost px-4 py-2">Manage Rank Icons</a>
             </div>
           </div>
         )}

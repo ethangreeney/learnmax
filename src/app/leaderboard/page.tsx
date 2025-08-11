@@ -51,11 +51,16 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="truncate text-lg font-semibold">{u.name || 'Unnamed'}</div>
+                  <a
+                    href={u.username ? `/u/${u.username}` : `/u/id/${u.id}`}
+                    className="truncate text-lg font-semibold hover:underline"
+                  >
+                    {u.name || 'Unnamed'}
+                  </a>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 ring-1 ring-neutral-800 text-neutral-400">#{idx + 1}</span>
                 </div>
                 <div className="text-sm text-neutral-500 flex items-center gap-2">
-                  {u.username ? <a href={`/u/${u.username}`} className="hover:underline">Profile</a> : <span>Profile</span>}
+                  {u.username ? <a href={`/u/${u.username}`} className="hover:underline">@{u.username}</a> : <span>—</span>}
                   <span className="opacity-50">•</span>
                   <span>last active {u.lastActiveISO ? new Date(u.lastActiveISO).toLocaleDateString() : '—'}</span>
                 </div>

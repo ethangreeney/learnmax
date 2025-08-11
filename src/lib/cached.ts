@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 import prisma from '@/lib/prisma';
+import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
 export async function getUserStatsCached(userId: string) {
   const fn = unstable_cache(
@@ -38,24 +39,65 @@ export async function getLecturesCached(userId: string) {
 
 
 export async function getProfileForUser(userId: string, opts?: { email?: string | null; providerImage?: string | null }) {
-  const [user, masteredCount, quizAgg, rank] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        bio: true,
-        image: true,
-        elo: true,
-        streak: true,
-      },
-    }),
+  let user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      bio: true,
+      image: true,
+      elo: true,
+      streak: true,
+      email: true,
+    },
+  });
+  if (!user) {
+    // Fallback: try locate by email (DBs merged or session id drift)
+    const email = opts?.email || undefined;
+    if (email) {
+      const byEmail = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+      });
+      if (byEmail) {
+        user = byEmail;
+      } else {
+        // As a last resort, create a row for this session so profile can load
+        try {
+          user = await prisma.user.create({
+            data: {
+              id: userId, // preserve session id to keep consistency across queries
+              email,
+              name: null,
+              image: opts?.providerImage || null,
+              elo: 1000,
+              streak: 0,
+            },
+            select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+          });
+        } catch {
+          // Creation may fail due to unique constraints; re-fetch by email
+          const retry = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, email: true },
+          });
+          if (!retry) throw new Error('Not found');
+          user = retry;
+        }
+      }
+    } else {
+      throw new Error('Not found');
+    }
+  }
+
+  const [masteredCount, quizAgg] = await Promise.all([
     prisma.userMastery.count({ where: { userId } }),
     prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId }, _count: { _all: true } }),
-    prisma.rank.findFirst({ where: { minElo: { lte: (await prisma.user.findUnique({ where: { id: userId }, select: { elo: true } }))!.elo } }, orderBy: { minElo: 'desc' } }),
   ]);
-  if (!user) throw new Error('Not found');
+  const ranks = await getRanksSafe();
+  const r = pickRankForElo(ranks, user.elo);
+  const rank = r ? { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl } : null;
   const total = quizAgg.reduce((acc: number, row: { _count: { _all: number } }) => acc + row._count._all, 0);
   const correct = (quizAgg.find((r: any) => r.isCorrect)?._count._all) || 0;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
@@ -92,14 +134,10 @@ export type LeaderboardItem = {
 export async function getLeaderboardCached(period: LeaderboardPeriod, scope: LeaderboardScope = 'global', viewerId?: string | null) {
   const fn = unstable_cache(
     async () => {
-      const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
+      const ranks = await getRanksSafe();
       const toRank = (elo: number) => {
-        let match: LeaderboardItem['rank'] = null;
-        for (const r of ranks) {
-          if (elo >= r.minElo) match = { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl };
-          else break;
-        }
-        return match;
+        const rr = pickRankForElo(ranks, elo);
+        return rr ? { slug: rr.slug, name: rr.name, minElo: rr.minElo, iconUrl: rr.iconUrl } : null;
       };
 
       let friendIds: string[] | null = null;

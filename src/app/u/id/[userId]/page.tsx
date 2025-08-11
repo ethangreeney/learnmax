@@ -19,13 +19,12 @@ function getRankColor(slug?: string | null): string {
     }
 }
 
-export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
-    const { username } = await params;
-    const uname = decodeURIComponent(username || '').toLowerCase();
-    if (!uname) notFound();
+export default async function PublicProfileById({ params }: { params: Promise<{ userId: string }> }) {
+    const { userId } = await params;
+    if (!userId) notFound();
 
-    const user = await prisma.user.findFirst({
-        where: { username: uname },
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
         select: { id: true, name: true, username: true, bio: true, image: true, elo: true, _count: { select: { masteredSubtopics: true } } },
     });
     if (!user) notFound();

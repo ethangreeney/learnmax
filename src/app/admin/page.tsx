@@ -9,7 +9,8 @@ export default async function AdminHomePage() {
             <div className="card p-6 space-y-3">
                 <p className="text-neutral-400">Manage site assets and settings.</p>
                 <div className="flex flex-wrap gap-3">
-                    <Link href="/admin/ranks" className="btn-primary px-4 py-2">Rank Icons</Link>
+                    <Link href="/admin/ranks" className="btn-ghost px-4 py-2">Rank Icons</Link>
+                    <Link href="/admin/elo" className="btn-primary px-4 py-2">Adjust My Elo</Link>
                 </div>
             </div>
         </div>
