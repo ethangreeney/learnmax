@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
+import { getRankGradient } from '@/lib/ranks';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
@@ -72,7 +73,9 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
                 {u.rank?.iconUrl && (
                   <Image src={u.rank.iconUrl} alt={u.rank.name} width={14} height={14} className="h-3.5 w-3.5 object-contain" unoptimized />
                 )}
-                <span className="font-semibold">{u.rank?.name || 'Unranked'}</span>
+                <span className={`bg-gradient-to-r ${getRankGradient(u.rank?.slug)} bg-clip-text text-transparent font-semibold`}>
+                  {u.rank?.name || 'Unranked'}
+                </span>
                 <span className="text-neutral-400">Elo {u.elo}</span>
               </span>
             </div>

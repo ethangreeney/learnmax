@@ -1,24 +1,7 @@
 import Image from 'next/image';
 import prisma from '@/lib/prisma';
 import { notFound } from 'next/navigation';
-import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
-
-function getRankColor(slug?: string | null): string {
-    switch (slug) {
-        case 'bronze':
-            return 'from-amber-600 via-orange-500 to-yellow-500';
-        case 'silver':
-            return 'from-gray-400 via-gray-300 to-gray-200';
-        case 'gold':
-            return 'from-yellow-400 via-yellow-300 to-amber-300';
-        case 'diamond':
-            return 'from-cyan-400 via-blue-400 to-indigo-400';
-        case 'master':
-            return 'from-purple-400 via-pink-400 to-rose-400';
-        default:
-            return 'from-neutral-300 via-neutral-200 to-neutral-100';
-    }
-}
+import { getRanksSafe, pickRankForElo, getRankGradient } from '@/lib/ranks';
 
 export default async function PublicProfileById({ params }: { params: Promise<{ userId: string }> }) {
     const { userId } = await params;
@@ -32,7 +15,7 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
 
     const ranks = await getRanksSafe();
     const rank = pickRankForElo(ranks, user.elo);
-    const rankColor = getRankColor(rank?.slug);
+    const rankColor = getRankGradient(rank?.slug);
 
     return (
         <div className="container-narrow space-y-10">

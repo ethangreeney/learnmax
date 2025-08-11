@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { BrainCircuit, Flame, Target, User as UserIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth';
 import { getProfileForUser } from '@/lib/cached';
+import { getRankGradient } from '@/lib/ranks';
 import ProfileClient from './ProfileClient';
 
 type PublicProfile = {
@@ -26,23 +27,6 @@ type PublicProfile = {
   } | null;
 };
 
-function getRankColor(slug?: string | null): string {
-  switch (slug) {
-    case 'bronze':
-      return 'from-amber-600 via-orange-500 to-yellow-500';
-    case 'silver':
-      return 'from-gray-400 via-gray-300 to-gray-200';
-    case 'gold':
-      return 'from-yellow-400 via-yellow-300 to-amber-300';
-    case 'diamond':
-      return 'from-cyan-400 via-blue-400 to-indigo-400';
-    case 'master':
-      return 'from-purple-400 via-pink-400 to-rose-400';
-    default:
-      return 'from-neutral-300 via-neutral-200 to-neutral-100';
-  }
-}
-
 async function getProfile(): Promise<PublicProfile> {
   const session = await requireSession();
   const userId = (session.user as any)?.id as string;
@@ -55,7 +39,7 @@ async function getProfile(): Promise<PublicProfile> {
 
 export default async function ProfilePage() {
   const me = await getProfile();
-  const rankColor = getRankColor(me.rank?.slug);
+  const rankColor = getRankGradient(me.rank?.slug);
 
   return (
     <div className="container-narrow space-y-10">
@@ -64,7 +48,7 @@ export default async function ProfilePage() {
         <div className="p-5 pb-8 md:p-6 md:pb-10">
           <div className="flex items-center justify-between gap-6">
             <div className="flex min-w-0 flex-1 items-center gap-4">
-              <div className="relative top-[6px] self-center">
+              <div className="relative top-[2px] self-center">
                 <div className="h-20 w-20 overflow-hidden rounded-full bg-neutral-900 ring-2 ring-neutral-800">
                   {me.image ? (
                     <Image
@@ -88,25 +72,6 @@ export default async function ProfilePage() {
                   <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                     {me.name || 'Your Profile'}
                   </h1>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800`}
-                  >
-                    {me.rank?.iconUrl && (
-                      <Image
-                        src={me.rank.iconUrl}
-                        alt={me.rank.name}
-                        width={16}
-                        height={16}
-                        className="h-4 w-4 object-contain"
-                      />
-                    )}
-                    <span
-                      className={`bg-gradient-to-r ${rankColor} bg-clip-text font-semibold text-transparent`}
-                    >
-                      {me.rank?.name || 'Unranked'}
-                    </span>
-                    <span className="text-neutral-400">Elo {me.elo}</span>
-                  </span>
                 </div>
                 <p className="mt-1 text-sm text-neutral-400">
                   {me.username
@@ -120,10 +85,13 @@ export default async function ProfilePage() {
               </div>
             </div>
 
-            <div className="relative top-[2px] hidden shrink-0 items-center gap-2 md:flex">
-              <Chip
-                icon={Flame}
-                label={`${me.streak} day${me.streak === 1 ? '' : 's'} streak`}
+            <div className="relative top-[8px] hidden shrink-0 items-center gap-3 md:flex">
+              <RankBadge
+                name={me.rank?.name || 'Unranked'}
+                slug={me.rank?.slug || null}
+                iconUrl={me.rank?.iconUrl || null}
+                elo={me.elo}
+                rankColorClass={rankColor}
               />
             <Chip icon={Target} label={`${me.masteredCount} mastered`} />
             </div>
@@ -173,15 +141,53 @@ export default async function ProfilePage() {
   );
 }
 
+function RankBadge({
+  name,
+  slug,
+  iconUrl,
+  elo,
+  rankColorClass,
+}: {
+  name: string;
+  slug: string | null | undefined;
+  iconUrl: string | null | undefined;
+  elo: number;
+  rankColorClass: string;
+}) {
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-2 px-1">
+      {iconUrl ? (
+        <Image
+          src={iconUrl}
+          alt={name}
+          width={72}
+          height={72}
+          className="relative top-[6px] h-[72px] w-[72px] object-contain"
+        />)
+        : (
+          <div className="relative top-[6px] h-[72px] w-[72px] rounded-md bg-neutral-800" />
+        )}
+      <div className={`relative top-[4px] bg-gradient-to-r ${rankColorClass} bg-clip-text text-sm font-semibold leading-tight text-transparent`}>
+        {name}
+      </div>
+      <div className="text-xs leading-tight text-neutral-400">Elo {elo}</div>
+    </div>
+  );
+}
+
 function Chip({
   icon: Icon,
   label,
+  className,
 }: {
   icon: React.ElementType;
   label: string;
+  className?: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800">
+    <span
+      className={`flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800 ${className ?? ''}`}
+    >
       <Icon className="h-3.5 w-3.5 text-neutral-300" />
       <span>{label}</span>
     </span>

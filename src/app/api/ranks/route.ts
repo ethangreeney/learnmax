@@ -30,15 +30,32 @@ export async function PATCH(req: Request) {
   const items = Array.isArray(body?.ranks) ? (body.ranks as any[]) : [];
   for (const it of items) {
     if (!it || typeof it.slug !== 'string') continue;
-    const data: any = {};
-    if (typeof it.name === 'string') data.name = it.name.trim().slice(0, 40);
-    if (Number.isInteger(it.minElo))
-      data.minElo = Math.max(0, Number(it.minElo));
-    if (typeof it.iconUrl === 'string' || it.iconUrl === null)
-      data.iconUrl = it.iconUrl ?? null;
-    if (Object.keys(data).length) {
-      await prisma.rank.update({ where: { slug: it.slug }, data });
+    const slug = String(it.slug).trim();
+    const updateData: any = {};
+    const createData: any = { slug };
+    if (typeof it.name === 'string') {
+      const name = it.name.trim().slice(0, 40);
+      updateData.name = name;
+      createData.name = name || slug;
     }
+    if (Number.isInteger(it.minElo)) {
+      const minElo = Math.max(0, Number(it.minElo));
+      updateData.minElo = minElo;
+      createData.minElo = minElo;
+    }
+    if (typeof it.iconUrl === 'string' || it.iconUrl === null) {
+      updateData.iconUrl = it.iconUrl ?? null;
+      createData.iconUrl = it.iconUrl ?? null;
+    }
+    // Ensure we at least set required fields on create
+    if (createData.name == null) createData.name = slug;
+    if (createData.minElo == null) createData.minElo = 0;
+
+    await prisma.rank.upsert({
+      where: { slug },
+      update: updateData,
+      create: createData,
+    });
   }
   const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
   return NextResponse.json({ ok: true, ranks });

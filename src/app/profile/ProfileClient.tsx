@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { upload } from '@vercel/blob/client';
+import AvatarCropper from '@/components/AvatarCropper';
 
 export type PublicProfile = {
   id: string;
@@ -34,6 +35,7 @@ export default function ProfileClient({
   const [image, setImage] = useState<string | null>(initialUser.image || null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   async function onSave() {
     setSaving(true);
@@ -60,33 +62,8 @@ export default function ProfileClient({
       if (file.type === 'image/gif') {
         throw new Error('GIFs are not allowed for profile pictures');
       }
-      const ext =
-        file.type === 'image/png'
-          ? 'png'
-          : file.type === 'image/webp'
-            ? 'webp'
-            : 'jpg';
-      const pathname = `avatars/${initialUser.id}.${ext}`;
-      const { url } = await upload(pathname, file, {
-        access: 'public',
-        handleUploadUrl: '/api/blob/upload-url',
-        contentType: file.type,
-      });
-      const bust = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
-      setImage(bust);
-      try {
-        const res = await fetch('/api/users/me', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: bust }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          console.warn('Failed to persist avatar:', data);
-        }
-      } catch (persistErr) {
-        console.warn('Error persisting avatar', persistErr);
-      }
+      const objectUrl = URL.createObjectURL(file);
+      setCropSrc(objectUrl);
     } catch (e: any) {
       setError(e?.message || 'Avatar upload failed');
     }
@@ -94,6 +71,41 @@ export default function ProfileClient({
 
   return (
     <div className="card space-y-5 p-6">
+      {cropSrc && (
+        <AvatarCropper
+          src={cropSrc}
+          onCancel={() => {
+            URL.revokeObjectURL(cropSrc);
+            setCropSrc(null);
+          }}
+          onCropped={async (croppedFile) => {
+            try {
+              const pathname = `avatars/${initialUser.id}.webp`;
+              const { url } = await upload(pathname, croppedFile, {
+                access: 'public',
+                handleUploadUrl: '/api/blob/upload-url',
+                contentType: 'image/webp',
+              });
+              const bust = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
+              setImage(bust);
+              setCropSrc(null);
+              const res = await fetch('/api/users/me', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: bust }),
+              });
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                console.warn('Failed to persist avatar:', data);
+              }
+            } catch (err: any) {
+              setError(err?.message || 'Avatar upload failed');
+            } finally {
+              URL.revokeObjectURL(cropSrc);
+            }
+          }}
+        />
+      )}
       <h2 className="text-xl font-semibold">Edit Profile</h2>
       <div className="grid gap-4">
         <label className="grid gap-2 text-sm">

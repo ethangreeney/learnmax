@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
+import AvatarCropper from '@/components/AvatarCropper';
 
 type Rank = {
   slug: string;
@@ -19,6 +20,8 @@ export default function RankManagerClient({
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [pendingSlug, setPendingSlug] = useState<string | null>(null);
 
   useEffect(() => {
     // If server provided no data, fetch as a fallback (shouldn't happen)
@@ -55,15 +58,24 @@ export default function RankManagerClient({
   };
 
   const onPick = async (slug: string, file: File) => {
-    const pathname = `ranks/${slug}.${file.type === 'image/webp' ? 'webp' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'jpg'}`;
-    const { url } = await upload(pathname, file, {
-      access: 'public',
-      handleUploadUrl: '/api/blob/upload-url',
-      contentType: file.type,
-    });
-    setRanks((prev) =>
-      prev.map((r) => (r.slug === slug ? { ...r, iconUrl: url } : r))
-    );
+    // Allow GIFs to be uploaded directly (no cropping)
+    if (file.type === 'image/gif') {
+      const pathname = `ranks/${slug}.gif`;
+      const { url } = await upload(pathname, file, {
+        access: 'public',
+        handleUploadUrl: '/api/blob/upload-url',
+        contentType: 'image/gif',
+      });
+      setRanks((prev) =>
+        prev.map((r) => (r.slug === slug ? { ...r, iconUrl: url } : r))
+      );
+      return;
+    }
+
+    // For static images, open cropper and export to WebP before upload
+    const objectUrl = URL.createObjectURL(file);
+    setPendingSlug(slug);
+    setCropSrc(objectUrl);
   };
 
   const save = async () => {
@@ -88,6 +100,38 @@ export default function RankManagerClient({
 
   return (
     <div className="space-y-6">
+      {cropSrc && pendingSlug && (
+        <AvatarCropper
+          src={cropSrc}
+          aspect={1}
+          outputSize={256}
+          filename={`${pendingSlug}.webp`}
+          onCancel={() => {
+            URL.revokeObjectURL(cropSrc);
+            setCropSrc(null);
+            setPendingSlug(null);
+          }}
+          onCropped={async (croppedFile) => {
+            try {
+              const pathname = `ranks/${pendingSlug}.webp`;
+              const { url } = await upload(pathname, croppedFile, {
+                access: 'public',
+                handleUploadUrl: '/api/blob/upload-url',
+                contentType: 'image/webp',
+              });
+              setRanks((prev) =>
+                prev.map((r) =>
+                  r.slug === pendingSlug ? { ...r, iconUrl: url } : r
+                )
+              );
+            } finally {
+              URL.revokeObjectURL(cropSrc);
+              setCropSrc(null);
+              setPendingSlug(null);
+            }
+          }}
+        />
+      )}
       {ranks.length === 0 && (
         <div className="rounded-md border border-neutral-800 p-6 text-center">
           <p className="mb-4 text-neutral-400">
