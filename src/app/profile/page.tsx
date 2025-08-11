@@ -15,6 +15,7 @@ type PublicProfile = {
   masteredCount: number;
   quiz: { totalAttempts: number; correct: number; accuracy: number };
   isAdmin?: boolean;
+  leaderboardOptOut?: boolean;
   rank?: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
 };
 

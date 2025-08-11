@@ -8,7 +8,8 @@
     "build": "pnpm run migrate:deploy && next build --no-lint",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "gen:example": "node scripts/generate-example.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",

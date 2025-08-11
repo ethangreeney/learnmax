@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -121,7 +121,7 @@ function stripLeadingTitle(md: string, title?: string): string {
   return out;
 }
 
-export default function LearnView({ initial }: { initial: LearnLecture }) {
+export default function LearnView({ initial, readonly = false, demo = false }: { initial: LearnLecture; readonly?: boolean; demo?: boolean }) {
   // UI-only store per page mount
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
   const storeRef = useRef(
@@ -208,6 +208,7 @@ export default function LearnView({ initial }: { initial: LearnLecture }) {
 
   // On first mount, if there are no subtopics yet, stream them in progressively
   useEffect(() => {
+    if (readonly) return;
     if (!initial.subtopics || initial.subtopics.length === 0) {
       (async () => {
         try {
@@ -279,6 +280,33 @@ const countedIdsRef = useRef<Set<string>>(
 
   const canSelect = (i: number) => i <= unlockedIndex;
 
+  // Demo-only synthesized document for chat grounding
+  const demoDoc = useMemo(() => {
+    if (!demo) return null as string | null;
+    try {
+      const parts: string[] = [];
+      parts.push(`# ${initial.title}`);
+      for (const s of initial.subtopics) {
+        const title = s.title?.trim();
+        const overview = (s.overview || '').trim();
+        const explanation = (s.explanation || '').trim();
+        if (title) parts.push(`\n## ${title}`);
+        if (overview) parts.push(overview);
+        if (explanation) {
+          const trimmed = explanation.length > 1200 ? explanation.slice(0, 1200) + '…' : explanation;
+          parts.push(trimmed);
+        }
+      }
+      return parts.join('\n\n').trim();
+    } catch {
+      return initial.originalContent || '';
+    }
+  }, [demo, initial.title, initial.subtopics, initial.originalContent]);
+
+  const chatIntro = demo
+    ? "I'm your AI Tutor for this demo. I'm grounded on this lesson's titles, overviews, and explanations. Ask me anything about it!"
+    : undefined;
+
   // Keep unlockedIndex sane if server state changes
   useEffect(() => {
     const u = deriveUnlockedIndex(initial.subtopics);
@@ -325,8 +353,9 @@ const countedIdsRef = useRef<Set<string>>(
           body: JSON.stringify({
             lectureTitle: title || initial.title,
             subtopic: targetTitle,
-            subtopicId: targetId,
-            lectureId: initial.id,
+            // Avoid persisting in demo: omit IDs so the API won't write to DB
+            subtopicId: demo ? '' : targetId,
+            lectureId: demo ? '' : initial.id,
             documentContent: initial.originalContent,
             covered,
             model,
@@ -381,7 +410,7 @@ const countedIdsRef = useRef<Set<string>>(
         releaseExplanation(targetId);
       }
     },
-    [title, initial.title, initial.id, initial.originalContent, initial.subtopics]
+    [title, initial.title, initial.id, initial.originalContent, initial.subtopics, demo]
   );
 
   // Convenience wrapper for buttons: uses current subtopic
@@ -413,6 +442,7 @@ const countedIdsRef = useRef<Set<string>>(
 
   // On subtopic change: fetch explanation once and scroll to top
   useEffect(() => {
+    if (readonly) return;
     const s = currentSubtopic;
     if (s && !explanations[s.id]) {
       // Start fetching explanation immediately
@@ -430,6 +460,7 @@ const countedIdsRef = useRef<Set<string>>(
 
   // After explanation finishes, prefetch the next subtopic (no scroll)
   useEffect(() => {
+    if (readonly) return;
     const s = currentSubtopic;
     if (!s) return;
     const currentReady = Boolean(explanationDone[s.id]);
@@ -453,8 +484,8 @@ const countedIdsRef = useRef<Set<string>>(
               body: JSON.stringify({
                 lectureTitle: title || initial.title,
                 subtopic: next.title,
-                subtopicId: next.id,
-                lectureId: initial.id,
+                subtopicId: demo ? '' : next.id,
+                lectureId: demo ? '' : initial.id,
                 documentContent: initial.originalContent,
                 covered,
                 model,
@@ -514,20 +545,25 @@ const countedIdsRef = useRef<Set<string>>(
                 const generated = results.filter((q): q is NonNullable<typeof q> => q !== null);
 
                 if (generated.length) {
-                  const save = await fetch('/api/quiz/questions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subtopicId: next.id, questions: generated }),
-                  });
-                  if (save.ok) {
-                    const payload = (await save.json()) as {
-                      questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-                    };
-                    const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
-                    if (saved.length) {
-                      // Update reactive questions map so the quiz is ready instantly when navigating
-                      setQuestionsById((prev) => ({ ...prev, [next.id]: saved as unknown as QuizQuestion[] }));
+                  if (!demo) {
+                    const save = await fetch('/api/quiz/questions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: next.id, questions: generated }),
+                    });
+                    if (save.ok) {
+                      const payload = (await save.json()) as {
+                        questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+                      };
+                      const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
+                      if (saved.length) {
+                        setQuestionsById((prev) => ({ ...prev, [next.id]: saved as unknown as QuizQuestion[] }));
+                      }
                     }
+                  } else {
+                    // Demo mode: use ephemeral questions with temp IDs
+                    const temp = generated.map((q, idx) => ({ ...q, id: `${next.id}-temp-${Date.now()}-${idx}` })) as unknown as QuizQuestion[];
+                    setQuestionsById((prev) => ({ ...prev, [next.id]: temp }));
                   }
                 }
               }
@@ -609,7 +645,7 @@ const countedIdsRef = useRef<Set<string>>(
       </aside>
 
       {/* Center: Explanation + Quiz */}
-      <main ref={mainRef} className="lg:col-span-6">
+      <main ref={mainRef} className={`lg:col-span-6 ${readonly ? 'lg:col-span-9' : ''}`}>
         {currentSubtopic ? (
           <div className="space-y-8">
             <div className="card p-6 md:p-8 xl:p-10">
@@ -618,34 +654,38 @@ const countedIdsRef = useRef<Set<string>>(
                 <span>Importance: {currentSubtopic.importance}</span> <span>•</span>{' '}
                 <span>Difficulty: {currentSubtopic.difficulty}</span>
               </div>
-              <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
-                <span className="text-sm font-medium text-neutral-400">Style:</span>
-                <button
-                  onClick={() => fetchExplanation('default')}
-                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                >
-                  Default
-                </button>
-                <button
-                  onClick={() => fetchExplanation('simplified')}
-                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                >
-                  Simplified
-                </button>
-                <button
-                  onClick={() => fetchExplanation('detailed')}
-                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                >
-                  Detailed
-                </button>
-                <button
-                  onClick={() => fetchExplanation('example')}
-                  className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                >
-                  Example
-                </button>
-              </div>
-              <hr className="my-6 border-neutral-800" />
+              {!readonly && !demo && (
+                <>
+                  <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
+                    <span className="text-sm font-medium text-neutral-400">Style:</span>
+                    <button
+                      onClick={() => fetchExplanation('default')}
+                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                    >
+                      Default
+                    </button>
+                    <button
+                      onClick={() => fetchExplanation('simplified')}
+                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                    >
+                      Simplified
+                    </button>
+                    <button
+                      onClick={() => fetchExplanation('detailed')}
+                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                    >
+                      Detailed
+                    </button>
+                    <button
+                      onClick={() => fetchExplanation('example')}
+                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
+                    >
+                      Example
+                    </button>
+                  </div>
+                  <hr className="my-6 border-neutral-800" />
+                </>
+              )}
               <div id="lesson-markdown" data-lesson="markdown" className="markdown">
                 <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                   {stripLeadingTitle(explanations[currentSubtopic.id] || '', currentSubtopic.title) || 'Crafting learning module...'}
@@ -653,7 +693,7 @@ const countedIdsRef = useRef<Set<string>>(
               </div>
             </div>
 
-            {(() => {
+            {!readonly && (() => {
               const lessonMd = stripLeadingTitle(explanations[currentSubtopic.id] || '', currentSubtopic.title).trim();
               const hasLesson = lessonMd.length >= 50;
               return (
@@ -675,6 +715,7 @@ const countedIdsRef = useRef<Set<string>>(
                      questions={questionsById[currentSubtopic.id] || currentSubtopic.questions}
                     reserveQuestions={reserveQuestions}
                     releaseQuestions={releaseQuestions}
+                     disablePersistence={demo}
                     onPassed={async () => {
   const id = currentSubtopic.id;
   if (!countedIdsRef.current.has(id)) {
@@ -684,12 +725,14 @@ const countedIdsRef = useRef<Set<string>>(
 
                   /* END-OF-LECTURE */
                   const isLast = currentIndex === initial.subtopics.length - 1;
-                  // Persist mastery in background (non-blocking)
-                  try { void fetch('/api/mastery', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subtopicId: currentSubtopic.id }),
-                  }); } catch {}
+                  // Persist mastery only outside demo
+                  if (!demo) {
+                    try { void fetch('/api/mastery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subtopicId: currentSubtopic.id }),
+                    }); } catch {}
+                  }
 
                   if (isLast) {
                     // Mark complete so progress bar hits 100%
@@ -703,10 +746,12 @@ const countedIdsRef = useRef<Set<string>>(
                     }
                     // Keep sparkle briefly, then hide
                     setTimeout(() => setShowSparkle(false), 1200);
-                    // Give time for the bar's 500ms animation and the scroll to finish before redirecting
-                    setTimeout(() => {
-                      try { router.push(`/learn/${initial.id}/complete`); } catch {}
-                    }, 1600);
+                    // In demo, do not navigate away; otherwise go to completion page
+                    if (!demo) {
+                      setTimeout(() => {
+                        try { router.push(`/learn/${initial.id}/complete`); } catch {}
+                      }, 1600);
+                    }
                     return;
                   }
                   // Optimistic advance
@@ -738,9 +783,15 @@ const countedIdsRef = useRef<Set<string>>(
       </main>
 
       {/* Right: AI Tutor */}
-      <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
-        <ChatPanel documentContent={initial.originalContent} />
-      </aside>
+      {!readonly && (
+        <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
+          <ChatPanel
+            documentContent={demo ? (demoDoc || initial.originalContent || '') : initial.originalContent}
+            intro={chatIntro}
+            demoMode={demo}
+          />
+        </aside>
+      )}
     </div>
   );
 }
@@ -759,6 +810,7 @@ function QuizPanel({
   onQuestionsSaved,
   reserveQuestions,
   releaseQuestions,
+  disablePersistence,
 }: {
   subtopicId: string;
   subtopicTitle: string;
@@ -771,6 +823,7 @@ function QuizPanel({
   onQuestionsSaved?: (saved: QuizQuestion[]) => void;
   reserveQuestions?: (id: string) => boolean;
   releaseQuestions?: (id: string) => void;
+  disablePersistence?: boolean;
 }) {
   const stripABCD = (str: string) =>
     (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
@@ -908,30 +961,8 @@ function QuizPanel({
         const generated = results.filter((q): q is NonNullable<typeof q> => q !== null);
 
         if (generated.length) {
-          // Persist to DB so these questions have stable IDs and survive reloads
-          const save = await fetch('/api/quiz/questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subtopicId, questions: generated }),
-          });
-          if (save.ok) {
-            const payload = (await save.json()) as {
-              questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-            };
-            const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
-            if (saved.length) {
-              const processed = saved.map(shuffleForDisplay) as unknown as QuizQuestion[];
-              setItems(processed);
-              setAnswers([]);
-              setRevealed(false);
-              setVersion(v => v + 1); // Force re-render
-              success = true;
-              // Inform parent so future mounts use the saved questions and avoid re-generating
-              try { onQuestionsSaved?.(processed as unknown as QuizQuestion[]); } catch {}
-            }
-          }
-          // Fallback: if not saved to DB, still show the generated questions with temporary IDs
-          if (!success) {
+          if (disablePersistence) {
+            // Demo: ephemeral temp IDs
             const temp = generated.map((q, idx) => ({ ...q, id: `${subtopicId}-temp-${Date.now()}-${idx}` })) as unknown as QuizQuestion[];
             const processed = temp.map(shuffleForDisplay);
             setItems(processed);
@@ -939,6 +970,39 @@ function QuizPanel({
             setRevealed(false);
             setVersion(v => v + 1);
             success = true;
+          } else {
+            // Persist to DB so these questions have stable IDs and survive reloads
+            const save = await fetch('/api/quiz/questions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subtopicId, questions: generated }),
+            });
+            if (save.ok) {
+              const payload = (await save.json()) as {
+                questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+              };
+              const saved = (payload.questions || []).slice(0, REQUIRED_QUESTIONS);
+              if (saved.length) {
+                const processed = saved.map(shuffleForDisplay) as unknown as QuizQuestion[];
+                setItems(processed);
+                setAnswers([]);
+                setRevealed(false);
+                setVersion(v => v + 1); // Force re-render
+                success = true;
+                // Inform parent so future mounts use the saved questions and avoid re-generating
+                try { onQuestionsSaved?.(processed as unknown as QuizQuestion[]); } catch {}
+              }
+            }
+            // Fallback: if not saved to DB, still show the generated questions with temporary IDs
+            if (!success) {
+              const temp = generated.map((q, idx) => ({ ...q, id: `${subtopicId}-temp-${Date.now()}-${idx}` })) as unknown as QuizQuestion[];
+              const processed = temp.map(shuffleForDisplay);
+              setItems(processed);
+              setAnswers([]);
+              setRevealed(false);
+              setVersion(v => v + 1);
+              success = true;
+            }
           }
         }
         // If nothing could be generated/saved, mark as loaded to avoid infinite spinner
@@ -995,19 +1059,21 @@ function QuizPanel({
 
       // Persist the newly generated set so they have stable IDs
       let saved: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }> = [];
-      try {
-        const save = await fetch('/api/quiz/questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subtopicId, questions: generated, replace: true }),
-        });
-        if (save.ok) {
-          const payload = (await save.json()) as {
-            questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
-          };
-          saved = payload.questions || [];
-        }
-      } catch {}
+      if (!disablePersistence) {
+        try {
+          const save = await fetch('/api/quiz/questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subtopicId, questions: generated, replace: true }),
+          });
+          if (save.ok) {
+            const payload = (await save.json()) as {
+              questions: Array<{ id: string; prompt: string; options: string[]; answerIndex: number; explanation: string }>;
+            };
+            saved = payload.questions || [];
+          }
+        } catch {}
+      }
 
       const nextItemsRaw = (saved.length > 0
         ? saved
@@ -1022,7 +1088,7 @@ function QuizPanel({
       setVersion(v => v + 1); // Force re-render
       
       // Notify parent if questions were saved
-      if (saved.length > 0) {
+      if (!disablePersistence && saved.length > 0) {
         try { onQuestionsSaved?.(nextItems); } catch {}
       }
     } catch (_e) {
@@ -1108,22 +1174,37 @@ function QuizPanel({
                       onClick={async () => {
                         setAns(i, j);
                         try {
-                          // Record attempt (fire-and-forget)
-                          void fetch('/api/quiz/attempt', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              questionId: q.id,
-                              selectedIndex: j,
-                              isCorrect: j === q.answerIndex,
-                            }),
-                          });
+                          // Skip persistence in demo/ephemeral mode to avoid 401/500s
+                          if (!disablePersistence) {
+                            // Record attempt (fire-and-forget)
+                            void fetch('/api/quiz/attempt', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                questionId: q.id,
+                                selectedIndex: j,
+                                isCorrect: j === q.answerIndex,
+                              }),
+                            });
+                          }
                         } catch {}
                       }}
                       className={buttonClass}
                       disabled={revealed && isAllCorrect}
-                    >
-                      {stripABCD(o)}
+                      >
+                      <span className="chat-md">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                          components={{
+                            // Avoid invalid block elements inside <button>
+                            p: (props) => <span {...props} />,
+                            em: (props) => <em className="font-semibold not-italic" {...props} />,
+                          }}
+                        >
+                          {stripABCD(o)}
+                        </ReactMarkdown>
+                      </span>
                     </button>
                   );
                 })}

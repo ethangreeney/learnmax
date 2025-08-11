@@ -56,6 +56,7 @@ model User {
   elo               Int           @default(1000)
   streak            Int           @default(0)
   lastStudiedAt     DateTime?
+  leaderboardOptOut Boolean       @default(false)
   accounts          Account[]
   sessions          Session[]
   lectures          Lecture[]
@@ -63,6 +64,10 @@ model User {
   username          String?       @unique
   bio               String?
   quizAttempts      QuizAttempt[]
+
+  // Social graph
+  following         Follow[]      @relation("UserFollows")
+  followedBy        Follow[]      @relation("UserFollowedBy")
 }
 
 model Lecture {
@@ -129,6 +134,19 @@ model QuizAttempt {
 
   @@index([userId, createdAt])
   @@index([userId, isCorrect, createdAt])
+}
+
+model Follow {
+  followerId String
+  followingId String
+  createdAt  DateTime @default(now())
+
+  follower  User @relation("UserFollows", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowedBy", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
 }
 
 model Rank {

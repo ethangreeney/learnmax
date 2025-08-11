@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const userId = isSessionWithUser(session) ? session.user.id : null;
-    const { userQuestion, documentContent, model } = await req.json() as { userQuestion: string, documentContent: string, model?: string };
+    const { userQuestion, documentContent, model, demoMode } = await req.json() as { userQuestion: string, documentContent: string, model?: string, demoMode?: boolean };
 
     if (!userQuestion) {
       return NextResponse.json({ error: 'A question is required.' }, { status: 400 });
@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
 
       ---
       **DOCUMENT CONTENT (for context, if available):**
-      ${documentContent || 'No document has been provided yet.'}
+      ${documentContent && documentContent.trim().length > 0
+        ? documentContent
+        : (demoMode ? 'Demo note: The lesson content should be available. If this appears, proceed using general knowledge but do not claim the document is empty.'
+          : 'No document has been provided yet.')}
       ---
       
       **USER'S QUESTION:**
@@ -55,7 +58,8 @@ export async function POST(req: NextRequest) {
             const used = model || process.env.GEMINI_MODEL || 'default';
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', debug: { model: used, ms } })}\n\n`));
             controller.close();
-            if (userId) { try { await bumpDailyStreak(userId); } catch {} }
+            // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
+            if (userId && !demoMode) { try { await bumpDailyStreak(userId); } catch {} }
           } catch (e: any) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: e?.message || 'stream failed' })}\n\n`));
             controller.close();
@@ -77,7 +81,8 @@ export async function POST(req: NextRequest) {
     const aiTextResponse = await generateText(systemPrompt, model);
     const ms = Date.now() - t0;
     const used = model || process.env.GEMINI_MODEL || 'default';
-    if (userId) {
+    // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
+    if (userId && !demoMode) {
       await bumpDailyStreak(userId);
     }
     return NextResponse.json({ response: aiTextResponse, debug: { model: used, ms } });

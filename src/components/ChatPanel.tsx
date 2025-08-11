@@ -59,6 +59,8 @@ type Message = {
 
 type ChatPanelProps = {
   documentContent: string;
+  intro?: string;
+  demoMode?: boolean;
 };
 
 async function postJSON<T>(url: string, body: any): Promise<T> {
@@ -67,9 +69,9 @@ async function postJSON<T>(url: string, body: any): Promise<T> {
   return res.json();
 }
 
-export default function ChatPanel({ documentContent }: ChatPanelProps) {
+export default function ChatPanel({ documentContent, intro, demoMode }: ChatPanelProps) {
   const [history, setHistory] = useState<Message[]>([
-    { sender: 'ai', text: "I'm your AI Tutor. Ask me anything about the content on the left!" }
+    { sender: 'ai', text: intro || "I'm your AI Tutor. Ask me anything about the content on the left!" }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -117,7 +119,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
         const res = await fetch('/api/chat?' + qs.toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userQuestion: userMessage.text, documentContent, model }),
+          body: JSON.stringify({ userQuestion: userMessage.text, documentContent, model, demoMode: Boolean(demoMode) }),
         });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
@@ -170,6 +172,7 @@ export default function ChatPanel({ documentContent }: ChatPanelProps) {
           userQuestion: userMessage.text,
           documentContent,
           model,
+          demoMode: Boolean(demoMode),
         });
         const aiMessage: Message = { sender: 'ai', text: sanitizeMd(res.response) };
         setHistory(prev => [...prev, aiMessage]);

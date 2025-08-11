@@ -40,7 +40,7 @@ export default function HomePage() {
   function PrefetchRoutes() {
     const router = useRouter();
     useEffect(() => {
-      ['/dashboard', '/learn'].forEach((r) => {
+      ['/dashboard', '/learn', '/example'].forEach((r) => {
         try { router.prefetch(r); } catch {}
       });
     }, [router]);
@@ -64,7 +64,12 @@ export default function HomePage() {
     >
       Optimize Your First Lecture
     </Link>
-   
+    <Link
+      href="/example"
+      className="btn-ghost border border-neutral-700 hover:border-neutral-500"
+    >
+      View example lesson
+    </Link>
   </div>
         </div>
         <div className="w-full mt-12">

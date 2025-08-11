@@ -13,6 +13,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof body.username === 'string') data.username = body.username.trim().slice(0, 40).toLowerCase();
     if (typeof body.bio === 'string') data.bio = body.bio.trim().slice(0, 280);
     if (typeof body.image === 'string') data.image = body.image.trim();
+    if (typeof body.leaderboardOptOut === 'boolean') data.leaderboardOptOut = !!body.leaderboardOptOut;
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'No valid fields' }, { status: 400 });
@@ -24,7 +25,7 @@ export async function PATCH(req: NextRequest) {
       if (exists) return NextResponse.json({ error: 'Username taken' }, { status: 409 });
     }
 
-    const user = await prisma.user.update({ where: { id: userId }, data, select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true } });
+    const user = await prisma.user.update({ where: { id: userId }, data, select: { id: true, name: true, username: true, bio: true, image: true, elo: true, streak: true, leaderboardOptOut: true } });
     return NextResponse.json({ ok: true, user });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: e?.status || 500 });
@@ -65,6 +66,7 @@ export async function GET() {
             image: true,
             elo: true,
             streak: true,
+            leaderboardOptOut: true,
             _count: { select: { masteredSubtopics: true } },
           },
         });
@@ -95,6 +97,7 @@ export async function GET() {
         image: user.image || providerImage || null,
         elo: user.elo,
         streak: user.streak,
+        leaderboardOptOut: (user as any).leaderboardOptOut ?? false,
         masteredCount: user._count.masteredSubtopics,
         quiz: { totalAttempts: total, correct, accuracy },
         rank: rank ? { slug: rank.slug, name: rank.name, minElo: rank.minElo, iconUrl: rank.iconUrl } : null,
