@@ -16,7 +16,7 @@ export default async function AdminRanksPage() {
             <h1 className="text-3xl font-bold tracking-tight">Rank Icons</h1>
             <p className="text-neutral-400">Edit thresholds and upload/change icons for each rank.</p>
             <div className="card p-6">
-                <RankManagerClient initial={ranks} />
+                <RankManagerClient initialRanks={ranks} />
             </div>
         </div>
     );

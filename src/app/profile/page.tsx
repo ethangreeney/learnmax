@@ -1,7 +1,8 @@
-'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { BrainCircuit, Flame, Target, User as UserIcon, Image as ImageIcon } from 'lucide-react';
-import { upload } from '@vercel/blob/client';
+import Image from 'next/image';
+import { BrainCircuit, Flame, Target, User as UserIcon } from 'lucide-react';
+import { requireSession } from '@/lib/auth';
+import { getProfileForUser } from '@/lib/cached';
+import ProfileClient from './ProfileClient';
 
 type PublicProfile = {
   id: string;
@@ -14,128 +15,42 @@ type PublicProfile = {
   masteredCount: number;
   quiz: { totalAttempts: number; correct: number; accuracy: number };
   isAdmin?: boolean;
+  rank?: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
 };
 
-export default function ProfilePage() {
-  const [me, setMe] = useState<PublicProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
-  const [bio, setBio] = useState('');
-  const [image, setImage] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const profRes = await fetch('/api/users/me');
-        const data = await profRes.json();
-        if (!profRes.ok) throw new Error(data.error || 'Failed to load profile');
-        setMe(data.user as PublicProfile);
-        setName(data.user.name || '');
-        setUsername(data.user.username || '');
-        setBio(data.user.bio || '');
-        setImage(data.user.image || null);
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const tier = useMemo(() => {
-    const elo = me?.elo || 0;
-    if (elo >= 2000) return 'Legend';
-    if (elo >= 1700) return 'Master';
-    if (elo >= 1400) return 'Expert';
-    if (elo >= 1200) return 'Skilled';
-    return 'Learner';
-  }, [me?.elo]);
-
-  // No dynamic color; keep header consistently green per request
-
-  const tierColor = useMemo(() => {
-    const elo = me?.elo || 0;
-    if (elo >= 2000) return 'from-yellow-300 via-amber-200 to-rose-300';
-    if (elo >= 1700) return 'from-purple-300 via-indigo-300 to-cyan-300';
-    if (elo >= 1400) return 'from-green-300 via-emerald-300 to-teal-300';
-    if (elo >= 1200) return 'from-blue-300 via-cyan-300 to-sky-300';
-    return 'from-neutral-300 via-neutral-200 to-neutral-100';
-  }, [me?.elo]);
-
-  async function onSave() {
-    try {
-      const res = await fetch('/api/users/me', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, username, bio, image }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save');
-      setMe((m) => (m ? { ...m, name, username, bio, image: image || null } : m));
-    } catch (e: any) {
-      alert(e?.message || 'Save failed');
-    }
+function getRankColor(slug?: string | null): string {
+  switch (slug) {
+    case 'bronze':
+      return 'from-amber-600 via-orange-500 to-yellow-500';
+    case 'silver':
+      return 'from-gray-400 via-gray-300 to-gray-200';
+    case 'gold':
+      return 'from-yellow-400 via-yellow-300 to-amber-300';
+    case 'diamond':
+      return 'from-cyan-400 via-blue-400 to-indigo-400';
+    case 'master':
+      return 'from-purple-400 via-pink-400 to-rose-400';
+    default:
+      return 'from-neutral-300 via-neutral-200 to-neutral-100';
   }
+}
 
-  async function onPickAvatar(file: File) {
-    try {
-      if (file.type === 'image/gif') {
-        throw new Error('GIFs are not allowed for profile pictures');
-      }
-      const ext = file.type === 'image/png'
-        ? 'png'
-        : file.type === 'image/webp'
-          ? 'webp'
-          : 'jpg';
-      const pathname = `avatars/${me?.id}.${ext}`;
-      const { url } = await upload(pathname, file, {
-        access: 'public',
-        handleUploadUrl: '/api/blob/upload-url',
-        contentType: file.type,
-      });
-      const bust = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
-      setImage(bust);
-      // Persist immediately so the avatar survives reloads
-      try {
-        const res = await fetch('/api/users/me', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: bust }),
-        });
-        if (res.ok) {
-          setMe((m) => (m ? { ...m, image: bust } : m));
-        } else {
-          const data = await res.json().catch(() => ({}));
-          console.warn('Failed to persist avatar:', data);
-        }
-      } catch (persistErr) {
-        console.warn('Error persisting avatar', persistErr);
-      }
-    } catch (e: any) {
-      alert(e?.message || 'Avatar upload failed');
-    }
-  }
+async function getProfile(): Promise<PublicProfile> {
+  const session = await requireSession();
+  const userId = (session.user as any)?.id as string;
+  const me = await getProfileForUser(userId, {
+    email: (session.user as any)?.email || null,
+    providerImage: (session.user as any)?.image || null,
+  });
+  return me as PublicProfile;
+}
 
-  if (loading) {
-    return (
-      <div className="container-narrow space-y-6">
-        <div className="card h-44 animate-pulse" />
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="card h-64 animate-pulse" />
-          <div className="card h-64 animate-pulse" />
-        </div>
-      </div>
-    );
-  }
-  if (error) return <div className="container-narrow text-red-400">{error}</div>;
-  if (!me) return <div className="container-narrow">No profile.</div>;
+export default async function ProfilePage() {
+  const me = await getProfile();
+  const rankColor = getRankColor(me.rank?.slug);
 
   return (
     <div className="container-narrow space-y-10">
-      {/* Hero */}
       <section className="relative overflow-hidden card">
         <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
         <div className="p-5 md:p-6 pb-8 md:pb-10">
@@ -143,13 +58,14 @@ export default function ProfilePage() {
             <div className="flex items-center gap-4 min-w-0 flex-1">
               <div className="relative self-center top-[6px]">
                 <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
-                  {image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={image}
+                  {me.image ? (
+                    <Image
+                      src={me.image}
                       alt="avatar"
+                      width={80}
+                      height={80}
                       className="h-full w-full object-cover"
-                      referrerPolicy="no-referrer"
+                      priority
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-neutral-500">
@@ -164,9 +80,19 @@ export default function ProfilePage() {
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
                     {me.name || 'Your Profile'}
                   </h1>
-                  <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}
-                  >
-                    <span className={`bg-gradient-to-r ${tierColor} bg-clip-text text-transparent font-semibold`}>{tier}</span>
+                  <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}>
+                    {me.rank?.iconUrl && (
+                      <Image
+                        src={me.rank.iconUrl}
+                        alt={me.rank.name}
+                        width={16}
+                        height={16}
+                        className="h-4 w-4 object-contain"
+                      />
+                    )}
+                    <span className={`bg-gradient-to-r ${rankColor} bg-clip-text text-transparent font-semibold`}>
+                      {me.rank?.name || 'Unranked'}
+                    </span>
                     <span className="text-neutral-400">Elo {me.elo}</span>
                   </span>
                 </div>
@@ -185,40 +111,8 @@ export default function ProfilePage() {
       </section>
 
       <section className="grid gap-6 md:grid-cols-2">
-        {/* Edit card */}
-        <div className="card p-6 space-y-5">
-          <h2 className="text-xl font-semibold">Edit Profile</h2>
-          <div className="grid gap-4">
-            <label className="grid gap-2 text-sm">
-              <span className="muted">Name</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} className="input" />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="muted">Username</span>
-              <input value={username} onChange={(e) => setUsername(e.target.value)} className="input" placeholder="your-handle" />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="muted">Bio</span>
-              <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} className="input" />
-            </label>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="btn-ghost cursor-pointer">
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={(e) => e.target.files && onPickAvatar(e.target.files[0])}
-              />
-              <ImageIcon className="h-4 w-4" />
-              Change Avatar
-            </label>
-            <button onClick={onSave} className="btn-primary">Save Changes</button>
-          </div>
-          {error && <div className="text-sm text-red-400">{error}</div>}
-        </div>
+        <ProfileClient initialUser={me} />
 
-        {/* Stats card */}
         <div className="card p-6">
           <h2 className="text-xl font-semibold mb-4">Learning Stats</h2>
           <div className="grid gap-4 sm:grid-cols-3">
