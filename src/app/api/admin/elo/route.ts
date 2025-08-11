@@ -18,9 +18,9 @@ export async function POST(req: Request) {
         // Invalidate leaderboard caches for both periods/scopes for this viewer
         try {
             revalidateTag(`leaderboard:all:global:${userId}`);
-            revalidateTag(`leaderboard:all:friends:${userId}`);
+            revalidateTag(`leaderboard:all:following:${userId}`);
             revalidateTag(`leaderboard:30d:global:${userId}`);
-            revalidateTag(`leaderboard:30d:friends:${userId}`);
+            revalidateTag(`leaderboard:30d:following:${userId}`);
         } catch { }
 
         return NextResponse.json({ ok: true, user: { id: user.id, elo: user.elo } });

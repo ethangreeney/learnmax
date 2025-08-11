@@ -40,7 +40,7 @@ function getTier(elo: number): { name: string; gradient: string } {
 }
 
 export default function LeaderboardClient() {
-  const [scope, setScope] = useState<'global' | 'friends'>('global');
+  const [scope, setScope] = useState<'global' | 'following'>('global');
   const [timeframe, setTimeframe] = useState<'all' | '30d'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,10 +82,10 @@ export default function LeaderboardClient() {
             Global
           </button>
           <button
-            className={`px-3 py-1 text-sm ${scope === 'friends' ? 'bg-neutral-800 text-white' : 'bg-neutral-900 text-neutral-300'}`}
-            onClick={() => setScope('friends')}
+            className={`px-3 py-1 text-sm ${scope === 'following' ? 'bg-neutral-800 text-white' : 'bg-neutral-900 text-neutral-300'}`}
+            onClick={() => setScope('following')}
           >
-            Friends
+            Following
           </button>
         </div>
         <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800">

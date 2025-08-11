@@ -13,9 +13,8 @@ export async function GET(req: NextRequest) {
     const session = await requireSession();
     const meId = (session.user as any)?.id as string;
     const { searchParams } = new URL(req.url);
-    const scope = (searchParams.get('scope') || 'global').toLowerCase() as
-      | 'global'
-      | 'friends';
+    const rawScope = (searchParams.get('scope') || 'global').toLowerCase();
+    const scope = (rawScope === 'following' || rawScope === 'friends' ? 'following' : 'global') as 'global' | 'following';
     const timeframe = parseTimeframe(searchParams.get('timeframe'));
     const limit = Math.min(
       100,
@@ -27,9 +26,9 @@ export async function GET(req: NextRequest) {
         ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
         : null;
 
-    // Determine candidate user IDs if friends scope
+    // Determine candidate user IDs if following scope
     let candidateUserIds: string[] | null = null;
-    if (scope === 'friends') {
+    if (scope === 'following') {
       const friends = await prisma.follow.findMany({
         where: { followerId: meId },
         select: { followingId: true },

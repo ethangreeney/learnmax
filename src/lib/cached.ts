@@ -29,11 +29,11 @@ export async function getUserStatsCached(userId: string) {
           // Persist max so lifetime never decreases even if current does
           try {
             await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = GREATEST(COALESCE("lifetimeLecturesCreated", 0), ${currentLectureCount}), "lifetimeSubtopicsMastered" = GREATEST(COALESCE("lifetimeSubtopicsMastered", 0), ${masteredCount}) WHERE "id" = ${userId}`;
-          } catch {}
+          } catch { }
           lifetimeLecturesCreated = Math.max(lifetimeLecturesCreated, currentLectureCount);
           lifetimeSubtopicsMastered = Math.max(lifetimeSubtopicsMastered, masteredCount);
         }
-      } catch {}
+      } catch { }
       return {
         user: userLite,
         masteredCount,
@@ -179,18 +179,18 @@ export async function getProfileForUser(
     quiz: { totalAttempts: total, correct, accuracy },
     rank: rank
       ? {
-          slug: (rank as any).slug,
-          name: (rank as any).name,
-          minElo: (rank as any).minElo,
-          iconUrl: (rank as any).iconUrl,
-        }
+        slug: (rank as any).slug,
+        name: (rank as any).name,
+        minElo: (rank as any).minElo,
+        iconUrl: (rank as any).iconUrl,
+      }
       : null,
     isAdmin,
   };
 }
 
 export type LeaderboardPeriod = 'all' | '30d';
-export type LeaderboardScope = 'global' | 'friends';
+export type LeaderboardScope = 'global' | 'following';
 export type LeaderboardItem = {
   id: string;
   name: string | null;
@@ -211,23 +211,23 @@ export async function getLeaderboardCached(period: LeaderboardPeriod, scope: Lea
         return rr ? { slug: rr.slug, name: rr.name, minElo: rr.minElo, iconUrl: rr.iconUrl } : null;
       };
 
-      let friendIds: string[] | null = null;
-      if (scope === 'friends' && viewerId) {
+      let followingIds: string[] | null = null;
+      if (scope === 'following' && viewerId) {
         try {
           const rows = await (prisma as any).follow.findMany({
             where: { followerId: viewerId },
             select: { followingId: true },
           });
-          friendIds = [viewerId, ...rows.map((r: any) => r.followingId)];
+          followingIds = [viewerId, ...rows.map((r: any) => r.followingId)];
         } catch {
-          friendIds = [viewerId];
+          followingIds = [viewerId];
         }
       }
 
       if (period === '30d') {
         const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const baseWhere: any = { createdAt: { gte: since } };
-        if (friendIds && friendIds.length > 0) baseWhere.userId = { in: friendIds };
+        if (followingIds && followingIds.length > 0) baseWhere.userId = { in: followingIds };
         const grouped = await prisma.userMastery.groupBy({
           by: ['userId'],
           where: baseWhere,
@@ -262,7 +262,7 @@ export async function getLeaderboardCached(period: LeaderboardPeriod, scope: Lea
 
       // Default: all-time ordered by Elo
       const users = await prisma.user.findMany({
-        where: friendIds && friendIds.length > 0 ? { id: { in: friendIds } } : undefined,
+        where: followingIds && followingIds.length > 0 ? { id: { in: followingIds } } : undefined,
         select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
         orderBy: { elo: 'desc' },
         take: 50,

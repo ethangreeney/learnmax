@@ -5,14 +5,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 
-function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'friends' }) {
+function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'following' }) {
   const pill = 'px-3 py-1 rounded hover:bg-neutral-900/60';
   const active = 'bg-neutral-900/80 ring-1 ring-neutral-800';
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-2 text-sm">
         <a href="/leaderboard" className={`${pill} ${scope === 'global' ? active : ''}`}>Global</a>
-        <a href="/leaderboard?scope=friends" className={`${pill} ${scope === 'friends' ? active : ''}`}>Friends</a>
+        <a href="/leaderboard?scope=following" className={`${pill} ${scope === 'following' ? active : ''}`}>Following</a>
       </div>
       <div className="h-5 w-px bg-neutral-800" />
       <div className="flex items-center gap-2 text-sm">
@@ -26,7 +26,8 @@ function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'fri
 export default async function LeaderboardPage({ searchParams }: { searchParams?: Promise<{ period?: string; scope?: string }> }) {
   const sp = (await searchParams) || {};
   const period = sp.period === '30d' ? '30d' : 'all';
-  const scope: 'global' | 'friends' = sp.scope === 'friends' ? 'friends' : 'global';
+  const scope: 'global' | 'following' =
+    sp.scope === 'following' || sp.scope === 'friends' ? 'following' : 'global';
   const session = await getServerSession(authOptions).catch(() => null);
   const viewerId = (session as any)?.user?.id as string | undefined;
   const items: LeaderboardItem[] = await getLeaderboardCached(period, scope, viewerId || null);
