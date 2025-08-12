@@ -4,6 +4,7 @@ import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
 import { getRankGradient } from '@/lib/ranks';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'following' }) {
@@ -31,7 +32,14 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
     sp.scope === 'following' || sp.scope === 'friends' ? 'following' : 'global';
   const session = await getServerSession(authOptions).catch(() => null);
   const viewerId = (session as any)?.user?.id as string | undefined;
-  const items: LeaderboardItem[] = await getLeaderboardCached(period, scope, viewerId || null);
+  const [items, viewer] = await Promise.all([
+    getLeaderboardCached(period, scope, viewerId || null),
+    viewerId
+      ? prisma.user
+          .findUnique({ where: { id: viewerId }, select: { elo: true } })
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <div className="container-narrow space-y-6">
@@ -39,7 +47,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
         <h1 className="text-3xl font-bold tracking-tight">Leaderboard</h1>
         <div className="flex items-center gap-3">
           <Tabs period={period} scope={scope} />
-          <RankGuide label="Ranks" />
+          <RankGuide label="Ranks" initialElo={viewer ? viewer.elo : undefined} />
         </div>
       </div>
 
