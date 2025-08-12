@@ -40,6 +40,56 @@ export default function RankGuide({
     return () => document.removeEventListener('keydown', onKey, true);
   }, [isOpen]);
 
+  // Keep the viewer's ELO fresh so the gradient color matches their current rank immediately
+  const refreshIfIncreased = async () => {
+    try {
+      const res = await fetch('/api/users/me', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => ({}))) as any;
+      const newElo = Number(data?.user?.elo ?? 0);
+      if (Number.isFinite(newElo)) {
+        setViewerElo((prev) => (newElo > (prev || 0) ? Math.max(0, newElo) : prev));
+      }
+    } catch {}
+  };
+
+  // Seed ELO on mount so the label gradient reflects the user's rank without needing to hover/open first
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/users/me', { cache: 'no-store' });
+        if (res.ok) {
+          const data = (await res.json().catch(() => ({}))) as any;
+          const elo = Number(data?.user?.elo ?? 0);
+          if (Number.isFinite(elo)) setViewerElo(Math.max(0, elo));
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Listen for global ELO events to update the gradient instantly when the user ranks up
+  useEffect(() => {
+    const onDelta = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const delta = Number(detail?.delta ?? 0);
+      if (!Number.isFinite(delta)) return;
+      setViewerElo((prev) => Math.max(0, Math.round((prev || 0) + Math.trunc(delta))));
+    };
+    const onMaybeRefresh = () => {
+      void refreshIfIncreased();
+    };
+    try {
+      window.addEventListener('elo:delta', onDelta as EventListener);
+      window.addEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
+    } catch {}
+    return () => {
+      try {
+        window.removeEventListener('elo:delta', onDelta as EventListener);
+        window.removeEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
+      } catch {}
+    };
+  }, []);
+
   const ensureRanksLoaded = async () => {
     if (loadingRanks) return;
     setLoadingRanks(true);
