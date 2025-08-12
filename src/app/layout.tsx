@@ -15,8 +15,9 @@ export const metadata: Metadata = {
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/dashboard', label: 'Dashboard' },
-  { href: '/learn', label: 'Learn' },
   { href: '/leaderboard', label: 'Leaderboard' },
+  // Keep Learn as the rightmost link for prominence
+  { href: '/learn', label: 'Learn' },
 ];
 export default async function RootLayout({
   children,

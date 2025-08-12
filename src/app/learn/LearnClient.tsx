@@ -58,7 +58,7 @@ export default function LearnClient() {
   return (
     <div className="card space-y-4 p-5">
       <textarea
-        className="input min-h-[160px]"
+        className="input min-h-[160px] py-3"
         placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
         value={input}
         onChange={(e) => setInput(e.target.value)}
