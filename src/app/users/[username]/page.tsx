@@ -111,7 +111,7 @@ export default async function PublicProfilePage({
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {isSelf && <RankGuide label="Rank Guide" />}
+              {isSelf && <RankGuide label="Rank Guide" initialElo={user.elo} />}
               {!isSelf && <FollowButton targetUserId={user.id} />}
             </div>
           </div>

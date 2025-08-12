@@ -83,7 +83,7 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
               <p className="mt-1 text-sm text-neutral-400">{user.username ? `@${user.username}` : '—'}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {isSelf && <RankGuide label="Rank Guide" />}
+              {isSelf && <RankGuide label="Rank Guide" initialElo={user.elo} />}
               {!isSelf && <FollowButton targetUserId={user.id} />}
             </div>
           </div>

@@ -163,7 +163,7 @@ export default async function Dashboard() {
                     View public profile
                   </a>
                   <span className="text-neutral-700">•</span>
-                  <RankGuide label="Rank guide" />
+                  <RankGuide label="Rank guide" initialElo={me.elo} />
                 </div>
                 {/* Mobile rank */}
                 <div className="mt-3 flex flex-wrap items-center gap-2 md:hidden">

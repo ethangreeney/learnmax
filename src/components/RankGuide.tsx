@@ -12,16 +12,21 @@ type RankItem = { slug: string; name: string; minElo: number; iconUrl?: string |
 export default function RankGuide({
   buttonClassName,
   label = 'Rank Guide',
+  initialElo,
 }: {
   buttonClassName?: string;
   label?: string;
+  initialElo?: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [portalEl, setPortalEl] = useState<Element | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const [ranks, setRanks] = useState<RankItem[]>(RANKS_FALLBACK);
   const [loadingRanks, setLoadingRanks] = useState(false);
-  const [viewerElo, setViewerElo] = useState<number>(0);
+  const [viewerElo, setViewerElo] = useState<number>(() => {
+    const n = Number(initialElo);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+  });
 
   useEffect(() => {
     setPortalEl(typeof document !== 'undefined' ? document.body : null);
@@ -47,9 +52,7 @@ export default function RankGuide({
       if (!res.ok) return;
       const data = (await res.json().catch(() => ({}))) as any;
       const newElo = Number(data?.user?.elo ?? 0);
-      if (Number.isFinite(newElo)) {
-        setViewerElo((prev) => (newElo > (prev || 0) ? Math.max(0, newElo) : prev));
-      }
+      if (Number.isFinite(newElo)) setViewerElo(Math.max(0, newElo));
     } catch {}
   };
 
@@ -75,16 +78,24 @@ export default function RankGuide({
       if (!Number.isFinite(delta)) return;
       setViewerElo((prev) => Math.max(0, Math.round((prev || 0) + Math.trunc(delta))));
     };
+    const onDeltaOptimistic = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const delta = Number(detail?.delta ?? 0);
+      if (!Number.isFinite(delta)) return;
+      setViewerElo((prev) => Math.max(0, Math.round((prev || 0) + Math.trunc(delta))));
+    };
     const onMaybeRefresh = () => {
       void refreshIfIncreased();
     };
     try {
       window.addEventListener('elo:delta', onDelta as EventListener);
+      window.addEventListener('elo:deltaOptimistic', onDeltaOptimistic as EventListener);
       window.addEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
     } catch {}
     return () => {
       try {
         window.removeEventListener('elo:delta', onDelta as EventListener);
+        window.removeEventListener('elo:deltaOptimistic', onDeltaOptimistic as EventListener);
         window.removeEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
       } catch {}
     };
