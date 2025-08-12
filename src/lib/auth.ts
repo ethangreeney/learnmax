@@ -11,6 +11,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!, // or GOOGLE_CLIENT_ID
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!, // or GOOGLE_CLIENT_SECRET
+      allowDangerousEmailAccountLinking: true,
     }),
   ],
   session: { strategy: 'jwt' }, // keep JWT sessions; adapter still persists User/Account
