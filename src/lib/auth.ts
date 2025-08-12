@@ -28,6 +28,21 @@ export const authOptions: NextAuthOptions = {
         (session.user as { id?: string }).id = (token.sub ||
           token.id ||
           '') as string;
+        // Prefer the stored profile image from our database over the provider image
+        try {
+          const userId = (token.sub || token.id) as string | undefined;
+          if (userId) {
+            const dbUser = await prisma.user.findUnique({
+              where: { id: userId },
+              select: { image: true },
+            });
+            if (dbUser?.image) {
+              (session.user as { image?: string | null }).image = dbUser.image;
+            }
+          }
+        } catch {
+          // Silently ignore; fall back to whatever image NextAuth provided
+        }
       }
       return session;
     },

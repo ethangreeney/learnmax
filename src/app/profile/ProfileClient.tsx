@@ -138,12 +138,12 @@ export default function ProfileClient({
         </label>
         <label className="grid gap-2 text-sm">
           <span className="muted">Username</span>
-          <div className={`relative`}> 
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">@</span>
+          <div className={`flex h-10 items-center rounded-md bg-neutral-900/80 ${username && !usernameValid ? 'ring-1 ring-red-500' : 'ring-1 ring-neutral-700'}`}>
+            <span className="pl-3 pr-1 text-neutral-500 select-none" aria-hidden="true">@</span>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase())}
-              className={`input h-10 pl-8 ${username && !usernameValid ? 'ring-red-500' : ''}`}
+              className="w-full bg-transparent px-2 text-sm outline-none"
               placeholder="your_handle"
               autoComplete="off"
             />
@@ -160,7 +160,7 @@ export default function ProfileClient({
             onChange={(e) => setBio(e.target.value.slice(0, bioLimit))}
             rows={4}
             maxLength={bioLimit}
-            className="input"
+            className="input p-4"
             placeholder="Share a little about what you're learning…"
           />
           <div className="flex items-center justify-between text-xs text-neutral-500">

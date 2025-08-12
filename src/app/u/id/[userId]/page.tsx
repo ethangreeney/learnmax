@@ -53,8 +53,13 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
 
   return (
     <div className="container-narrow space-y-8">
-      <section className="relative overflow-hidden card">
-        <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-transparent" />
+      <section className="card relative overflow-hidden">
+        {/* Decorative background to match external profile view */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-20 -top-20 h-56 w-56 rounded-full hero-spotlight" />
+          <div className="absolute inset-0 opacity-[0.35] hero-grid" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
+        </div>
         <div className="relative z-10 p-5 md:p-6 pb-8 md:pb-10">
           <div className="flex items-center gap-4">
             <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
@@ -65,7 +70,7 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
                 <div className="h-full w-full" />
               )}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{user.name || 'User'}</h1>
                 <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}>

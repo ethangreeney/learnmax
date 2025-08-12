@@ -53,7 +53,12 @@ export default function FollowButton({
 
   return (
     <button
-      className={`rounded-md px-3 py-1 text-xs ring-1 ring-neutral-800 ${isFollowing ? 'bg-neutral-800 text-white' : 'bg-neutral-900 text-neutral-300'} disabled:opacity-50`}
+      aria-pressed={isFollowing}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors ring-1 ring-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed ${
+        isFollowing
+          ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+          : 'bg-neutral-900 text-neutral-200 hover:bg-neutral-800'
+      }`}
       disabled={loading}
       onClick={toggle}
     >

@@ -12,13 +12,13 @@ function Tabs({ period, scope }: { period: 'all' | '30d'; scope: 'global' | 'fol
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-2 text-sm">
-        <a href="/leaderboard" className={`${pill} ${scope === 'global' ? active : ''}`}>Global</a>
-        <a href="/leaderboard?scope=following" className={`${pill} ${scope === 'following' ? active : ''}`}>Following</a>
+        <a href={`/leaderboard?scope=global&period=${period}`} className={`${pill} ${scope === 'global' ? active : ''}`}>Global</a>
+        <a href={`/leaderboard?scope=following&period=${period}`} className={`${pill} ${scope === 'following' ? active : ''}`}>Following</a>
       </div>
       <div className="h-5 w-px bg-neutral-800" />
       <div className="flex items-center gap-2 text-sm">
-        <a href="/leaderboard" className={`${pill} ${period === 'all' ? active : ''}`}>All-time</a>
-        <a href="/leaderboard?period=30d" className={`${pill} ${period === '30d' ? active : ''}`}>30 days</a>
+        <a href={`/leaderboard?scope=${scope}&period=all`} className={`${pill} ${period === 'all' ? active : ''}`}>All-time</a>
+        <a href={`/leaderboard?scope=${scope}&period=30d`} className={`${pill} ${period === '30d' ? active : ''}`}>30 days</a>
       </div>
     </div>
   );
