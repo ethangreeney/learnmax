@@ -10,10 +10,11 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-// Centralized options for interactive transactions. Defaults to 10s, configurable via env.
-const DEFAULT_TX_MS = parseInt(process.env.PRISMA_TX_TIMEOUT_MS || '10000', 10);
+// Centralized options for interactive transactions. Defaults are generous to avoid premature timeouts.
+// Override with env vars PRISMA_TX_TIMEOUT_MS and PRISMA_TX_MAX_WAIT_MS as needed.
+const DEFAULT_TX_MS = parseInt(process.env.PRISMA_TX_TIMEOUT_MS || '45000', 10);
 const DEFAULT_TX_MAX_WAIT_MS = parseInt(
-  process.env.PRISMA_TX_MAX_WAIT_MS || String(DEFAULT_TX_MS),
+  process.env.PRISMA_TX_MAX_WAIT_MS || '60000',
   10
 );
 

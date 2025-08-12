@@ -36,11 +36,19 @@ export default function ProfileClient({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const USERNAME_RULE = /^[a-z0-9_]{3,20}$/; // a-z, 0-9, underscore, 3-20 chars
+  const usernameValid = username.length === 0 || USERNAME_RULE.test(username);
+  const bioLimit = 240;
 
   async function onSave() {
     setSaving(true);
     setError(null);
     try {
+      if (username && !USERNAME_RULE.test(username)) {
+        throw new Error('Username can only contain a-z, 0-9, _ and be 3–20 chars');
+      }
       const res = await fetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -50,6 +58,7 @@ export default function ProfileClient({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to save');
       }
+      setSavedAt(Date.now());
     } catch (e: any) {
       setError(e?.message || 'Save failed');
     } finally {
@@ -70,7 +79,7 @@ export default function ProfileClient({
   }
 
   return (
-    <div className="card space-y-5 p-6">
+    <div className="card space-y-6 p-6">
       {cropSrc && (
         <AvatarCropper
           src={cropSrc}
@@ -106,36 +115,62 @@ export default function ProfileClient({
           }}
         />
       )}
-      <h2 className="text-xl font-semibold">Edit Profile</h2>
-      <div className="grid gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Edit Profile</h2>
+        {savedAt && (
+          <div className="text-xs text-neutral-500">Saved just now</div>
+        )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-2 text-sm">
           <span className="muted">Name</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="input"
+            className="input h-10"
+            placeholder="Display name"
           />
+          {/* Spacer to align with Username helper text on md+ screens */}
+          <span className="hidden text-xs invisible md:block" aria-hidden="true">
+            Use a–z, 0–9, underscore. 3–20 characters.
+          </span>
         </label>
         <label className="grid gap-2 text-sm">
           <span className="muted">Username</span>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="input"
-            placeholder="your-handle"
-          />
+          <div className={`relative`}> 
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">@</span>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase())}
+              className={`input h-10 pl-8 ${username && !usernameValid ? 'ring-red-500' : ''}`}
+              placeholder="your_handle"
+              autoComplete="off"
+            />
+          </div>
+          <span className={`text-xs ${username && !usernameValid ? 'text-red-400' : 'text-neutral-500'}`}>
+            Use a–z, 0–9, underscore. 3–20 characters.
+          </span>
         </label>
-        <label className="grid gap-2 text-sm">
+
+        <label className="md:col-span-2 grid gap-2 text-sm">
           <span className="muted">Bio</span>
           <textarea
             value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            rows={3}
+            onChange={(e) => setBio(e.target.value.slice(0, bioLimit))}
+            rows={4}
+            maxLength={bioLimit}
             className="input"
+            placeholder="Share a little about what you're learning…"
           />
+          <div className="flex items-center justify-between text-xs text-neutral-500">
+            <span>Visible on your public profile.</span>
+            <span>{bio.length}/{bioLimit}</span>
+          </div>
         </label>
       </div>
-      <div className="flex items-center gap-3">
+
+      <div className="flex flex-wrap items-center gap-3">
         <label className="btn-ghost cursor-pointer">
           <input
             type="file"
@@ -146,11 +181,11 @@ export default function ProfileClient({
           <ImageIcon className="h-4 w-4" />
           Change Avatar
         </label>
-        <button onClick={onSave} disabled={saving} className="btn-primary">
+        <button onClick={onSave} disabled={saving || (!!username && !usernameValid)} className="btn-primary">
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
-      {error && <div className="text-sm text-red-400">{error}</div>}
+      {error && <div className="text-sm text-red-400" aria-live="polite">{error}</div>}
     </div>
   );
 }

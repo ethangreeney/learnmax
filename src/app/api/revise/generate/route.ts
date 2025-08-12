@@ -113,7 +113,10 @@ LESSON:
 ${lessonMd.slice(0, 6000)}
 ---`;
       try {
-        const json: any = await generateJSON(prompt, 'gemini-2.5-flash');
+        const json: any = await generateJSON(
+          prompt,
+          process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
+        );
         const arr = Array.isArray(json?.questions) ? json.questions : [];
         for (const q of arr) {
           const p = String(q?.prompt || '').trim();

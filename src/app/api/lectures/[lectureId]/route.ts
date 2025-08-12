@@ -2,7 +2,7 @@ import { isSessionWithUser } from '@/lib/session-utils';
 
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
-import prisma, { INTERACTIVE_TX_OPTIONS } from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { revalidateTag } from 'next/cache';
 import { authOptions } from '@/lib/auth';
@@ -101,38 +101,53 @@ export async function DELETE(
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Preflight: detect optional tables that might not exist in older dev DBs
-    const qaRows = (await prisma.$queryRaw<any[]>`SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'QuizAttempt'
-    ) AS exists`) || [];
-    const ulcRows = (await prisma.$queryRaw<any[]>`SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'UserLectureCompletion'
-    ) AS exists`) || [];
-    const hasQuizAttempt = Boolean(qaRows[0]?.exists);
-    const hasUserLectureCompletion = Boolean(ulcRows[0]?.exists);
+    // Preflight: detect optional tables that might not exist in older dev DBs (single round-trip)
+    const existsRow = (
+      (await prisma.$queryRaw<any[]>`SELECT 
+        to_regclass('public."QuizAttempt"') IS NOT NULL AS qa,
+        to_regclass('public."UserLectureCompletion"') IS NOT NULL AS ulc,
+        to_regclass('public."QuizProgress"') IS NOT NULL AS qp,
+        to_regclass('public."QuizReset"') IS NOT NULL AS qr,
+        to_regclass('public."TutorMessage"') IS NOT NULL AS tm,
+        to_regclass('public."TutorReset"') IS NOT NULL AS tr
+      `) || []
+    )[0] || {};
+    const hasQuizAttempt = Boolean(existsRow.qa);
+    const hasUserLectureCompletion = Boolean(existsRow.ulc);
+    const hasQuizProgress = Boolean(existsRow.qp);
+    const hasQuizReset = Boolean(existsRow.qr);
+    const hasTutorMessage = Boolean(existsRow.tm);
+    const hasTutorReset = Boolean(existsRow.tr);
 
-    // Robust cascade: explicitly remove dependent records to avoid issues across environments
-    await prisma.$transaction(async (tx) => {
-      // Attempts -> Questions -> Mastery -> Subtopics -> Completions -> Lecture
-      if (hasQuizAttempt) {
-        await tx.quizAttempt.deleteMany({
-          where: { question: { subtopic: { lectureId } } },
-        });
-      }
-      await tx.quizQuestion.deleteMany({ where: { subtopic: { lectureId } } });
-      await tx.userMastery.deleteMany({ where: { subtopic: { lectureId } } });
-      await tx.subtopic.deleteMany({ where: { lectureId } });
-      if (hasUserLectureCompletion) {
-        await tx.userLectureCompletion.deleteMany({ where: { lectureId } });
-        await tx.lecture.delete({ where: { id: lectureId } });
-      } else {
-        // In dev environments missing the completions table, bypass Prisma's
-        // relation engine to avoid it referencing the missing table.
-        await tx.$executeRaw`DELETE FROM "public"."Lecture" WHERE "id" = ${lectureId}`;
-      }
-    }, INTERACTIVE_TX_OPTIONS);
+    // Ultra-fast single-roundtrip cascade using CTEs in one SQL statement.
+    // Only include CTEs for tables that exist (based on preflight flags) to keep this robust across environments.
+    const ctes: string[] = [];
+    ctes.push(`s AS (SELECT "id" FROM "public"."Subtopic" WHERE "lectureId" = $1)`);
+    ctes.push(`q AS (SELECT "id" FROM "public"."QuizQuestion" WHERE "subtopicId" IN (SELECT "id" FROM s))`);
+    if (hasQuizAttempt) {
+      ctes.push(`qa AS (DELETE FROM "public"."QuizAttempt" WHERE "questionId" IN (SELECT "id" FROM q) RETURNING 1)`);
+    }
+    if (hasQuizProgress) {
+      ctes.push(`qpq AS (DELETE FROM "public"."QuizProgress" WHERE "questionId" IN (SELECT "id" FROM q) RETURNING 1)`);
+      ctes.push(`qps AS (DELETE FROM "public"."QuizProgress" WHERE "subtopicId" IN (SELECT "id" FROM s) RETURNING 1)`);
+    }
+    if (hasQuizReset) {
+      ctes.push(`qr AS (DELETE FROM "public"."QuizReset" WHERE "subtopicId" IN (SELECT "id" FROM s) RETURNING 1)`);
+    }
+    ctes.push(`qq AS (DELETE FROM "public"."QuizQuestion" WHERE "id" IN (SELECT "id" FROM q) RETURNING 1)`);
+    ctes.push(`um AS (DELETE FROM "public"."UserMastery" WHERE "subtopicId" IN (SELECT "id" FROM s) RETURNING 1)`);
+    if (hasTutorMessage) {
+      ctes.push(`tm AS (DELETE FROM "public"."TutorMessage" WHERE "lectureId" = $1 RETURNING 1)`);
+    }
+    if (hasTutorReset) {
+      ctes.push(`tr AS (DELETE FROM "public"."TutorReset" WHERE "lectureId" = $1 RETURNING 1)`);
+    }
+    ctes.push(`ds AS (DELETE FROM "public"."Subtopic" WHERE "id" IN (SELECT "id" FROM s) RETURNING 1)`);
+    if (hasUserLectureCompletion) {
+      ctes.push(`ulc AS (DELETE FROM "public"."UserLectureCompletion" WHERE "lectureId" = $1 RETURNING 1)`);
+    }
+    const sql = `WITH ${ctes.join(',\n')}\nDELETE FROM "public"."Lecture" WHERE "id" = $1`;
+    await (prisma as any).$executeRawUnsafe(sql, lectureId);
     try {
       revalidateTag(`user-lectures:${userId}`);
     } catch {}

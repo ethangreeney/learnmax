@@ -32,11 +32,16 @@ export default function CompletePage() {
     if (!id) return;
     (async () => {
       try {
-        await fetch('/api/lectures/complete', {
+        const res = await fetch('/api/lectures/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lectureId: id }),
         });
+        if (res.ok) {
+          try {
+            window.dispatchEvent(new Event('elo:maybeRefresh'));
+          } catch {}
+        }
       } catch {}
     })();
   }, [params?.lectureId]);

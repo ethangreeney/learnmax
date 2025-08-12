@@ -84,7 +84,7 @@ body {
   @apply bg-neutral-800/60;
 }
 .input {
-  @apply w-full rounded-md bg-neutral-900/80 px-3 py-2 text-sm ring-1 ring-neutral-700 outline-none;
+  @apply w-full rounded-md bg-neutral-900/80 px-3 text-sm ring-1 ring-neutral-700 outline-none;
 }
 .muted {
   color: rgb(var(--muted));
@@ -402,3 +402,51 @@ body[data-page='home'] {
   overflow: hidden !important;
   overscroll-behavior: none;
 }
+
+/* Hide navbar ELO on home page */
+body[data-page='home'] .nav-elo { display: none !important; }
+
+/* Hero background decorations */
+.hero-spotlight {
+  background: radial-gradient(
+    40% 40% at 50% 50%,
+    rgba(16, 185, 129, 0.09) 0%,
+    rgba(16, 185, 129, 0.06) 30%,
+    rgba(16, 185, 129, 0.0) 65%
+  );
+  filter: blur(64px);
+  animation: subtle-pulse 8s ease-in-out infinite;
+}
+.hero-grid {
+  --line: 255 255 255 / 0.04;
+  --line-strong: 255 255 255 / 0.08;
+  background-image:
+    linear-gradient(to right, rgba(var(--line)) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--line)) 1px, transparent 1px);
+  background-size: 60px 60px, 60px 60px;
+  mask-image: radial-gradient(60% 60% at 50% 40%, black 40%, transparent 100%);
+}
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Subtle animated shimmer for rank gradient text */
+.rank-shimmer {
+  /* Slightly faster shimmer as requested */
+  background-size: 200% 100% !important;
+  animation: rank-shimmer 2.5s ease-in-out infinite;
+}
+@keyframes rank-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rank-shimmer {
+    animation: none !important;
+  }
+}
+
+/* Slight contrast helpers for gradient-clipped text on dark backgrounds */
+/* rank-contrast removed per request */

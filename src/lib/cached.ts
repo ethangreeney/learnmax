@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 import prisma from '@/lib/prisma';
-import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
+import { getRanksSafe, pickRankForElo, type RankDef } from '@/lib/ranks';
 
 export async function getUserStatsCached(userId: string) {
   const fn = unstable_cache(
@@ -45,23 +45,23 @@ export async function getUserStatsCached(userId: string) {
       };
     },
     ['user-stats', userId],
-    { revalidate: 1, tags: [`user-stats:${userId}`] }
+    { revalidate: 30, tags: [`user-stats:${userId}`] }
   );
   return fn();
 }
 
-export async function getLecturesCached(userId: string) {
+export async function getLecturesCached(userId: string, options?: { take?: number }) {
   const fn = unstable_cache(
     async () => {
       const lectures = await prisma.lecture.findMany({
         where: { userId },
         orderBy: [{ starred: 'desc' }, { createdAt: 'desc' }],
-        take: 50,
+        take: Math.max(1, Math.min(200, options?.take ?? 50)),
         include: { _count: { select: { subtopics: true } } },
       });
       return lectures;
     },
-    ['user-lectures', userId],
+    ['user-lectures', userId, String(options?.take ?? 50)],
     { revalidate: 30, tags: [`user-lectures:${userId}`] }
   );
   return fn();
@@ -69,7 +69,14 @@ export async function getLecturesCached(userId: string) {
 
 export async function getProfileForUser(
   userId: string,
-  opts?: { email?: string | null; providerImage?: string | null }
+  opts?: {
+    email?: string | null;
+    providerImage?: string | null;
+    // Optional prefetches to avoid duplicate DB work when the caller already has these
+    stats?: Awaited<ReturnType<typeof getUserStatsCached>>;
+    ranks?: RankDef[];
+    includeQuiz?: boolean;
+  }
 ) {
   let user = await prisma.user.findUnique({
     where: { id: userId },
@@ -110,7 +117,7 @@ export async function getProfileForUser(
               email,
               name: null,
               image: opts?.providerImage || null,
-              elo: 1000,
+              elo: 0,
               streak: 0,
             },
             select: {
@@ -149,17 +156,23 @@ export async function getProfileForUser(
 
   // Align profile stats with the dashboard by sourcing the same counters
   const [stats, quizAgg] = await Promise.all([
-    getUserStatsCached(userId),
-    prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId }, _count: { _all: true } }),
+    opts?.stats ? Promise.resolve(opts.stats) : getUserStatsCached(userId),
+    opts?.includeQuiz === false
+      ? Promise.resolve([] as any)
+      : prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId }, _count: { _all: true } }),
   ]);
-  const ranks = await getRanksSafe();
+  const ranks = opts?.ranks ?? (await getRanksSafe());
   const r = pickRankForElo(ranks, user.elo);
   const rank = r ? { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl } : null;
-  const total = quizAgg.reduce(
-    (acc: number, row: { _count: { _all: number } }) => acc + row._count._all,
-    0
-  );
-  const correct = quizAgg.find((rr: any) => rr.isCorrect)?._count._all || 0;
+  const total = Array.isArray(quizAgg)
+    ? quizAgg.reduce(
+        (acc: number, row: { _count: { _all: number } }) => acc + row._count._all,
+        0
+      )
+    : 0;
+  const correct = Array.isArray(quizAgg)
+    ? quizAgg.find((rr: any) => rr.isCorrect)?._count._all || 0
+    : 0;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
   const image = user.image || opts?.providerImage || null;
   const isAdmin =

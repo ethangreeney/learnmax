@@ -13,30 +13,15 @@ type LBUser = {
 };
 
 function getTier(elo: number): { name: string; gradient: string } {
-  if (elo >= 2000)
-    return {
-      name: 'Legend',
-      gradient: 'from-yellow-300 via-amber-200 to-rose-300',
-    };
-  if (elo >= 1700)
-    return {
-      name: 'Master',
-      gradient: 'from-purple-300 via-indigo-300 to-cyan-300',
-    };
-  if (elo >= 1400)
-    return {
-      name: 'Expert',
-      gradient: 'from-green-300 via-emerald-300 to-teal-300',
-    };
+  if (elo >= 1600)
+    return { name: 'Master', gradient: 'from-fuchsia-400 via-purple-400 to-rose-400' };
   if (elo >= 1200)
-    return {
-      name: 'Skilled',
-      gradient: 'from-blue-300 via-cyan-300 to-sky-300',
-    };
-  return {
-    name: 'Learner',
-    gradient: 'from-neutral-300 via-neutral-200 to-neutral-100',
-  };
+    return { name: 'Diamond', gradient: 'from-cyan-300 via-sky-400 to-indigo-400' };
+  if (elo >= 800)
+    return { name: 'Gold', gradient: 'from-yellow-400 via-amber-300 to-orange-200' };
+  if (elo >= 400)
+    return { name: 'Silver', gradient: 'from-zinc-300 via-gray-300 to-slate-200' };
+  return { name: 'Bronze', gradient: 'from-amber-500 via-orange-500 to-yellow-500' };
 }
 
 export default function LeaderboardClient() {
@@ -166,7 +151,7 @@ export default function LeaderboardClient() {
                             className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800`}
                           >
                             <span
-                              className={`bg-gradient-to-r ${gradient} bg-clip-text font-semibold text-transparent`}
+                              className={`bg-gradient-to-r ${gradient} bg-clip-text font-semibold text-transparent rank-shimmer`}
                             >
                               {name}
                             </span>

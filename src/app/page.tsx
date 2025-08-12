@@ -1,7 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { BrainCircuit, Target, FileSearch } from 'lucide-react';
+import {
+  BrainCircuit,
+  Target,
+  FileSearch,
+  ChevronRight,
+} from 'lucide-react';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -14,9 +19,10 @@ const PillarCard = ({
   title: string;
   children: React.ReactNode;
 }) => (
-  <div className="flex h-full flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 p-5 text-left">
+  <div className="group card relative flex h-full flex-col gap-3 rounded-xl border border-neutral-800/70 bg-neutral-900/50 p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition duration-300 hover:-translate-y-0.5 hover:border-neutral-700 hover:bg-neutral-900">
+    <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 ring-1 ring-emerald-500/10 transition group-hover:opacity-100" />
     <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-neutral-700/50 text-white">
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-neutral-800/70 text-white ring-1 ring-neutral-700/60">
         <Icon className="h-5 w-5" />
       </div>
       <h3 className="text-md font-semibold">{title}</h3>
@@ -24,6 +30,20 @@ const PillarCard = ({
     <p className="text-sm leading-relaxed text-neutral-400">{children}</p>
   </div>
 );
+
+function HeroBackground() {
+  return (
+    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {/* Accent spotlight */}
+      <div className="hero-spotlight absolute left-1/2 top-[-30%] h-[120vmax] w-[120vmax] -translate-x-1/2" />
+      {/* Soft grid */}
+      <div className="hero-grid absolute inset-0" />
+      {/* Ambient glows */}
+      <div className="absolute left-[10%] top-[15%] h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
+      <div className="absolute right-[8%] top-[30%] h-72 w-72 rounded-full bg-teal-400/10 blur-3xl" />
+    </div>
+  );
+}
 
 export default function HomePage() {
   // Prevent body scroll while on home page
@@ -47,17 +67,16 @@ export default function HomePage() {
     return null;
   }
   return (
-    <div
-      className="container-narrow"
-      style={{ minHeight: 'calc(100svh - 120px)' }}
-    >
+    <div className="container-narrow relative" style={{ minHeight: 'calc(100svh - 120px)' }}>
+      <HeroBackground />
       <PrefetchRoutes />
       <div className="mx-auto flex min-h-[calc(100svh-160px)] max-w-6xl flex-col items-center justify-center text-center">
         <div className="w-full">
-          <h1 className="bg-gradient-to-b from-white via-neutral-200 to-neutral-400 bg-clip-text pb-1.5 text-4xl leading-[1.18] font-bold tracking-tight text-transparent md:text-5xl md:leading-[1.14] lg:leading-[1.12]">
-            The Science of Learning, Perfected by AI.
+          <h1 className="bg-gradient-to-b from-white via-neutral-200 to-neutral-400 bg-clip-text pb-2 text-4xl font-semibold leading-[1.06] tracking-tight text-transparent md:text-6xl lg:text-7xl">
+            The Science of Learning,
+            <br className="hidden md:block" /> Perfected by AI.
           </h1>
-          <p className="mx-auto mt-4 max-w-3xl text-base text-neutral-300 md:text-lg">
+          <p className="mx-auto mt-5 max-w-3xl text-base text-neutral-300 md:text-lg">
             Stop wasting hours on inefficient rereading. LearnMax applies proven
             cognitive science to build a hyper-efficient study path, ensuring
             you master every concept with minimal time and effort.
@@ -65,9 +84,10 @@ export default function HomePage() {
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
               href="/learn"
-              className="btn-primary shadow-lg hover:scale-105"
+              className="btn-primary btn-xl relative shadow-lg ring-1 ring-emerald-400/20 hover:scale-105"
             >
               Optimize Your First Lecture
+              <ChevronRight className="ml-0.5 h-4 w-4" />
             </Link>
             <Link
               href="/example"

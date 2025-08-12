@@ -8,6 +8,8 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import ChatPanel from '@/components/ChatPanel';
 import dynamic from 'next/dynamic';
+import { ArrowUpRight } from 'lucide-react';
+import { rankFromElo, rankGradient } from '@/lib/client/rank-colors';
 
 function GeneratingOverlayFallback(props: any) {
   const visible = Boolean(props?.visible);
@@ -254,6 +256,14 @@ export default function LearnView({
   const [isCompleted, setIsCompleted] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  // In-content ELO toast state
+  const [eloToastFrom, setEloToastFrom] = useState<number | null>(null);
+  const [eloToastTo, setEloToastTo] = useState<number | null>(null);
+  const [showEloToast, setShowEloToast] = useState<boolean>(false);
+  const eloToastTimerRef = useRef<number | null>(null);
+  const eloBaseRef = useRef<number | null>(null);
+  const lastToastAtRef = useRef<number>(0);
+  const lastToastDeltaRef = useRef<number>(0);
 
   // Generation overlay state for initial lesson build
   const [genVisible, setGenVisible] = useState(false);
@@ -302,6 +312,181 @@ export default function LearnView({
 
   // Lock body scroll while overlay is visible
   useBodyScrollLock(genVisible);
+
+  // Seed base ELO for toast animation to sync with navbar counter
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/users/me', { cache: 'no-store' });
+        const data = (await res.json().catch(() => ({}))) as any;
+        const elo = Number(data?.user?.elo ?? 0);
+        if (Number.isFinite(elo)) eloBaseRef.current = elo;
+        else eloBaseRef.current = 0;
+      } catch {
+        eloBaseRef.current = eloBaseRef.current ?? 0;
+      }
+    })();
+  }, []);
+
+  // Show a brief in-content toast when ELO increases so it's visible even if navbar is off-screen
+  useEffect(() => {
+    const onDelta = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail || {};
+        const deltaNum = Number(detail?.delta ?? 0);
+        const delta = Number.isFinite(deltaNum) ? Math.trunc(deltaNum) : 0;
+        if (delta <= 0) return;
+
+        // Coalesce duplicate events (e.g., dev StrictMode or double dispatch)
+        const now = Date.now();
+        if (delta === lastToastDeltaRef.current && now - lastToastAtRef.current < 250) {
+          return;
+        }
+        lastToastDeltaRef.current = delta;
+        lastToastAtRef.current = now;
+
+        const base = (eloBaseRef.current ?? 0);
+        const from = base;
+        const to = base + delta;
+        eloBaseRef.current = to;
+        setEloToastFrom(Math.max(0, from));
+        setEloToastTo(Math.max(0, to));
+        setShowEloToast(true);
+        if (typeof window !== 'undefined') {
+          if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
+          eloToastTimerRef.current = window.setTimeout(() => setShowEloToast(false), 1500);
+        }
+      } catch {}
+    };
+    window.addEventListener('elo:delta', onDelta as EventListener);
+    return () => {
+      window.removeEventListener('elo:delta', onDelta as EventListener);
+      try {
+        if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function EloToast({ from, to }: { from: number; to: number }) {
+    const [displayed, setDisplayed] = useState<number>(from);
+    const [glow, setGlow] = useState<boolean>(false);
+    const animFrameRef = useRef<number | null>(null);
+    const animStartRef = useRef<number>(0);
+    const animFromRef = useRef<number>(from);
+    const animToRef = useRef<number>(to);
+    const prefersReducedRef = useRef<boolean>(false);
+
+    const DURATION_MS = 700;
+
+    const isReducedMotion = (): boolean => {
+      try {
+        if (typeof window === 'undefined' || !window.matchMedia) return false;
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      } catch {
+        return false;
+      }
+    };
+
+    const stopAnim = () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+
+    const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+
+    const step = () => {
+      const t = performance.now ? performance.now() : Date.now();
+      const elapsed = Math.max(0, Math.min(DURATION_MS, t - animStartRef.current));
+      const p = easeOutCubic(elapsed / DURATION_MS);
+      const value = Math.round(
+        animFromRef.current + (animToRef.current - animFromRef.current) * p
+      );
+      setDisplayed(value);
+      if (elapsed < DURATION_MS) {
+        animFrameRef.current = requestAnimationFrame(step);
+      } else {
+        // If target changed during the run, continue smoothly
+        if (animToRef.current !== value) {
+          animFromRef.current = value;
+          animStartRef.current = performance.now ? performance.now() : Date.now();
+          animFrameRef.current = requestAnimationFrame(step);
+        } else {
+          stopAnim();
+          setDisplayed(animToRef.current);
+        }
+      }
+    };
+
+    useEffect(() => {
+      // Initial kick-off
+      prefersReducedRef.current = isReducedMotion();
+      if (prefersReducedRef.current) {
+        stopAnim();
+        setDisplayed(to);
+        setGlow(true);
+        setTimeout(() => setGlow(false), 800);
+        return;
+      }
+      setDisplayed(from);
+      animFromRef.current = from;
+      animToRef.current = to;
+      animStartRef.current = performance.now ? performance.now() : Date.now();
+      setGlow(true);
+      setTimeout(() => setGlow(false), 800);
+      animFrameRef.current = requestAnimationFrame(step);
+      return () => stopAnim();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // When target updates while showing, smoothly retarget without restarting from scratch
+    useEffect(() => {
+      if (prefersReducedRef.current) {
+        setDisplayed(to);
+        return;
+      }
+      const now = performance.now ? performance.now() : Date.now();
+      // Compute instantaneous displayed value as new from-base
+      if (animFrameRef.current !== null) {
+        const elapsed = Math.max(0, Math.min(DURATION_MS, now - animStartRef.current));
+        const p = easeOutCubic(elapsed / DURATION_MS);
+        const currentValue = Math.round(
+          animFromRef.current + (animToRef.current - animFromRef.current) * p
+        );
+        animFromRef.current = currentValue;
+        animStartRef.current = now;
+        animToRef.current = to;
+      } else {
+        animFromRef.current = displayed;
+        animStartRef.current = now;
+        animToRef.current = to;
+        animFrameRef.current = requestAnimationFrame(step);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [to]);
+
+    const rank = rankFromElo(to || 0);
+    const grad = rankGradient(rank.slug);
+    return (
+      <div
+        className={
+          'group inline-flex items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-900/70 px-2.5 py-1.5 text-sm text-neutral-200 transition-shadow ' +
+          (glow ? 'shadow-[0_0_24px_rgba(34,197,94,0.35)] ring-1 ring-green-500/30' : '')
+        }
+        role="status"
+        aria-label={`ELO ${to}`}
+        aria-live="polite"
+      >
+        <span className={`bg-gradient-to-r ${grad} bg-clip-text text-transparent rank-shimmer rank-contrast`}>ELO</span>
+        <span className={`bg-gradient-to-r ${grad} bg-clip-text font-semibold tabular-nums text-transparent rank-shimmer rank-contrast`}>
+          {displayed}
+        </span>
+        {glow && <ArrowUpRight className="h-3.5 w-3.5 text-green-400" aria-hidden />}
+      </div>
+    );
+  }
 
   // Maintain a reactive questions map keyed by subtopicId so UI updates immediately
   const [questionsById, setQuestionsById] = useState<
@@ -787,9 +972,9 @@ export default function LearnView({
               body: JSON.stringify({
                 lectureTitle: title || initial.title,
                 subtopic: next.title,
-                // Do NOT persist during prefetch to avoid double-generating and overwriting when user navigates
-                subtopicId: '',
-                lectureId: '',
+                // Persist during prefetch so content survives reloads
+                subtopicId: demo ? '' : next.id,
+                lectureId: demo ? '' : initial.id,
                 documentContent: initial.originalContent,
                 covered,
               }),
@@ -797,8 +982,10 @@ export default function LearnView({
             if (!res.ok) return;
             const data = (await res.json()) as { markdown?: string };
             const md = sanitizeMarkdown(data.markdown || '');
-            // If active streaming started for this subtopic, ignore prefetch result to avoid double content
-            if (!explanationsInFlightRef.current.has(next.id)) {
+            // If an ACTIVE stream is running for this subtopic, ignore prefetch result to avoid double content.
+            // Reservation alone (from prefetch) should NOT block storing the prefetched explanation.
+            const hasActiveStream = explainControllersRef.current.has(next.id);
+            if (!hasActiveStream) {
               setExplanations((e) => ({
                 ...e,
                 [next.id]: md || 'No content generated.',
@@ -1006,9 +1193,16 @@ export default function LearnView({
       {/* Center: Explanation + Quiz */}
       <main
         ref={mainRef}
-        className={`lg:col-span-6 ${readonly ? 'lg:col-span-9' : ''}`}
+        className={`relative lg:col-span-6 ${readonly ? 'lg:col-span-9' : ''}`}
         aria-busy={genVisible ? true : undefined}
       >
+        {showEloToast && eloToastFrom !== null && eloToastTo !== null && (
+          <div className="pointer-events-none absolute right-0 top-0 z-20 p-2 md:p-3">
+            <div className="pointer-events-auto">
+              <EloToast from={eloToastFrom} to={eloToastTo} />
+            </div>
+          </div>
+        )}
         {currentSubtopic ? (
           <div className="space-y-8">
             <div className="card p-6 md:p-8 xl:p-10" data-tour="content-pane">
@@ -1106,7 +1300,7 @@ export default function LearnView({
                       reserveQuestions={reserveQuestions}
                       releaseQuestions={releaseQuestions}
                       disablePersistence={demo}
-                      onPassed={async (firstPerfect) => {
+                       onPassed={async (firstPerfect) => {
                         const id = currentSubtopic.id;
                         if (!countedIdsRef.current.has(id)) {
                           countedIdsRef.current.add(id);
@@ -1117,19 +1311,39 @@ export default function LearnView({
                         const isLast =
                           currentIndex === initial.subtopics.length - 1;
                         // Persist mastery only outside demo
-                        if (!demo) {
-                          try {
-                            // Determine if the first check for this set was a perfect 2/2
-                            void fetch('/api/mastery', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                subtopicId: currentSubtopic.id,
-                                firstPerfect,
-                              }),
-                            });
-                          } catch {}
-                        }
+                         if (!demo) {
+                           try {
+                             // Determine if the first check for this set was a perfect 2/2
+                             void (async () => {
+                               const res = await fetch('/api/mastery', {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({
+                                   subtopicId: currentSubtopic.id,
+                                   firstPerfect,
+                                 }),
+                               });
+                               if (res.ok) {
+                                 const data = (await res.json().catch(() => ({}))) as any;
+                                 const d = Number(data?.eloDelta ?? 0);
+                                 if (Number.isFinite(d) && d > 0) {
+                                   try {
+                                     window.dispatchEvent(
+                                       new CustomEvent('elo:delta', { detail: { delta: Math.trunc(d) } })
+                                     );
+                                   } catch {}
+                                 } else {
+                                   // If no delta returned but mastery succeeded, attempt a refresh
+                                   if (data && data.ok) {
+                                     try {
+                                       window.dispatchEvent(new Event('elo:maybeRefresh'));
+                                     } catch {}
+                                   }
+                                 }
+                               }
+                             })();
+                           } catch {}
+                         }
 
                         if (isLast) {
                           // Mark complete so progress bar hits 100%
@@ -1199,6 +1413,7 @@ export default function LearnView({
                 ? currentSubtopicDoc || demoDoc || initial.originalContent || ''
                 : currentSubtopicDoc || initial.originalContent || ''
             }
+            lectureId={initial.id}
             intro={chatIntro}
             demoMode={demo}
           />
@@ -1576,6 +1791,8 @@ function QuizPanel({
     onQuestionsSaved,
   ]);
 
+  // Quiz progress is not persisted; no restore/reset logic
+
   const askAnother = async () => {
     setLoadingAnother(true);
     try {
@@ -1695,26 +1912,7 @@ function QuizPanel({
         } catch {}
       }
     } catch (_e) {
-      // Fallback: rotate options of the first question if generation failed
-      if (items && items.length > 0) {
-        const base = items[0];
-        const rotated = [...base.options];
-        rotated.push(rotated.shift() as string);
-        const newAnswer =
-          (base.answerIndex - 1 + rotated.length) % rotated.length;
-        const fallbackItem = {
-          ...base,
-          id: `${base.id}-v${Date.now()}`,
-          prompt: `${base.prompt} (Variant)`,
-          options: rotated,
-          answerIndex: newAnswer,
-          explanation: base.explanation,
-        };
-        setItems([fallbackItem]);
-        setAnswers([]);
-        setRevealed(false);
-        setVersion((v) => v + 1); // Force re-render
-      }
+      // Do not use any fallback question variants; leave questions unchanged on failure.
     } finally {
       setLoadingAnother(false);
     }

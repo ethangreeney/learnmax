@@ -21,11 +21,11 @@ export async function POST() {
     // ignore - table may already exist or permissions may differ
   }
   const defaults = [
-    { slug: 'bronze', name: 'Bronze', minElo: 1000 },
-    { slug: 'silver', name: 'Silver', minElo: 1200 },
-    { slug: 'gold', name: 'Gold', minElo: 1400 },
-    { slug: 'diamond', name: 'Diamond', minElo: 1600 },
-    { slug: 'master', name: 'Master', minElo: 1800 },
+    { slug: 'bronze', name: 'Bronze', minElo: 0 },
+    { slug: 'silver', name: 'Silver', minElo: 400 },
+    { slug: 'gold', name: 'Gold', minElo: 800 },
+    { slug: 'diamond', name: 'Diamond', minElo: 1200 },
+    { slug: 'master', name: 'Master', minElo: 1600 },
   ];
   for (const r of defaults) {
     await prisma.rank.upsert({

@@ -36,7 +36,11 @@ export async function POST(req: NextRequest) {
       ---
     `;
 
-    const aiResponse = await generateJSON(prompt, model);
+    const chosenModel =
+      (typeof model === 'string' && model.trim()) ||
+      process.env.AI_QUALITY_MODEL ||
+      'gemini-2.5-pro';
+    const aiResponse = await generateJSON(prompt, chosenModel);
     if (userId) {
       await bumpDailyStreak(userId);
       try { revalidateTag(`user-stats:${userId}`); } catch {}

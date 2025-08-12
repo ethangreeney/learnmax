@@ -114,7 +114,7 @@ export default function GeneratingOverlay({
             </div>
             {longWait && (
               <div className="mt-2 text-xs text-neutral-400">
-                This can take up to a minute. Tip: you can keep browsing other sections.
+                This can take up to a minute.
               </div>
             )}
 

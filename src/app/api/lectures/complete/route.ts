@@ -24,16 +24,18 @@ export async function POST(req: NextRequest) {
     const lecture = await prisma.lecture.findFirst({ where: { id, userId }, select: { id: true } });
     if (!lecture) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const ELO_LECTURE_COMPLETE = parseInt(process.env.ELO_LECTURE_COMPLETE || '300', 10);
+    const ELO_PER_SUBTOPIC = parseInt(process.env.ELO_PER_SUBTOPIC || '10', 10);
 
     const { created } = await prisma.$transaction(async (tx) => {
       try {
         await tx.userLectureCompletion.create({ data: { userId, lectureId: id } });
-        if (ELO_LECTURE_COMPLETE && Number.isFinite(ELO_LECTURE_COMPLETE) && ELO_LECTURE_COMPLETE !== 0) {
-          await tx.user.update({ where: { id: userId }, data: { elo: { increment: ELO_LECTURE_COMPLETE } } });
+        const subtopicCount = await tx.subtopic.count({ where: { lectureId: id } });
+        const eloAward = (Number.isFinite(ELO_PER_SUBTOPIC) ? ELO_PER_SUBTOPIC : 10) * subtopicCount;
+        if (eloAward && Number.isFinite(eloAward) && eloAward !== 0) {
+          await tx.user.update({ where: { id: userId }, data: { elo: { increment: eloAward } } });
         }
         await tx.eloEvent.create({
-          data: { userId, kind: 'lecture-complete', ref: id, delta: ELO_LECTURE_COMPLETE },
+          data: { userId, kind: 'lecture-complete', ref: id, delta: eloAward },
         });
         return { created: true };
       } catch (e: any) {

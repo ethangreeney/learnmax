@@ -176,7 +176,16 @@ async function generateTextWithGemini(
   modelName: string
 ): Promise<string> {
   const client = getGoogleClient();
-  const model = client.getGenerativeModel({ model: modelName });
+  const gc: any = {};
+  const temp = Number(process.env.AI_TEXT_TEMPERATURE || '0.2');
+  if (Number.isFinite(temp)) gc.temperature = temp;
+  const mx = Number(process.env.AI_TEXT_MAX_TOKENS || '800');
+  if (Number.isFinite(mx) && mx > 0) gc.maxOutputTokens = mx;
+  const topP = Number(process.env.AI_TOP_P || '');
+  if (Number.isFinite(topP) && topP > 0) gc.topP = topP;
+  const seed = Number(process.env.AI_SEED || '');
+  if (Number.isFinite(seed) && seed > 0) gc.randomSeed = seed;
+  const model = client.getGenerativeModel({ model: modelName, generationConfig: gc });
   const result = await withTimeout(
     model.generateContent(prompt),
     AI_MODEL_TIMEOUT_MS,
@@ -198,15 +207,25 @@ async function generateTextWithGemini(
 
 async function generateTextWithOpenAI(
   prompt: string,
-  modelName: string
+  modelName: string,
+  system?: string
 ): Promise<string> {
   const openai = getOpenAIClient();
   const model = normalizeModelId(modelName);
-  const params: any = {
-    model,
-    messages: [{ role: 'user', content: prompt }],
-  };
-  params.temperature = 0.2;
+  const messages: any[] = system
+    ? [
+        { role: 'system', content: system },
+        { role: 'user', content: prompt },
+      ]
+    : [{ role: 'user', content: prompt }];
+  const params: any = { model, messages };
+  params.temperature = Number(process.env.AI_TEXT_TEMPERATURE || '0.2');
+  const mx = Number(process.env.AI_TEXT_MAX_TOKENS || '800');
+  if (mx > 0) params.max_tokens = mx;
+  const seed = Number(process.env.AI_SEED || '') || undefined;
+  if (seed) params.seed = seed;
+  const topP = Number(process.env.AI_TOP_P || '') || undefined;
+  if (topP) params.top_p = topP;
   const completion = await withTimeout(
     openai.chat.completions.create(params),
     AI_MODEL_TIMEOUT_MS,
@@ -219,14 +238,15 @@ async function generateTextWithOpenAI(
 
 export async function generateText(
   prompt: string,
-  preferredModel?: string
+  preferredModel?: string,
+  system?: string
 ): Promise<string> {
   const names = buildFallbackList(preferredModel);
   let lastErr: any;
   for (const name of names) {
     try {
       const t = isOpenAIModel(name)
-        ? await generateTextWithOpenAI(prompt, name)
+        ? await generateTextWithOpenAI(prompt, name, system)
         : await generateTextWithGemini(prompt, name);
       log('ok', name, t.length);
       return t;
@@ -242,7 +262,8 @@ export async function generateText(
 
 export async function generateJSON(
   prompt: string,
-  preferredModel?: string
+  preferredModel?: string,
+  system?: string
 ): Promise<any> {
   const names = buildFallbackList(preferredModel);
   let lastErr: any;
@@ -251,11 +272,18 @@ export async function generateJSON(
       if (isOpenAIModel(name)) {
         const openai = getOpenAIClient();
         const model = normalizeModelId(name);
-        const params: any = {
-          model,
-          messages: [{ role: 'user', content: prompt }],
-        };
+        const messages: any[] = system
+          ? [
+              { role: 'system', content: system },
+              { role: 'user', content: prompt },
+            ]
+          : [{ role: 'user', content: prompt }];
+        const params: any = { model, messages };
         params.temperature = 0;
+        const mx = Number(process.env.AI_JSON_MAX_TOKENS || '1500');
+        if (mx > 0) params.max_tokens = mx;
+        const seed = Number(process.env.AI_SEED || '') || undefined;
+        if (seed) params.seed = seed;
         params.response_format = { type: 'json_object' };
         const completion = await withTimeout(
           openai.chat.completions.create(params),
@@ -273,7 +301,10 @@ export async function generateJSON(
         const client = getGoogleClient();
         const model = client.getGenerativeModel({
           model: name,
-          generationConfig: { responseMimeType: 'application/json' },
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0,
+          },
         });
         const result = await withTimeout(
           model.generateContent(prompt),
@@ -336,7 +367,8 @@ export async function generateJSON(
  */
 export async function* streamTextChunks(
   prompt: string,
-  preferredModel?: string
+  preferredModel?: string,
+  system?: string
 ): AsyncGenerator<string, void, void> {
   const names = buildFallbackList(preferredModel);
   let lastErr: any;
@@ -347,24 +379,34 @@ export async function* streamTextChunks(
         const openai = getOpenAIClient();
         const model = normalizeModelId(name);
         // All OpenAI models: request streamed chat completions
-        const params: any = {
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          stream: true,
-        };
-        params.temperature = 0.2;
+        const messages: any[] = system
+          ? [
+              { role: 'system', content: system },
+              { role: 'user', content: prompt },
+            ]
+          : [{ role: 'user', content: prompt }];
+        const params: any = { model, messages, stream: true };
+        params.temperature = Number(
+          process.env.AI_TEXT_TEMPERATURE || '0.2'
+        );
+        const mx = Number(process.env.AI_TEXT_MAX_TOKENS || '800');
+        if (mx > 0) params.max_tokens = mx;
+        const seed = Number(process.env.AI_SEED || '') || undefined;
+        if (seed) params.seed = seed;
+        const topP = Number(process.env.AI_TOP_P || '') || undefined;
+        if (topP) params.top_p = topP;
         const stream: any = await openai.chat.completions.create(params);
         let yielded = false;
         for await (const part of stream) {
           const delta: string | undefined = part?.choices?.[0]?.delta?.content;
-          if (delta && delta.trim()) {
+          if (typeof delta === 'string') {
             yield delta;
             yielded = true;
           }
         }
         if (!yielded) {
           // Fallback to non-streaming single shot
-          const text = await generateText(prompt, name);
+          const text = await generateText(prompt, name, system);
           if (text) {
             yield text;
           }
@@ -372,13 +414,22 @@ export async function* streamTextChunks(
         return;
       } else {
         const client = getGoogleClient();
-        const model = client.getGenerativeModel({ model: name });
+        const gc: any = {};
+        const temp = Number(process.env.AI_TEXT_TEMPERATURE || '0.2');
+        if (Number.isFinite(temp)) gc.temperature = temp;
+        const mx = Number(process.env.AI_TEXT_MAX_TOKENS || '800');
+        if (Number.isFinite(mx) && mx > 0) gc.maxOutputTokens = mx;
+        const topP = Number(process.env.AI_TOP_P || '');
+        if (Number.isFinite(topP) && topP > 0) gc.topP = topP;
+        const seed = Number(process.env.AI_SEED || '');
+        if (Number.isFinite(seed) && seed > 0) gc.randomSeed = seed;
+        const model = client.getGenerativeModel({ model: name, generationConfig: gc });
         const result: any = await (model as any).generateContentStream(prompt);
         if (
           !result?.stream ||
           typeof result.stream[Symbol.asyncIterator] !== 'function'
         ) {
-          const text = await generateText(prompt, name);
+          const text = await generateText(prompt, name, system);
           if (text) {
             yield text;
             return;
@@ -389,7 +440,7 @@ export async function* streamTextChunks(
           try {
             const textPart =
               typeof chunk?.text === 'function' ? chunk.text() : '';
-            if (textPart && textPart.trim()) {
+            if (typeof textPart === 'string') {
               yield textPart;
             }
           } catch {}

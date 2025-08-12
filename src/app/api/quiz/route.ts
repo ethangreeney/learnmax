@@ -280,7 +280,11 @@ export async function POST(req: Request) {
       typeof (body as any)?.model === 'string' && (body as any).model.trim()
         ? ((body as any).model as string).trim()
         : undefined;
-    const modelForQuiz = preferredModel || 'gemini-2.5-flash';
+    const modelForQuiz =
+      preferredModel ||
+      process.env.AI_QUALITY_MODEL ||
+      process.env.OPENAI_MODEL ||
+      'gpt-5';
     let lessonMd = String(body?.lessonMd || '').trim();
     const subtopicTitle = String(body?.subtopicTitle || '').trim();
     const lectureId = String((body as any)?.lectureId || '').trim();
@@ -479,9 +483,9 @@ ${clip(lessonMd, 4500)}
     let grounded: CleanQ[] = [];
     if (cleaned1.length) {
       const auditStart1 = Date.now();
-      const results1 = await Promise.allSettled(
-        cleaned1.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz))
-      );
+    const results1 = await Promise.allSettled(
+      cleaned1.map((q) => hasExactlyOneCorrect(q, lessonMd, modelForQuiz))
+    );
       auditMs += Date.now() - auditStart1;
       const audited1 = cleaned1.filter(
         (_, i) =>

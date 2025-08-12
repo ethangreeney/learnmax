@@ -154,8 +154,9 @@ export async function POST(req: Request) {
       return t.length > max ? t.slice(0, max) : t;
     };
 
+    const systemMsg =
+      'You are writing ONE section of an in-progress lecture. Be concise, instructional, and avoid preambles, meta commentary, and disclaimers.';
     const prompt = [
-      `You are writing ONE section of an in-progress lecture.`,
       `Lecture title: "${lectureTitle}"`,
       `Subtopic: "${subtopic}"`,
       `Style: ${styleHint}`,
@@ -183,7 +184,8 @@ export async function POST(req: Request) {
           try {
             for await (const chunk of streamTextChunks(
               prompt,
-              preferredModel
+              preferredModel,
+              systemMsg
             )) {
               const clean = stripPreamble(chunk, {
                 title: subtopic,
@@ -235,7 +237,7 @@ export async function POST(req: Request) {
     }
 
     // Non-streaming fallback
-    const raw = await generateText(prompt, preferredModel);
+    const raw = await generateText(prompt, preferredModel, systemMsg);
     const markdown = stripPreamble(raw, { title: subtopic });
     const ms = Date.now() - t0;
 

@@ -7,17 +7,19 @@ import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
 import { revalidateTag } from 'next/cache';
+import prisma from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const userId = isSessionWithUser(session) ? session.user.id : null;
-    const { userQuestion, documentContent, model, demoMode } =
+    const { userQuestion, documentContent, model, demoMode, lectureId } =
       (await req.json()) as {
         userQuestion: string;
         documentContent: string;
         model?: string;
         demoMode?: boolean;
+        lectureId?: string;
       };
 
     if (!userQuestion) {
@@ -27,16 +29,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = `
-You are an expert academic tutor. Ground your answers first in the CURRENT SUBTOPIC content provided below, and otherwise in your general knowledge.
-
-STYLE AND BEHAVIOR
-- Be clear, direct, and encouraging.
-- Use the provided subtopic content as your primary reference when relevant.
-- If information extends beyond the provided content, answer confidently without calling out that the content may be incomplete.
-- Avoid hedging or meta commentary. Do not say phrases like: "the input document only says...", "I'm not sure", or "based on general knowledge". Just answer succinctly and professionally.
-
----
+    const systemMsg = `You are an expert academic tutor. Be clear, direct, encouraging, and do not include meta commentary or disclaimers.`;
+    const userMsg = `
 CURRENT SUBTOPIC CONTENT
 ${
   documentContent && documentContent.trim().length > 0
@@ -46,7 +40,6 @@ ${
       : 'No lesson content provided. Proceed with general knowledge without disclaimers.'
 }
 ---
-
 USER QUESTION
 ${userQuestion}
 `;
@@ -57,22 +50,41 @@ ${userQuestion}
     // Prefer explicit client selection; otherwise allow overriding via env for tutor only.
     const tutorDefaultModel =
       process.env.AI_TUTOR_MODEL?.trim() ||
+      process.env.AI_FAST_MODEL?.trim() ||
       (process.env.NODE_ENV === 'production' ? 'gpt-5' : undefined);
     const chosenModel = (model && model.trim()) || tutorDefaultModel;
 
     // If query param stream=1, return Server-Sent Events style text/event-stream
     const url = new URL(req.url);
     const doStream = url.searchParams.get('stream') === '1';
+    const canPersist = Boolean(userId && lectureId && !demoMode);
+
+    // Persist user message before generating
+    if (canPersist) {
+      try {
+        await prisma.tutorMessage.create({
+          data: {
+            userId: userId!,
+            lectureId: String(lectureId),
+            role: 'user',
+            text: userQuestion,
+          },
+        });
+      } catch {}
+    }
 
     if (doStream) {
       const encoder = new TextEncoder();
+      let full = '';
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           try {
             for await (const chunk of streamTextChunks(
-              systemPrompt,
-              chosenModel
+              userMsg,
+              chosenModel,
+              systemMsg
             )) {
+              full += chunk;
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`
@@ -87,6 +99,19 @@ ${userQuestion}
               )
             );
             controller.close();
+            // Persist assistant reply
+            if (canPersist) {
+              try {
+                await prisma.tutorMessage.create({
+                  data: {
+                    userId: userId!,
+                    lectureId: String(lectureId),
+                    role: 'ai',
+                    text: full,
+                  },
+                });
+              } catch {}
+            }
             // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true
             if (userId && !demoMode) {
               try {
@@ -139,7 +164,19 @@ ${userQuestion}
     }
 
     // Fallback: non-streaming JSON
-    const aiTextResponse = await generateText(systemPrompt, chosenModel);
+    const aiTextResponse = await generateText(userMsg, chosenModel, systemMsg);
+    if (canPersist) {
+      try {
+        await prisma.tutorMessage.create({
+          data: {
+            userId: userId!,
+            lectureId: String(lectureId),
+            role: 'ai',
+            text: aiTextResponse,
+          },
+        });
+      } catch {}
+    }
     const ms = Date.now() - t0;
     const used = chosenModel || process.env.GEMINI_MODEL || 'default';
     // Demo mode should be fully ephemeral; skip streak bumps when demoMode is true

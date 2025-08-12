@@ -13,6 +13,42 @@ export async function createLectureFromText(
   return res.json();
 }
 
+export async function uploadPdfToBlob(file: File): Promise<string> {
+  const pathname = `uploads/${Date.now()}-${file.name}`;
+  const tokenRes = await fetch('/api/blob/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'blob.generate-client-token',
+      payload: {
+        pathname,
+        callbackUrl: '',
+        multipart: file.size > 5_000_000,
+        clientPayload: null,
+      },
+    }),
+  });
+  if (!tokenRes.ok) {
+    const e = await tokenRes.json().catch(() => ({}));
+    throw new Error(e.error || `Failed to init upload (${tokenRes.status})`);
+  }
+  const tokenData = await tokenRes.json();
+  if (
+    tokenData?.type !== 'blob.generate-client-token' ||
+    !tokenData?.clientToken
+  ) {
+    throw new Error('Invalid upload token response');
+  }
+  const { put } = await import('@vercel/blob/client');
+  const uploaded = await put(pathname, file, {
+    access: 'public',
+    token: tokenData.clientToken,
+    contentType: file.type || 'application/pdf',
+    multipart: file.size > 10_000_000,
+  } as any);
+  return uploaded.url as string;
+}
+
 export async function createLectureFromPdf(
   file: File
 ): Promise<{ lectureId: string }> {
@@ -72,6 +108,26 @@ export async function createLectureFromPdfVision(
   const res = await fetch('/api/lectures/vision', {
     method: 'POST',
     body: form,
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createLectureFromContentAndBlobUrls(
+  content: string,
+  blobUrls: string[]
+): Promise<{ lectureId: string }> {
+  const body: any = {
+    content,
+    blobUrls,
+  };
+  const res = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));

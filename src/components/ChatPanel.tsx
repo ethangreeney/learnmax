@@ -47,19 +47,18 @@ function sanitizeMd(md: string): string {
 
 // Merge streamed chat chunks robustly (handles cumulative streams & avoids word gluing)
 function mergeChatChunk(previous: string, incoming: string): string {
-  const incSan = sanitizeMd(incoming);
-  if (!previous) return incSan;
-  if (!incSan) return previous;
+  if (!previous) return incoming;
+  if (!incoming) return previous;
   const tail = previous.slice(Math.max(0, previous.length - 4096));
-  const maxOverlap = Math.min(tail.length, incSan.length);
+  const maxOverlap = Math.min(tail.length, incoming.length);
   let overlap = 0;
   for (let k = maxOverlap; k > 0; k--) {
-    if (tail.endsWith(incSan.slice(0, k))) {
+    if (tail.endsWith(incoming.slice(0, k))) {
       overlap = k;
       break;
     }
   }
-  const novel = incSan.slice(overlap);
+  const novel = incoming.slice(overlap);
   // Avoid concatenating words across boundary
   const needsSpace =
     /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(novel);
@@ -73,6 +72,7 @@ type Message = {
 
 type ChatPanelProps = {
   documentContent: string;
+  lectureId?: string; // for persistence scope
   intro?: string;
   demoMode?: boolean;
 };
@@ -92,6 +92,7 @@ async function postJSON<T>(url: string, body: any): Promise<T> {
 
 export default function ChatPanel({
   documentContent,
+  lectureId,
   intro,
   demoMode,
 }: ChatPanelProps) {
@@ -103,6 +104,8 @@ export default function ChatPanel({
         "I'm your AI Tutor. Ask me anything about the content on the left!",
     },
   ]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
@@ -134,6 +137,45 @@ export default function ChatPanel({
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
   }, [history]);
+
+  // Load persisted chat history scoped to lecture
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!lectureId || demoMode) return;
+      setLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const res = await fetch(`/api/chat/history?lectureId=${encodeURIComponent(lectureId)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as {
+          messages?: Array<{ role: 'user' | 'ai'; text: string }>;
+        };
+        if (cancelled) return;
+        const msgs = Array.isArray(data?.messages)
+          ? data.messages.map((m) => ({ sender: m.role, text: m.text }))
+          : [];
+        if (msgs.length > 0) setHistory(msgs);
+        else
+          setHistory([
+            {
+              sender: 'ai',
+              text:
+                intro ||
+                "I'm your AI Tutor. Ask me anything about the content on the left!",
+            },
+          ]);
+      } catch (e: any) {
+        if (!cancelled) setHistoryError(e?.message || 'Failed to load chat');
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lectureId, demoMode]);
 
   // Handle Esc to close
   useEffect(() => {
@@ -333,6 +375,7 @@ export default function ChatPanel({
             documentContent,
             model,
             demoMode: Boolean(demoMode),
+            lectureId,
           }),
         });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -387,7 +430,16 @@ export default function ChatPanel({
               });
               await yieldFrame();
             } else if (payload?.type === 'done') {
-              // nothing extra
+              // sanitize the aggregated message at completion
+              setHistory((prev) => {
+                const copy = prev.slice();
+                const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
+                copy[i] = {
+                  ...copy[i],
+                  text: sanitizeMd(copy[i].text),
+                };
+                return copy;
+              });
             } else if (payload?.type === 'error') {
               throw new Error(payload.error || 'stream error');
             }
@@ -402,6 +454,7 @@ export default function ChatPanel({
           documentContent,
           model,
           demoMode: Boolean(demoMode),
+          lectureId,
         });
         const aiMessage: Message = {
           sender: 'ai',
@@ -424,6 +477,40 @@ export default function ChatPanel({
 
   const titleId = 'ai-tutor-title';
 
+  const handleClear = async () => {
+    try {
+      if (!lectureId || demoMode) {
+        setHistory([
+          {
+            sender: 'ai',
+            text:
+              intro ||
+              "I'm your AI Tutor. Ask me anything about the content on the left!",
+          },
+        ]);
+        return;
+      }
+      const ok = typeof window !== 'undefined'
+        ? window.confirm('Clear chat history for this lesson?')
+        : true;
+      if (!ok) return;
+      const res = await fetch('/api/chat/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lectureId }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setHistory([
+        {
+          sender: 'ai',
+          text:
+            intro ||
+            "I'm your AI Tutor. Ask me anything about the content on the left!",
+        },
+      ]);
+    } catch {}
+  };
+
   const panelContent = (
     <>
       <header className="flex items-center justify-between border-b border-neutral-800/80 p-4">
@@ -431,6 +518,13 @@ export default function ChatPanel({
           AI Tutor
         </h3>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleClear}
+            aria-label="Clear chat"
+            className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
+          >
+            Clear
+          </button>
           {!expanded && (
             <button
               ref={expandBtnRef}
@@ -460,6 +554,12 @@ export default function ChatPanel({
         ref={scrollContainerRef}
         className={`${expanded ? 'flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6' : 'flex-1 space-y-4 overflow-y-auto p-4'}`}
       >
+        {loadingHistory && (
+          <div className="text-xs text-neutral-400">Loading conversation…</div>
+        )}
+        {!loadingHistory && historyError && (
+          <div className="text-xs text-yellow-400">Could not load previous messages.</div>
+        )}
         {history.map((msg, index) => (
           <div
             key={index}

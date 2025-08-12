@@ -49,6 +49,48 @@ function normalizeExtractedText(s: string): string {
   return sanitizeDbText(collapsed);
 }
 
+/**
+ * Extract text from a PDF buffer while suppressing noisy console warnings from
+ * the PDF parser (e.g., TrueType interpreter "TT: undefined function: 21") and
+ * Node's global Buffer() deprecation notice from transitive deps. This keeps
+ * server logs clean without muting unrelated warnings.
+ */
+async function extractPdfTextQuiet(
+  buf: Buffer
+): Promise<{ text: string; pages: number }> {
+  const originalWarn = console.warn;
+  const originalEmitWarning = process.emitWarning;
+  try {
+    // Suppress specific pdf.js TrueType warnings
+    console.warn = ((...args: any[]) => {
+      try {
+        const first = args?.[0] ? String(args[0]) : '';
+        if (first.includes('TT: undefined function')) return;
+      } catch {}
+      return (originalWarn as any).apply(console, args as any);
+    }) as any;
+    // Suppress Buffer() global deprecation warning from transitive libs
+    process.emitWarning = ((warning: any, ...rest: any[]) => {
+      try {
+        const code = typeof warning === 'string' ? rest?.[1] : warning?.code;
+        const message =
+          typeof warning === 'string' ? warning : warning?.message || '';
+        if (code === 'DEP0005' || String(message).includes('Buffer() is deprecated')) {
+          return;
+        }
+      } catch {}
+      return (originalEmitWarning as any).call(process, warning, ...rest);
+    }) as any;
+    const data: any = await pdf(buf as any);
+    const pages = Number(data?.numpages || 0) || 0;
+    const text = normalizeExtractedText(String(data?.text || ''));
+    return { text, pages };
+  } finally {
+    console.warn = originalWarn;
+    process.emitWarning = originalEmitWarning as any;
+  }
+}
+
 function normImportance(v: unknown): 'high' | 'medium' | 'low' {
   const s = String(v || '').toLowerCase();
   return s === 'high' || s === 'low' ? (s as any) : 'medium';
@@ -133,53 +175,7 @@ function shuffleOptionsWithAnswer(
   return { options: newOptions, answerIndex: newAnswerIndex };
 }
 
-function fallbackQuestions(subtopics: BreakdownSubtopic[]): QuizQuestion[] {
-  // Cheap, deterministic questions that still tie to the breakdown.
-  // One per subtopic.
-  return subtopics.map((s) => {
-    const correct = String(s.difficulty);
-    const opts = ['1', '2', '3', 'Not specified'];
-    const answerIndex =
-      correct === '1' ? 0 : correct === '2' ? 1 : correct === '3' ? 2 : 3;
-    return {
-      prompt: `What difficulty was assigned to "${s.title}"?`,
-      options: opts,
-      answerIndex,
-      explanation: `The breakdown labeled "${s.title}" with difficulty ${s.difficulty}.`,
-      subtopicTitle: s.title,
-    };
-  });
-}
-
-function fallbackPairForSubtopic(
-  s: BreakdownSubtopic
-): [QuizQuestion, QuizQuestion] {
-  // Q1: difficulty (existing logic)
-  const dCorrect = String(s.difficulty);
-  const dOpts = ['1', '2', '3', 'Not specified'];
-  const dIdx =
-    dCorrect === '1' ? 0 : dCorrect === '2' ? 1 : dCorrect === '3' ? 2 : 3;
-  const q1: QuizQuestion = {
-    prompt: `What difficulty was assigned to "${s.title}"?`,
-    options: dOpts,
-    answerIndex: dIdx,
-    explanation: `The breakdown labeled "${s.title}" with difficulty ${s.difficulty}.`,
-    subtopicTitle: s.title,
-  };
-  // Q2: importance
-  const imp = (s.importance || 'medium').toLowerCase();
-  const iOpts = ['high', 'medium', 'low', 'Not specified'];
-  const iIdx =
-    imp === 'high' ? 0 : imp === 'medium' ? 1 : imp === 'low' ? 2 : 3;
-  const q2: QuizQuestion = {
-    prompt: `What is the importance label for "${s.title}"?`,
-    options: iOpts,
-    answerIndex: iIdx,
-    explanation: `The breakdown marked "${s.title}" with importance "${s.importance}".`,
-    subtopicTitle: s.title,
-  };
-  return [q1, q2];
-}
+// Note: All quiz fallbacks removed. If generation fails, we leave the subtopic without questions.
 
 function sanitizeQuiz(raw: any, subtopics: BreakdownSubtopic[]): QuizOut {
   let items: QuizQuestion[] = [];
@@ -216,7 +212,9 @@ CANDIDATES:
 ${JSON.stringify(payload, null, 2)}
 `;
   try {
-    const out = await generateJSON(prompt, preferredModel);
+    const qualityModel =
+      process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro';
+    const out = await generateJSON(prompt, qualityModel);
     const indices: number[] = Array.isArray(out?.indices)
       ? out.indices
           .map((n: any) => Number(n))
@@ -314,8 +312,11 @@ async function generateSectionMarkdowns(
     }
     return picked.join('\n\n\n');
   };
-  // Run all subtopics in parallel (limit equals number of subtopics)
-  const limit = Math.max(1, subtopics.length);
+  // Run subtopics with a bounded concurrency for better latency and fewer throttles
+  const limit = Math.max(
+    1,
+    Number(process.env.AI_SECTION_CONCURRENCY || '4')
+  );
   let inFlight = 0;
   const queue: Array<() => Promise<void>> = [];
   const result: Record<string, string> = {};
@@ -334,6 +335,8 @@ async function generateSectionMarkdowns(
   };
 
   const tasks = subtopics.map((s) => async () => {
+    const systemMsg =
+      'You are writing ONE section of a lecture. Be concise, instructional, avoid preambles or meta commentary, and write clean Markdown.';
     const title = s.title;
     const overview = s.overview || '';
     const prompt = [
@@ -347,9 +350,13 @@ async function generateSectionMarkdowns(
       `Focus on definitions, theorems, algorithms, and examples that appear in the document; avoid generic use cases unless present.`,
       `---`,
       `DOCUMENT EXCERPTS (relevant slices only):`,
-      selectRelevantContext(title, overview, 3000),
+      selectRelevantContext(
+        title,
+        overview,
+        Math.max(1000, Number(process.env.AI_SECTION_CONTEXT_CHARS || '2400'))
+      ),
     ].join('\n');
-    const mdRaw = await generateText(prompt, preferredModel);
+    const mdRaw = await generateText(prompt, preferredModel, systemMsg);
     result[title.trim().toLowerCase()] = sanitizeDbText(mdRaw);
   });
 
@@ -386,6 +393,9 @@ export async function POST(req: NextRequest) {
     // Ignore client-selected model for lecture generation; use server-side defaults
     const preferredModel: string | undefined = undefined;
     let wasPlainTextInput = false;
+    // If true, we will create a minimal lecture and allow the client to stream
+    // subtopics later instead of doing heavy breakdown work inline.
+    let shouldDeferBreakdown = false;
     let visionCandidate: File | null = null;
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
@@ -410,23 +420,75 @@ export async function POST(req: NextRequest) {
       } catch {}
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
-      const blobUrl = String(body?.blobUrl || '').trim();
       const content = String(body?.content || '').trim();
-      if (blobUrl) {
-        // Stream PDF from Blob URL, prefer vision
-        const resp = await fetch(blobUrl);
-        if (!resp.ok)
+      const single = String(body?.blobUrl || '').trim();
+      const blobUrls: string[] = Array.isArray(body?.blobUrls)
+        ? (body.blobUrls as any[])
+            .map((u) => String(u || '').trim())
+            .filter(Boolean)
+        : single
+        ? [single]
+        : [];
+
+      if (blobUrls.length > 0) {
+        // Fetch and extract text from each PDF. If extraction fails for a single-PDF case, try vision.
+        const buffers: Buffer[] = [];
+        for (const url of blobUrls) {
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            return NextResponse.json(
+              { error: `Could not fetch blob: ${url}` },
+              { status: 400 }
+            );
+          }
+          const arr = Buffer.from(await resp.arrayBuffer());
+          buffers.push(arr);
+        }
+
+        const extractedPieces: string[] = [];
+        for (const buf of buffers) {
+          try {
+            const { text: piece, pages } = await extractPdfTextQuiet(buf);
+            approxPages += Number(pages || 0) || 0;
+            if (piece) extractedPieces.push(piece);
+          } catch {
+            // continue; we'll try vision below if single
+          }
+        }
+        const joined = extractedPieces.join('\n\n-----\n\n');
+        const userContext = sanitizeDbText(content);
+        if (joined && userContext) {
+          text = `${userContext}\n\n-----\n\n${joined}`;
+        } else if (joined) {
+          text = joined;
+        } else if (userContext) {
+          // No extractable text, but user provided context
+          text = userContext;
+        } else if (blobUrls.length === 1) {
+          // Try vision when there is exactly one PDF and no extracted text
+          const arr = buffers[0];
+          pdfBuffer = arr;
+          const arr8 = new Uint8Array(arr);
+          visionCandidate = new File([arr8], 'upload.pdf', {
+            type: 'application/pdf',
+          }) as any;
+        } else {
+          // Multiple PDFs and none extractable
           return NextResponse.json(
-            { error: 'Could not fetch blob' },
-            { status: 400 }
+            {
+              error:
+                'Could not extract text from the PDFs. They may only contain images. Try uploading a single PDF or add context.',
+            },
+            { status: 422 }
           );
-        const arr = Buffer.from(await resp.arrayBuffer());
-        pdfBuffer = arr;
-        // Route to vision path via temp File shim
-        visionCandidate = new File([arr], 'upload.pdf', {
-          type: 'application/pdf',
-        }) as any;
+        }
+        // Defer breakdown when PDFs were provided and we have some text
+        // so the client can use the streaming endpoint.
+        if (text) {
+          shouldDeferBreakdown = true;
+        }
       } else {
+        // No PDFs, just text content
         text = sanitizeDbText(content);
         if (!text)
           return NextResponse.json(
@@ -445,9 +507,8 @@ export async function POST(req: NextRequest) {
     // Try to extract text from PDF first (preferred grounding for large PDFs)
     if (!text && pdfBuffer) {
       try {
-        const data: any = await pdf(pdfBuffer);
-        approxPages = Number(data?.numpages || 0) || 0;
-        const extracted = normalizeExtractedText(data.text || '');
+        const { text: extracted, pages } = await extractPdfTextQuiet(pdfBuffer);
+        approxPages = pages;
         if (extracted) text = extracted;
       } catch {}
     }
@@ -512,6 +573,10 @@ export async function POST(req: NextRequest) {
         const model = client.getGenerativeModel({
           model:
             preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0,
+          },
         });
         const visionPrompt = [
           'Analyze this PDF (text + images).',
@@ -523,7 +588,7 @@ export async function POST(req: NextRequest) {
           { fileData: { fileUri: fileRec.uri, mimeType: 'application/pdf' } },
           { text: visionPrompt },
         ]);
-        const out = res.response.text?.() || '';
+    const out = res.response.text?.() || '';
         // Be tolerant of models that wrap JSON in text/code fences
         let parsed: any;
         try {
@@ -598,13 +663,21 @@ export async function POST(req: NextRequest) {
         // Extract raw text (best-effort) for grounding chat/originalContent
         let extracted = '';
         try {
-          const data: any = await pdf(pdfBuffer || buf);
-          approxPages =
-            Number(data?.numpages || approxPages || 0) || approxPages;
-          extracted = normalizeExtractedText(data.text || '');
+          const { text: t, pages } = await extractPdfTextQuiet(
+            (pdfBuffer || buf) as Buffer
+          );
+          approxPages = pages || approxPages;
+          extracted = t;
         } catch {}
+        // Merge any user-provided content with extracted text for grounding
+        const userContext = text ? sanitizeDbText(text) : '';
+        const merged = userContext
+          ? userContext && extracted
+            ? `${userContext}\n\n-----\n\n${extracted}`
+            : userContext || extracted
+          : extracted;
         // 3) Persist directly, storing extracted text when available
-        const originalContent = extracted || 'PDF (vision) upload';
+        const originalContent = merged || 'PDF (vision) upload';
         const lecture = await prisma.lecture.create({
           data: {
             title: bdFromVision.topic || DEFAULT_TITLE,
@@ -617,117 +690,7 @@ export async function POST(req: NextRequest) {
         } catch {}
         // Count lecture generation towards streak
         await bumpDailyStreak(userId);
-        if (bdFromVision.subtopics.length) {
-          // Cap to avoid long generation
-          const subcaps =
-            bdFromVision.subtopics.length > 15
-              ? await selectTopSubtopics(
-                  bdFromVision.subtopics,
-                  preferredModel,
-                  15
-                )
-              : bdFromVision.subtopics;
-          // Generate explanation for the FIRST subtopic only; others deferred until viewed
-          const firstOnly = subcaps.slice(0, 1);
-          const sectionMap = await generateSectionMarkdowns(
-            bdFromVision.topic || 'Untitled',
-            extracted,
-            firstOnly,
-            preferredModel
-          );
-          await prisma.subtopic.createMany({
-            data: subcaps.map((s, idx) => ({
-              order: idx,
-              title: s.title || `Section ${idx + 1}`,
-              importance: s.importance,
-              difficulty: s.difficulty,
-              overview: s.overview || '',
-              explanation:
-                idx === 0
-                  ? sectionMap[(s.title || '').trim().toLowerCase()] || null
-                  : null,
-              lectureId: lecture.id,
-            })),
-          });
-          // After subtopics exist, create initial quiz questions ONLY for the first subtopic
-          const created = await prisma.subtopic.findMany({
-            where: { lectureId: lecture.id },
-            orderBy: { order: 'asc' },
-            select: { id: true, title: true, overview: true },
-          });
-          const firstSt = created[0];
-          if (firstSt) {
-            const quizPromptV = `
-You are an expert assessment writer. Create exactly TWO multiple-choice questions grounded ONLY in the DOCUMENT CONTENT below for the subtopic shown.
-
-Constraints:
-- Use only facts present in the document. Do not invent.
-- Include a short DIRECT quote (6–12 words) from the document in the explanation, in "double quotes".
-- Exactly four options ["A","B","C","D"]. No prefixes.
-
-Return ONLY ONE JSON object:
-{
-  "questions": [
-    { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSt.title}" },
-    { "prompt": "string", "options": ["A","B","C","D"], "answerIndex": 0, "explanation": "string", "subtopicTitle": "${firstSt.title}" }
-  ]
-}
-
-DOCUMENT CONTENT (truncated):
-${(extracted || '').slice(0, 8000)}
-
-SUBTOPIC:
-${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, null, 2)}
-`.trim();
-            try {
-              const modelForQuiz = preferredModel || 'gemini-2.5-flash';
-              const qzRawV = await generateJSON(quizPromptV, modelForQuiz);
-              let qList: QuizQuestion[] = Array.isArray(qzRawV?.questions)
-                ? (qzRawV.questions as any[]).filter(isGoodQuestion)
-                : [];
-              // Shuffle options for each question to avoid positional bias
-              qList = qList.map((q) => {
-                const sh = shuffleOptionsWithAnswer(q.options, q.answerIndex);
-                return {
-                  ...q,
-                  options: sh.options,
-                  answerIndex: sh.answerIndex,
-                };
-              });
-              const quizDataV: Array<{
-                prompt: string;
-                options: any;
-                answerIndex: number;
-                explanation: string;
-                subtopicId: string;
-              }> = [];
-              const q1 = qList[0];
-              const q2 = qList[1];
-              if (isGoodQuestion(q1) && isGoodQuestion(q2)) {
-                quizDataV.push(
-                  {
-                    prompt: q1.prompt,
-                    options: q1.options as any,
-                    answerIndex: q1.answerIndex,
-                    explanation: q1.explanation,
-                    subtopicId: firstSt.id,
-                  },
-                  {
-                    prompt: q2.prompt,
-                    options: q2.options as any,
-                    answerIndex: q2.answerIndex,
-                    explanation: q2.explanation,
-                    subtopicId: firstSt.id,
-                  }
-                );
-              } else {
-                // Do not insert fallback questions; leave first subtopic without questions
-              }
-              if (quizDataV.length)
-                await prisma.quizQuestion.createMany({ data: quizDataV });
-            } catch {}
-          }
-        }
+        // Defer all subtopic + quiz generation to streaming path
         // Ensure dashboard caches reflect the new lecture immediately
         try {
           revalidateTag(`user-lectures:${userId}`);
@@ -753,12 +716,47 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       }
     }
 
+    // If we received PDFs via blobUrls and extracted usable text, defer
+    // breakdown/subtopic generation to the streaming endpoint.
+    if (shouldDeferBreakdown && text) {
+      const originalContent = sanitizeDbText(text);
+      const lecture = await prisma.lecture.create({
+        data: {
+          title: DEFAULT_TITLE,
+          originalContent,
+          userId,
+          lastOpenedAt: new Date(),
+        },
+      });
+      try {
+        await prisma.$executeRaw`UPDATE "User" SET "lifetimeLecturesCreated" = "lifetimeLecturesCreated" + 1 WHERE "id" = ${userId}`;
+      } catch {}
+      try {
+        await bumpDailyStreak(userId);
+      } catch {}
+      try {
+        revalidateTag(`user-lectures:${userId}`);
+      } catch {}
+      try {
+        revalidateTag(`user-stats:${userId}`);
+      } catch {}
+      return NextResponse.json(
+        {
+          lectureId: lecture.id,
+          debug: {
+            model: preferredModel || process.env.GEMINI_MODEL || 'default',
+            deferred: true,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
     // If we still have no text but we do have the PDF bytes, extract text now.
     if (!text && pdfBuffer) {
       try {
-        const data: any = await pdf(pdfBuffer);
-        approxPages = Number(data?.numpages || approxPages || 0) || approxPages;
-        const extracted = normalizeExtractedText(data.text || '');
+        const { text: extracted, pages } = await extractPdfTextQuiet(pdfBuffer);
+        approxPages = pages || approxPages;
         text = extracted;
       } catch {}
     }
@@ -837,7 +835,12 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       ${text}
     `;
     const t0 = Date.now();
-    const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
+    const bdRaw = await generateJSON(
+      breakdownPrompt,
+      process.env.AI_QUALITY_MODEL ||
+        process.env.OPENAI_MODEL ||
+        'gpt-5'
+    );
     let bd = sanitizeBreakdown(bdRaw, text);
     // Select coverage-maximizing subtopics up to cap
     const MAX_SUBTOPICS = 15;
@@ -878,7 +881,11 @@ ${JSON.stringify({ title: firstSt.title, overview: firstSt.overview || '' }, nul
       ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
     `.trim();
     const mid = Date.now();
-    const modelForQuiz = preferredModel || 'gemini-2.5-flash';
+    const modelForQuiz =
+      preferredModel ||
+      process.env.AI_QUALITY_MODEL ||
+      process.env.OPENAI_MODEL ||
+      'gpt-5';
     const qzRaw = await generateJSON(quizPromptFirst, modelForQuiz);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;

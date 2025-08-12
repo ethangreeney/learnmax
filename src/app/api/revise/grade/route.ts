@@ -139,7 +139,10 @@ ${answer}
     // Generous timeout and determinism via seed when supported by backend
     let result: any = {};
     try {
-      result = await generateJSON(gradingPrompt, 'gemini-2.5-flash');
+      result = await generateJSON(
+        gradingPrompt,
+        process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
+      );
     } catch {}
     let score = Math.max(0, Math.min(10, Number(result?.score)));
     if (!Number.isFinite(score)) score = 0;

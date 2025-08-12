@@ -6,6 +6,7 @@ import ModelSelector from '@/components/ModelSelector';
 import Link from 'next/link';
 import './globals.css';
 import 'katex/dist/katex.min.css';
+import GlobalPrefetcher from '@/components/GlobalPrefetcher';
 export const metadata: Metadata = {
   title: 'LearnMax — Your AI Study Companion',
   description:
@@ -16,9 +17,8 @@ const navLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/learn', label: 'Learn' },
   { href: '/leaderboard', label: 'Leaderboard' },
-  { href: '/profile', label: 'Profile' },
 ];
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -60,6 +60,8 @@ export default function RootLayout({
           </footer>
         </AuthProvider>
         <ContentGate />
+        {/* Prefetch common routes globally for snappier navigation */}
+        <GlobalPrefetcher routes={[...navLinks.map((n) => n.href), '/profile']} />
       </body>
     </html>
   );

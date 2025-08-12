@@ -142,6 +142,10 @@ export default function ReviseClient({
         attempted: s.attempted + 1,
         shortScores: [...s.shortScores, data.score],
       }));
+      // The server may have incremented Elo based on score thresholds; request navbar refresh
+      try {
+        window.dispatchEvent(new Event('elo:maybeRefresh'));
+      } catch {}
     } catch (e: any) {
       // ignore
     } finally {

@@ -93,7 +93,10 @@ Document:
 ---
 ${text}
           `;
-          const bdRaw = await generateJSON(breakdownPrompt, preferredModel);
+          const bdRaw = await generateJSON(
+            breakdownPrompt,
+            process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
+          );
           const DEFAULT_TITLE = 'Generating lesson... Please Wait';
           const topic =
             typeof bdRaw?.topic === 'string' && bdRaw.topic.trim()
