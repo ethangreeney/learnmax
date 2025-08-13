@@ -741,7 +741,7 @@ export default function LearnView({
       const title = s.title?.trim();
       const overview = (s.overview || '').trim();
       const explanationRaw = (explanations[s.id] || '').trim();
-      const explanation = stripLeadingTitle(explanationRaw, title).trim();
+      const explanation = stripLeadingTitle(explanationRaw).trim();
       const parts: string[] = [];
       if (title) parts.push(`# ${title}`);
       if (overview) parts.push(overview);
@@ -1245,8 +1245,7 @@ export default function LearnView({
                   rehypePlugins={[rehypeKatex]}
                 >
                   {stripLeadingTitle(
-                    explanations[currentSubtopic.id] || '',
-                    currentSubtopic.title
+                    explanations[currentSubtopic.id] || ''
                   ) || 'Crafting learning module...'}
                 </ReactMarkdown>
               </div>
@@ -1255,8 +1254,7 @@ export default function LearnView({
             {!readonly &&
               (() => {
                 const lessonMd = stripLeadingTitle(
-                  explanations[currentSubtopic.id] || '',
-                  currentSubtopic.title
+                  explanations[currentSubtopic.id] || ''
                 ).trim();
                 const hasLesson = lessonMd.length >= 50;
                 return (
