@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import ContentGate from '@/components/ContentGate';
 import ClientBoundary from '@/components/ClientBoundary';
 import AuthProvider from '@/components/AuthProvider';
-import ModelSelector from '@/components/ModelSelector';
 import Link from 'next/link';
 import './globals.css';
 import 'katex/dist/katex.min.css';
@@ -50,7 +49,6 @@ export default async function RootLayout({
                 ))}
               </nav>
               <div className="flex items-center gap-3">
-                <ModelSelector />
                 <ClientBoundary />
               </div>
             </div>

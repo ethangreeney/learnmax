@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { upload } from '@vercel/blob/client';
+import { useMeStore } from '@/lib/client/me-store';
 import AvatarCropper from '@/components/AvatarCropper';
 
 export type PublicProfile = {
@@ -36,7 +37,10 @@ export default function ProfileClient({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  const [pickedIsGif, setPickedIsGif] = useState<boolean>(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const setMe = useMeStore((s) => s.setMe);
 
   const USERNAME_RULE = /^[a-z0-9_]{3,20}$/; // a-z, 0-9, underscore, 3-20 chars
   const usernameValid = username.length === 0 || USERNAME_RULE.test(username);
@@ -49,16 +53,14 @@ export default function ProfileClient({
       if (username && !USERNAME_RULE.test(username)) {
         throw new Error('Username can only contain a-z, 0-9, _ and be 3–20 chars');
       }
-      const res = await fetch('/api/users/me', {
+      // Optimistic: we already updated local state fields; persist in background
+      setMe({ name, username, image });
+      setSavedAt(Date.now());
+      fetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, username, bio, image }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to save');
-      }
-      setSavedAt(Date.now());
+      }).catch(() => {});
     } catch (e: any) {
       setError(e?.message || 'Save failed');
     } finally {
@@ -68,11 +70,10 @@ export default function ProfileClient({
 
   async function onPickAvatar(file: File) {
     try {
-      if (file.type === 'image/gif') {
-        throw new Error('GIFs are not allowed for profile pictures');
-      }
       const objectUrl = URL.createObjectURL(file);
       setCropSrc(objectUrl);
+      setPickedFile(file);
+      setPickedIsGif(file.type === 'image/gif');
     } catch (e: any) {
       setError(e?.message || 'Avatar upload failed');
     }
@@ -86,7 +87,11 @@ export default function ProfileClient({
           onCancel={() => {
             URL.revokeObjectURL(cropSrc);
             setCropSrc(null);
+            setPickedFile(null);
+            setPickedIsGif(false);
           }}
+          // Guidance for GIF processing time
+          
           onCropped={async (croppedFile) => {
             try {
               const pathname = `avatars/${initialUser.id}.webp`;
@@ -97,7 +102,10 @@ export default function ProfileClient({
               });
               const bust = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
               setImage(bust);
+              setMe({ image: bust });
               setCropSrc(null);
+              setPickedFile(null);
+              setPickedIsGif(false);
               const res = await fetch('/api/users/me', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -109,6 +117,50 @@ export default function ProfileClient({
               }
             } catch (err: any) {
               setError(err?.message || 'Avatar upload failed');
+            } finally {
+              URL.revokeObjectURL(cropSrc);
+            }
+          }}
+          mode={pickedIsGif ? 'gif' : 'static'}
+          onGifCrop={async (area) => {
+            try {
+              if (!pickedFile) throw new Error('No file to crop');
+              const sourcePath = `avatars/${initialUser.id}.source.gif`;
+              const uploaded = await upload(sourcePath, pickedFile, {
+                access: 'public',
+                handleUploadUrl: '/api/blob/upload-url',
+                contentType: 'image/gif',
+                multipart: pickedFile.size > 10_000_000,
+              });
+
+              const controller = new AbortController();
+              const t = setTimeout(() => controller.abort(), 45_000);
+              const resp = await fetch('/api/avatar/crop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sourceUrl: uploaded.url,
+                  area: { x: area.x, y: area.y, width: area.width, height: area.height },
+                  outputSize: 512,
+                }),
+                signal: controller.signal,
+              }).finally(() => clearTimeout(t));
+              const data = await resp.json();
+              if (!resp.ok) throw new Error(data.error || 'Crop failed');
+              const bust = `${data.url}${String(data.url).includes('?') ? '&' : '?'}v=${Date.now()}`;
+              setImage(bust);
+              setMe({ image: bust });
+              setCropSrc(null);
+              setPickedFile(null);
+              setPickedIsGif(false);
+              // persist in background; don't block UI
+              fetch('/api/users/me', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: bust }),
+              }).catch(() => {});
+            } catch (err: any) {
+              setError(err?.message || 'GIF crop failed');
             } finally {
               URL.revokeObjectURL(cropSrc);
             }
@@ -174,13 +226,14 @@ export default function ProfileClient({
         <label className="btn-ghost cursor-pointer">
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             className="hidden"
             onChange={(e) => e.target.files && onPickAvatar(e.target.files[0])}
           />
           <ImageIcon className="h-4 w-4" />
           Change Avatar
         </label>
+        <span className="text-xs text-neutral-500">{pickedIsGif ? '(Saving a GIF as pfp can take ~30s)' : ''}</span>
         <button onClick={onSave} disabled={saving || (!!username && !usernameValid)} className="btn-primary">
           {saving ? 'Saving…' : 'Save Changes'}
         </button>

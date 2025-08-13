@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 import { generateText, streamTextChunks } from '@/lib/ai';
+import { getSelectedModelFromRequest } from '@/lib/ai-choice';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
 import { revalidateTag } from 'next/cache';
 import prisma from '@/lib/prisma';
+import { recordTokenUsage } from '@/lib/token-logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,12 +49,13 @@ ${userQuestion}
     const t0 = Date.now();
     const METRICS =
       process.env.AI_METRICS === '1' || process.env.LOG_AI === '1';
-    // Prefer explicit client selection; otherwise allow overriding via env for tutor only.
+    // Global selection: cookie overrides body/env
+    const selected = 'gemini-2.5-flash-lite';
     const tutorDefaultModel =
       process.env.AI_TUTOR_MODEL?.trim() ||
       process.env.AI_FAST_MODEL?.trim() ||
       (process.env.NODE_ENV === 'production' ? 'gpt-5' : undefined);
-    const chosenModel = (model && model.trim()) || tutorDefaultModel;
+    const chosenModel = 'gemini-2.5-flash-lite';
 
     // If query param stream=1, return Server-Sent Events style text/event-stream
     const url = new URL(req.url);
@@ -79,11 +82,15 @@ ${userQuestion}
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           try {
-            for await (const chunk of streamTextChunks(
+            let usedModel: string = String(chosenModel || process.env.GEMINI_MODEL || 'default');
+            const gen = streamTextChunks(
               userMsg,
               chosenModel,
               systemMsg
-            )) {
+            );
+            // Attach model if the generator exposes it
+            usedModel = (gen as any)?.usedModel || usedModel;
+            for await (const chunk of gen) {
               full += chunk;
               controller.enqueue(
                 encoder.encode(
@@ -92,13 +99,28 @@ ${userQuestion}
               );
             }
             const ms = Date.now() - t0;
-            const used = chosenModel || process.env.GEMINI_MODEL || 'default';
+            const used = (gen as any)?.usedModel || usedModel;
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: 'done', debug: { model: used, ms } })}\n\n`
               )
             );
             controller.close();
+            // Best-effort token logging (approx estimate for streamed path)
+            try {
+              const inChars = String(userMsg || '').length + String(systemMsg || '').length;
+              const outChars = String(full || '').length;
+              const inputTokens = Math.ceil(inChars / 4);
+              const outputTokens = Math.ceil(outChars / 4);
+              await recordTokenUsage({
+                userId: userId,
+                route: '/api/chat',
+                model: used,
+                tokensInput: inputTokens,
+                tokensOutput: outputTokens,
+                totalTokens: inputTokens + outputTokens,
+              });
+            } catch {}
             // Persist assistant reply
             if (canPersist) {
               try {
@@ -123,7 +145,7 @@ ${userQuestion}
               try {
                 console.log(
                   'CHAT_METRICS',
-                  JSON.stringify({ ok: true, stream: true, ms, model: used })
+                   JSON.stringify({ ok: true, stream: true, ms, model: used })
                 );
               } catch {}
             }
@@ -142,7 +164,7 @@ ${userQuestion}
                     ok: false,
                     stream: true,
                     ms: Date.now() - t0,
-                    model: chosenModel || 'default',
+                     model: String(chosenModel || 'default'),
                     error: String(e?.message || 'stream failed'),
                   })
                 );

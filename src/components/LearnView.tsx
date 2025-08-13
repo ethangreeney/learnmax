@@ -187,31 +187,54 @@ function mergeStreamChunk(previous: string, incoming: string): string {
   return appendChunkSafely(previous, novel);
 }
 
-// Ensure rendered content never starts with a title/heading
+// Ensure rendered content never starts with a duplicate title/heading
 function stripLeadingTitle(md: string, title?: string): string {
   let out = String(md ?? '');
-  // Drop leading ATX headings (# .. ###### ..)
-  out = out.replace(/^\s{0,3}#{1,6}\s+[^\n]+\n+/m, '');
-  // Drop leading setext headings (Title\n==== or ----)
-  out = out.replace(/^\s*([^\n]+)\n(?:=+|-+)\s*\n+/m, '');
-  // If first non-empty line equals provided title, remove it
-  if (title) {
-    const lines = out.split('\n');
-    const firstIdx = lines.findIndex((l) => l.trim() !== '');
-    if (firstIdx !== -1) {
-      const firstLine = lines[firstIdx].trim();
-      if (
-        firstLine.localeCompare(title.trim(), undefined, {
-          sensitivity: 'accent',
-        }) === 0
-      ) {
-        lines.splice(firstIdx, 1);
-        if (lines[firstIdx] !== undefined && lines[firstIdx].trim() === '') {
-          lines.splice(firstIdx, 1);
-        }
-        out = lines.join('\n');
+  const norm = (s: string) => s.trim();
+  const same = (a: string, b: string) =>
+    norm(a).localeCompare(norm(b), undefined, { sensitivity: 'accent' }) === 0;
+
+  // Iteratively remove leading headings or exact title lines at the very start
+  // to be resilient to streaming joins or minor variations.
+  for (;;) {
+    let changed = false;
+    // ATX heading at very beginning
+    const atx = out.match(/^\s{0,3}#{1,6}\s+([^\n]+)\n+/);
+    if (atx) {
+      const text = atx[1] || '';
+      if (!title || same(text, title)) {
+        out = out.slice(atx[0].length);
+        changed = true;
       }
     }
+    if (!changed) {
+      // Setext heading at very beginning
+      const setext = out.match(/^\s*([^\n]+)\n(?:=+|-+)\s*\n+/);
+      if (setext) {
+        const text = setext[1] || '';
+        if (!title || same(text, title)) {
+          out = out.slice(setext[0].length);
+          changed = true;
+        }
+      }
+    }
+    if (!changed && title) {
+      // Exact title as first non-empty line
+      const lines = out.split('\n');
+      const firstIdx = lines.findIndex((l) => l.trim() !== '');
+      if (firstIdx !== -1) {
+        const firstLine = lines[firstIdx].trim();
+        if (same(firstLine, title)) {
+          lines.splice(firstIdx, 1);
+          if (lines[firstIdx] !== undefined && lines[firstIdx].trim() === '') {
+            lines.splice(firstIdx, 1);
+          }
+          out = lines.join('\n');
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
   }
   return out;
 }
@@ -908,12 +931,7 @@ export default function LearnView({
     ]
   );
 
-  // Convenience wrapper for buttons: uses current subtopic
-  const fetchExplanation = useCallback(
-    (style: 'default' | 'simplified' | 'detailed' | 'example' = 'default') =>
-      fetchExplanationFor(currentSubtopic, style),
-    [currentSubtopic, fetchExplanationFor]
-  );
+  // Convenience wrapper removed along with style selection UI
 
   // Remove previously-deferred first-subtopic auto-regeneration to avoid
   // accidental double streams on mount.
@@ -1215,38 +1233,7 @@ export default function LearnView({
                 <span>Difficulty: {currentSubtopic.difficulty}</span>
               </div>
               {!readonly && !demo && (
-                <>
-                  <div className="mt-6 flex items-center gap-2 border-t border-neutral-800/50 pt-4">
-                    <span className="text-sm font-medium text-neutral-400">
-                      Style:
-                    </span>
-                    <button
-                      onClick={() => fetchExplanation('default')}
-                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                    >
-                      Default
-                    </button>
-                    <button
-                      onClick={() => fetchExplanation('simplified')}
-                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                    >
-                      Simplified
-                    </button>
-                    <button
-                      onClick={() => fetchExplanation('detailed')}
-                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                    >
-                      Detailed
-                    </button>
-                    <button
-                      onClick={() => fetchExplanation('example')}
-                      className="rounded-md bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700"
-                    >
-                      Example
-                    </button>
-                  </div>
-                  <hr className="my-6 border-neutral-800" />
-                </>
+                <hr className="my-6 border-neutral-800" />
               )}
               <div
                 id="lesson-markdown"

@@ -1,9 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import WelcomeTour, { type TourStep } from '@/components/WelcomeTour';
 
-export default function ExampleHelpAndTour() {
+type Props = {
+  hideButton?: boolean;
+  externalStartSignal?: number;
+};
+
+export default function ExampleHelpAndTour({ hideButton = false, externalStartSignal = 0 }: Props) {
   const [openMenu, setOpenMenu] = useState(false);
   const [restartTick, setRestartTick] = useState(0);
   const [confirming, setConfirming] = useState(false);
@@ -93,34 +98,45 @@ export default function ExampleHelpAndTour() {
     setRestartTick((t) => t + 1);
   }, []);
 
+  // Allow external triggers to start/restart the tour without exposing the Help UI
+  useEffect(() => {
+    // ignore initial mount when signal is 0
+    if (externalStartSignal > 0) {
+      doRestart();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalStartSignal]);
+
   return (
     <div className="relative">
-      <div className="relative">
-        <button
-          onClick={() => setOpenMenu((o) => !o)}
-          className="rounded-md border border-neutral-700 bg-neutral-900/60 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
-          aria-haspopup="menu"
-          aria-expanded={openMenu}
-        >
-          Help
-        </button>
-        {openMenu && (
-          <div
-            role="menu"
-            className="absolute right-0 z-50 mt-2 min-w-[200px] rounded-md border border-neutral-700 bg-neutral-900 p-1 text-sm shadow-lg"
+      {!hideButton && (
+        <div className="relative">
+          <button
+            onClick={() => setOpenMenu((o) => !o)}
+            className="rounded-md border border-neutral-700 bg-neutral-900/60 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+            aria-haspopup="menu"
+            aria-expanded={openMenu}
           >
-            <button
-              role="menuitem"
-              onClick={confirmRestart}
-              className="block w-full rounded-md px-3 py-2 text-left text-neutral-200 hover:bg-neutral-800"
+            Help
+          </button>
+          {openMenu && (
+            <div
+              role="menu"
+              className="absolute right-0 z-50 mt-2 min-w-[200px] rounded-md border border-neutral-700 bg-neutral-900 p-1 text-sm shadow-lg"
             >
-              Restart Welcome Guide
-            </button>
-          </div>
-        )}
-      </div>
+              <button
+                role="menuitem"
+                onClick={confirmRestart}
+                className="block w-full rounded-md px-3 py-2 text-left text-neutral-200 hover:bg-neutral-800"
+              >
+                Restart Welcome Guide
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      {confirming && (
+      {confirming && !hideButton && (
         <div className="absolute right-0 z-50 mt-2 w-[260px] rounded-md border border-neutral-700 bg-neutral-900 p-3 text-sm shadow-xl">
           <div className="text-neutral-200">Restart the tour?</div>
           <div className="mt-2 flex items-center justify-end gap-2">

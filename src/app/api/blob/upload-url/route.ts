@@ -19,7 +19,7 @@ export async function POST(req: Request) {
         const isAvatar =
           typeof pathname === 'string' && pathname.startsWith('avatars/');
         const allowedImages = isAvatar
-          ? ['image/png', 'image/jpeg', 'image/webp'] // no GIFs for avatars
+          ? ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
           : ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
         return {
           allowedContentTypes: ['application/pdf', ...allowedImages],

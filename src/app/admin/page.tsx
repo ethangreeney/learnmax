@@ -11,6 +11,7 @@ export default async function AdminHomePage() {
         <div className="flex flex-wrap gap-3">
           <Link href="/admin/ranks" className="btn-primary px-4 py-2">Rank Icons</Link>
           <Link href="/admin/elo" className="btn-ghost px-4 py-2">Adjust My Elo</Link>
+          <Link href="/admin/tokens" className="btn-ghost px-4 py-2">Token Usage</Link>
         </div>
       </div>
     </div>

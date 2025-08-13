@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
 
     // Strict grading via AI with numeric 0..10, grounded in lesson only.
     const { generateJSON } = await import('@/lib/ai');
+    const { getSelectedModelFromRequest } = await import('@/lib/ai-choice');
 
     // Detect if this is the calibrated Next.js + Prisma composite index question (robust-ish heuristic)
     const p = prompt.toLowerCase();
@@ -139,9 +140,11 @@ ${answer}
     // Generous timeout and determinism via seed when supported by backend
     let result: any = {};
     try {
+      const preferred = 'gemini-2.5-flash-lite';
       result = await generateJSON(
         gradingPrompt,
-        process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
+        'gemini-2.5-flash-lite',
+        undefined
       );
     } catch {}
     let score = Math.max(0, Math.min(10, Number(result?.score)));

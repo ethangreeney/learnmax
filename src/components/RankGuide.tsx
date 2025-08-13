@@ -196,8 +196,18 @@ export default function RankGuide({
                       const rangeLabel = max == null ? `${min}+` : `${min}\u2013${max}`;
                       const isCurrent = (viewerElo ?? 0) >= min && (max == null || (viewerElo ?? 0) <= max);
                       const gradClass = rankGradient(r.slug);
-                      const denom = next ? Math.max(1, next.minElo - min) : 400;
-                      const progressPct = isCurrent ? Math.max(0, Math.min(100, (((viewerElo ?? 0) - min) / denom) * 100)) : 0;
+                      const denom = next ? Math.max(1, next.minElo - min) : 1;
+                      const progressPct = isCurrent
+                        ? (next
+                            ? Math.max(
+                                0,
+                                Math.min(
+                                  100,
+                                  (((viewerElo ?? 0) - min) / denom) * 100
+                                )
+                              )
+                            : 100)
+                        : 0;
                       const toNext = next ? Math.max(0, next.minElo - (viewerElo ?? 0)) : null;
                       return (
                         <li key={`${r.slug}-${min}`} className={`relative rounded-md py-3 transition-colors ${isCurrent ? 'bg-neutral-900 ring-1 ring-green-500/20' : 'hover:bg-neutral-900'}`}>

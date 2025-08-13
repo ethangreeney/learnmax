@@ -572,7 +572,7 @@ export async function POST(req: NextRequest) {
         }
         const model = client.getGenerativeModel({
           model:
-            preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+            preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
           generationConfig: {
             responseMimeType: 'application/json',
             temperature: 0,
@@ -705,7 +705,7 @@ export async function POST(req: NextRequest) {
               model:
                 preferredModel ||
                 process.env.GEMINI_MODEL ||
-                'gemini-2.5-flash',
+                'gemini-2.5-flash-lite',
               usedVision: true,
             },
           },

@@ -130,23 +130,31 @@ export async function POST(req: NextRequest) {
     // Ensure ownership: subtopic belongs to a lecture owned by the current user
     const subtopic = await prisma.subtopic.findFirst({
       where: { id: subtopicId, lecture: { userId } },
-      select: { id: true },
+      select: { id: true, lectureId: true },
     });
     if (!subtopic) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Fetch existing questions for this subtopic
-    const existing = await prisma.quizQuestion.findMany({
-      where: { subtopicId },
-      select: {
-        id: true,
-        prompt: true,
-        options: true,
-        answerIndex: true,
-        explanation: true,
-      },
-    });
+    // Fetch existing questions for this subtopic and across the lecture to avoid cross-subtopic duplicates
+    const [existing, lectureExistingPrompts] = await Promise.all([
+      prisma.quizQuestion.findMany({
+        where: { subtopicId },
+        select: {
+          id: true,
+          prompt: true,
+          options: true,
+          answerIndex: true,
+          explanation: true,
+        },
+      }),
+      prisma.quizQuestion
+        .findMany({
+          where: { subtopic: { lectureId: subtopic.lectureId } },
+          select: { prompt: true },
+        })
+        .catch(() => [] as Array<{ prompt: string }>),
+    ]);
 
     // Cap at two questions per subtopic for now (to match UI expectation)
     const REQUIRED = 2;
@@ -165,9 +173,16 @@ export async function POST(req: NextRequest) {
 
     // Validate incoming payload; only take what we need to fill up to REQUIRED
     const toInsert: IncomingQuestion[] = [];
-    const existingPrompts = existing
-      .map((q) => String(q.prompt || '').trim())
-      .filter(Boolean);
+    const existingPrompts = Array.from(
+      new Set(
+        [
+          ...existing.map((q) => String(q.prompt || '').trim()),
+          ...lectureExistingPrompts
+            .map((q) => String(q?.prompt || '').trim())
+            .filter(Boolean),
+        ].filter(Boolean)
+      )
+    );
     for (const q of questions) {
       const ok =
         q &&

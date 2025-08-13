@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ask Gemini to analyze full PDF (text + images). Ignore client-selected model.
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
     const model = client.getGenerativeModel({
       model: modelName,
       generationConfig: {

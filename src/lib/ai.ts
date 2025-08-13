@@ -11,7 +11,7 @@ import OpenAI from 'openai';
 export const PRIMARY_MODEL =
   process.env.OPENAI_MODEL?.trim() ||
   process.env.GEMINI_MODEL?.trim() ||
-  'gemini-2.5-flash';
+  'gemini-2.5-flash-lite';
 
 // Global per-call AI timeout (each provider request)
 const AI_MODEL_TIMEOUT_MS: number =
@@ -134,41 +134,8 @@ const log = (...a: any[]) => {
 };
 
 function buildFallbackList(preferredModel?: string): string[] {
-  const list: string[] = [];
-  const base = replaceDeprecatedModelName(
-    preferredModel?.trim() || PRIMARY_MODEL
-  );
-  list.push(base);
-  const hasOpenAI = Boolean(
-    process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim()
-  );
-  const hasGemini = Boolean(
-    process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim()
-  );
-  if (isOpenAIModel(base) && hasOpenAI) {
-    // Prefer OpenAI; no mini fallback
-    // Always include Gemini fallbacks to ensure graceful degradation when OpenAI is unavailable
-    if (hasGemini) {
-      list.push('gemini-2.5-flash-lite');
-      list.push('gemini-2.0-flash');
-      list.push('gemini-2.5-pro');
-      list.push('gemini-2.0-pro');
-    }
-  } else {
-    // Gemini fallbacks
-    // Prefer lower-latency Flash variants first
-    if (hasGemini) {
-      list.push('gemini-2.5-flash-lite');
-      list.push('gemini-2.0-flash');
-    }
-    // Keep Pro variants last as a strict fallback
-    if (hasGemini) {
-      list.push('gemini-2.5-pro');
-      list.push('gemini-2.0-pro');
-    }
-    // If OpenAI is configured but base isn't OpenAI, skip mini cross-provider fallback
-  }
-  return Array.from(new Set(list));
+  // Force a single, fixed model everywhere
+  return ['gemini-2.5-flash-lite'];
 }
 
 async function generateTextWithGemini(

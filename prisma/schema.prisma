@@ -78,6 +78,7 @@ model User {
   // Aggregates and activity
   eloEvents                 EloEvent[]
   lectureCompletions        UserLectureCompletion[]
+  tokenUsages               TokenUsage[]
 }
 
 model Lecture {
@@ -271,4 +272,24 @@ model Rank {
   name    String
   minElo  Int
   iconUrl String?
+}
+
+// Records per-request token usage for AI calls
+model TokenUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  route        String
+  model        String
+  tokensInput  Int      @default(0)
+  tokensOutput Int      @default(0)
+  totalTokens  Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([totalTokens(sort: Desc)])
+  @@index([route])
+  @@index([model])
 }

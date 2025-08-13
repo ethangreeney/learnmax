@@ -10,6 +10,7 @@ import { getLecturesCached, getUserStatsCached, getProfileForUser } from '@/lib/
 import { getRanksSafe, getRankGradient } from '@/lib/ranks';
 import ProfileClient from '@/app/profile/ProfileClient';
 import RankGuide from '@/components/RankGuide';
+import ProfileAvatar from '@/components/ProfileAvatar';
 
 function StatCard({
   icon: Icon,
@@ -138,7 +139,7 @@ export default async function Dashboard() {
                   <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/50 via-emerald-400/30 to-emerald-300/20 blur-sm" />
                   <div className="relative h-full w-full overflow-hidden rounded-full bg-neutral-950 ring-2 ring-neutral-800">
                     {me.image ? (
-                      <Image src={me.image} alt="avatar" width={96} height={96} className="h-full w-full object-cover" priority />
+                      <ProfileAvatar userId={me.id} src={String(me.image)} width={96} height={96} className="h-full w-full object-cover" priority />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-neutral-500">
                         <UserIcon className="h-9 w-9" />

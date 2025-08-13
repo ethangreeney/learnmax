@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { notFound } from 'next/navigation';
@@ -6,6 +7,8 @@ import { getRanksSafe, pickRankForElo, getRankGradient } from '@/lib/ranks';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import FollowButton from '../../../users/[username]/FollowButton';
+import ProfileAvatar from '@/components/ProfileAvatar';
+import { SelfName, SelfUsername } from '@/components/SelfUserText';
 
 export default async function PublicProfileById({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params;
@@ -60,44 +63,30 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
           <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
         </div>
         <div className="relative z-10 p-5 md:p-6 pb-8 md:pb-10">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="flex min-w-0 flex-1 items-start gap-4">
-              <div className="relative top-[2px] self-start">
-                <div className="relative h-24 w-24 rounded-full">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/50 via-emerald-400/30 to-emerald-300/20 blur-sm" />
-                  <div className="relative h-full w-full overflow-hidden rounded-full bg-neutral-950 ring-2 ring-neutral-800">
-                    {user.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={user.image} alt="avatar" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-neutral-500" />
-                    )}
-                  </div>
-                </div>
+          <div className="flex items-center gap-4">
+            <div className="h-20 w-20 rounded-full ring-2 ring-neutral-800 overflow-hidden bg-neutral-900">
+              {user.image ? (
+                <ProfileAvatar userId={user.id} src={user.image} width={80} height={80} className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight"><SelfName userId={user.id} fallback={user.name || 'User'} /></h1>
+                <span className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs`}>
+                  <span className={`bg-gradient-to-r ${rankColor} bg-clip-text text-transparent font-semibold rank-shimmer`}>
+                    {rank?.name || 'Unranked'}
+                  </span>
+                  <span className="text-neutral-400">Elo {user.elo}</span>
+                </span>
               </div>
-              <div className="min-w-0 pt-1">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{user.name || 'User'}</h1>
+              <p className="mt-1 text-sm text-neutral-400">{user.username ? (<SelfUsername userId={user.id} fallback={user.username} />) : '—'}</p>
+              {!isSelf && (
+                <div className="mt-3">
+                  <FollowButton targetUserId={user.id} />
                 </div>
-                <p className="mt-1 text-sm text-neutral-400">{user.username ? `@${user.username}` : '—'}</p>
-                {!isSelf && (
-                  <div className="mt-3">
-                    <FollowButton targetUserId={user.id} />
-                  </div>
-                )}
-                {/* Mobile rank */}
-                <div className="mt-3 flex flex-wrap items-center gap-2 md:hidden">
-                  <div className="flex shrink-0 flex-col items-center gap-2 px-1">
-                    {rank?.iconUrl ? (
-                      <Image src={rank.iconUrl} alt={rank.name} width={72} height={72} className="relative top-[6px] h-[72px] w-[72px] object-contain" />
-                    ) : null}
-                    <div className={`relative top-[4px] bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold leading-tight text-transparent rank-shimmer`}>
-                      {rank?.name || 'Unranked'}
-                    </div>
-                    <div className="text-xs leading-tight text-neutral-400">Elo {user.elo}</div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
             {/* Desktop right-side rank panel with progress bar */}
             <div className="relative top-[4px] hidden shrink-0 items-center gap-6 md:flex">

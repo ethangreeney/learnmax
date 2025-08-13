@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
     ],
   },
+  webpack: (config) => {
+    // Mark sharp as external to avoid bundling optional native binary
+    const externals = Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean);
+    externals.push({ sharp: 'commonjs sharp' });
+    // @ts-ignore - type mismatch acceptable
+    config.externals = externals;
+    return config;
+  },
 };
 
 export default nextConfig;

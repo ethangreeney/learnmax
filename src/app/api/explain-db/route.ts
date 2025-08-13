@@ -11,57 +11,61 @@ const err = (...a: any[]) => {
   if (L) console.error('[explain-db]', ...a);
 };
 
-type StripOpts = { title?: string; isChunk?: boolean };
+type StripOpts = { title?: string; lectureTitle?: string; isChunk?: boolean };
 
 function stripPreamble(md: string, opts?: StripOpts): string {
-  // Avoid trimming for streaming chunks to prevent word concatenation across boundaries
+  // Be conservative on streaming: do not mutate incremental chunks
+  if (opts?.isChunk) return String(md ?? '');
+
   let out = String(md ?? '');
 
-  // Common filler/preamble phrases at the start
+  // Remove obvious filler strictly at the start
   out = out.replace(
-    /^(?:\s*)(of course|sure\,?|here (?:is|are)|crafting learning module\.\.\.)[^\n]*\n*/i,
+    /^(?:\s*)(?:of course|sure\,?|here (?:is|are)|crafting learning module\.\.\.)[^\n]*\n*/i,
     ''
   );
 
-  // Drop leading ATX headings (H1–H6)
-  out = out.replace(/^\s{0,3}#{1,6}\s+[^\n]+\n+/m, '');
+  // Drop a single leading heading (ATX or Setext) at the very beginning only
+  out = out.replace(/^\s{0,3}#{1,6}\s+[^\n]+\n+/, '');
+  out = out.replace(/^\s*([^\n]+)\n(?:=+|-+)\s*\n+/, '');
 
-  // Drop leading setext headings (Title\n==== or ----)
-  out = out.replace(/^\s*([^\n]+)\n(?:=+|-+)\s*\n+/m, '');
-
-  // If first non-empty line equals the provided title, remove it
-  if (opts?.title) {
+  // If first non-empty line equals the provided title(s), remove that line only
+  if (opts?.title || opts?.lectureTitle) {
     const lines = out.split('\n');
     const firstIdx = lines.findIndex((l) => l.trim() !== '');
     if (firstIdx !== -1) {
       const firstLine = lines[firstIdx].trim();
-      if (
-        firstLine.localeCompare(opts.title.trim(), undefined, {
+      const equals = (a: string | undefined) =>
+        !!a &&
+        firstLine.localeCompare(String(a).trim(), undefined, {
           sensitivity: 'accent',
-        }) === 0
-      ) {
+        }) === 0;
+      if (equals(opts.title) || equals(opts.lectureTitle)) {
         lines.splice(firstIdx, 1);
         out = lines.join('\n');
       }
     }
   }
 
-  // Drop generic disclaimers about context/section anywhere in the first few short paragraphs
-  let paras = out.split(/\n{2,}/);
+  // Drop at most the first two very short meta paragraphs that look like disclaimers
+  const paras = out.split(/\n{2,}/);
   if (paras.length) {
     const preambleRe =
-      /\b(document\s+context|provided\s+context|limited\s+context|insufficient\s+context|lack\s+of\s+context|not\s+enough\s+context|context\s+alone|based\s+on\s+the\s+provided\s+(document|context)|this\s+(section|explanation)\s+will|in\s+this\s+(section|lesson)|overview\s+of)\b/i;
-    paras = paras.filter((p, idx) => {
-      const trimmed = p.trim();
-      // Filter out short meta paragraphs that look like disclaimers/preambles
-      if (trimmed.length <= 500 && preambleRe.test(trimmed)) return false;
-      return true;
-    });
+      /\b(document\s+context|provided\s+context|limited\s+context|insufficient\s+context|lack\s+of\s+context|context\s+alone|based\s+on\s+the\s+provided\s+(document|context)|this\s+(section|explanation)\s+will)\b/i;
+    let removed = 0;
+    for (let i = 0; i < Math.min(2, paras.length); i++) {
+      const trimmed = paras[i].trim();
+      if (trimmed.length <= 180 && preambleRe.test(trimmed)) {
+        paras.splice(i, 1);
+        removed++;
+        i--;
+        if (removed >= 2) break;
+      }
+    }
     out = paras.join('\n\n');
   }
 
-  if (!opts?.isChunk) out = out.trim();
-  return out;
+  return out.trim();
 }
 
 // Merge streaming chunks without gluing words together across boundaries.
@@ -187,18 +191,14 @@ export async function POST(req: Request) {
               preferredModel,
               systemMsg
             )) {
-              const clean = stripPreamble(chunk, {
-                title: subtopic,
-                isChunk: true,
-              });
-              full = appendChunkSafely(full, clean);
+              full = appendChunkSafely(full, chunk);
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: 'chunk', delta: clean })}\n\n`
+                  `data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`
                 )
               );
             }
-            const markdown = stripPreamble(full, { title: subtopic });
+            const markdown = stripPreamble(full, { title: subtopic, lectureTitle });
             // Persist best-effort
             if (subtopicIdIn && markdown) {
               try {
@@ -238,7 +238,7 @@ export async function POST(req: Request) {
 
     // Non-streaming fallback
     const raw = await generateText(prompt, preferredModel, systemMsg);
-    const markdown = stripPreamble(raw, { title: subtopic });
+    const markdown = stripPreamble(raw, { title: subtopic, lectureTitle });
     const ms = Date.now() - t0;
 
     log('OUT', { ok: !!markdown, chars: markdown.length, ms });
