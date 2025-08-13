@@ -146,12 +146,12 @@ export default function LeaderboardClient() {
                         return (
                           <div className="grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-2">
                             {r.iconUrl ? (
-                              <div className="relative col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8">
+                              <div className="relative col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={r.iconUrl} alt={r.name} className="absolute inset-0 h-full w-full object-contain" />
                               </div>
                             ) : (
-                              <div className={`col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8 rounded-md bg-gradient-to-br ${grad} shadow-[inset_0_0_0,1px_rgba(0,0,0,0.25)]`} aria-hidden />
+                              <div className={`col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10 rounded-md bg-gradient-to-br ${grad} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`} aria-hidden />
                             )}
                             <div className={`col-start-2 row-start-1 bg-gradient-to-r ${grad} bg-clip-text text-[13px] font-semibold leading-none text-transparent rank-shimmer`}>
                               {r.name}

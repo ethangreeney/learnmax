@@ -85,13 +85,6 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="truncate text-2xl font-semibold md:text-3xl"><SelfName userId={user.id} fallback={user.name || user.username || 'Learner'} /></h1>
-                <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800">
-                  {rank?.iconUrl && (
-                    <Image src={rank.iconUrl} alt={rank.name} width={16} height={16} className="h-4 w-4 object-contain" />
-                  )}
-                  <span className={`bg-gradient-to-r ${rankColor} bg-clip-text font-semibold text-transparent`}>{rank?.name || 'Unranked'}</span>
-                  <span className="text-neutral-400">Elo {user.elo}</span>
-                </span>
               </div>
               {user.username && <div className="text-sm text-neutral-500"><SelfUsername userId={user.id} fallback={user.username} /></div>}
               {lastActiveAt && (

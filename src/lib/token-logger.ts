@@ -36,7 +36,7 @@ export async function recordTokenUsage(rec: TokenUsageRecord): Promise<void> {
   try {
     const userId = rec.userId || undefined;
     if (!userId) return; // we only log for known users
-    await prisma.tokenUsage.create({
+    await (prisma as any)?.tokenUsage?.create?.({
       data: {
         userId: userId as string | undefined, // undefined allowed by Prisma? We'll assert defined below
         route: rec.route,

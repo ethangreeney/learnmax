@@ -16,6 +16,7 @@ export async function POST(req: Request) {
         if (typeof pathname === 'string' && pathname.startsWith('ranks/')) {
           await requireAdmin();
         }
+        const isRankIcon = typeof pathname === 'string' && pathname.startsWith('ranks/');
         const isAvatar =
           typeof pathname === 'string' && pathname.startsWith('avatars/');
         const allowedImages = isAvatar
@@ -24,9 +25,11 @@ export async function POST(req: Request) {
         return {
           allowedContentTypes: ['application/pdf', ...allowedImages],
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB
-          addRandomSuffix: false,
-          allowOverwrite: true,
-          cacheControlMaxAge: 60 * 60 * 24 * 7, // 7 days
+          // Ensure rank icon updates are immediately visible by using unique URLs
+          addRandomSuffix: isRankIcon ? true : false,
+          allowOverwrite: isRankIcon ? false : true,
+          // With unique URLs for rank icons, we can safely cache them longer
+          cacheControlMaxAge: isRankIcon ? 60 * 60 * 24 * 365 : 60 * 60 * 24 * 7,
         };
       },
       onUploadCompleted: async () => {

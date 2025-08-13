@@ -90,13 +90,13 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
 
             <div className="shrink-0 grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-3">
               {u.rank?.iconUrl ? (
-                <div className="relative col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8">
+                <div className="relative col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={u.rank.iconUrl} alt={u.rank.name} className="absolute inset-0 h-full w-full object-contain" />
                 </div>
               ) : (
                 <div
-                  className={`col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8 rounded-md bg-gradient-to-br ${getRankGradient(u.rank?.slug)} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`}
+                  className={`col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10 rounded-md bg-gradient-to-br ${getRankGradient(u.rank?.slug)} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`}
                   aria-hidden
                 />
               )}
