@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.14.0",
-  "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev": "next dev --turbopack",
     "migrate:deploy": "prisma migrate deploy || prisma db push",
@@ -32,6 +31,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sharp": "^0.33.5",
     "zustand": "^5.0.7"
   },
   "devDependencies": {
@@ -54,7 +54,8 @@
     "onlyBuiltDependencies": [
       "@prisma/client",
       "@prisma/engines",
-      "prisma"
+      "prisma",
+      "sharp"
     ]
   }
 }

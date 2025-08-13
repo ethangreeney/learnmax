@@ -9,6 +9,7 @@ import { authOptions } from '@/lib/auth';
 import FollowButton from '../../users/[username]/FollowButton';
 import ProfileAvatar from '@/components/ProfileAvatar';
 import { SelfName, SelfUsername } from '@/components/SelfUserText';
+import { getUserStatsCached } from '@/lib/cached';
 
 export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
@@ -36,13 +37,14 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const viewerId = (session?.user as any)?.id as string | undefined;
   const isSelf = viewerId === user.id;
 
-  const [ranks, agg, followerCount, followingCount, higherCount, lastAttempt] = await Promise.all([
+  const [ranks, agg, followerCount, followingCount, higherCount, lastAttempt, stats] = await Promise.all([
     getRanksSafe(),
     prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId: user.id }, _count: { _all: true } }),
     prisma.follow.count({ where: { followingId: user.id } }),
     prisma.follow.count({ where: { followerId: user.id } }),
     prisma.user.count({ where: { elo: { gt: user.elo } } }),
     prisma.quizAttempt.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    getUserStatsCached(user.id),
   ]);
   const rank = pickRankForElo(ranks, user.elo);
   const rankColor = getRankGradient(rank?.slug);
@@ -50,6 +52,9 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
   const lastActiveAt = user.lastStudiedAt || lastAttempt?.createdAt || null;
+  const lifetimeMastered = (stats as any)?.lifetime?.subtopicsMastered ?? (stats as any)?.masteredCount ?? user._count.masteredSubtopics;
+  const lifetimeLectures = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
+  const highestElo = user.elo; // Elo never decrements in current model
   const sorted = [...ranks].sort((a, b) => a.minElo - b.minElo);
   const currentIndex = (() => {
     let idx = 0;
@@ -140,24 +145,24 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Mastered</div>
-          <div className="text-2xl font-semibold">{user._count.masteredSubtopics}</div>
+          <div className="text-sm text-neutral-400">Subtopics Mastered</div>
+          <div className="text-2xl font-semibold">{lifetimeMastered}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Accuracy</div>
-          <div className="text-2xl font-semibold">{accuracy}%</div>
+          <div className="text-2xl font-semibold">{correct}/{total}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Streak</div>
           <div className="text-2xl font-semibold">{user.streak}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Followers</div>
-          <div className="text-2xl font-semibold">{followerCount}</div>
+          <div className="text-sm text-neutral-400">Lectures Created (Lifetime)</div>
+          <div className="text-2xl font-semibold">{lifetimeLectures}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Following</div>
-          <div className="text-2xl font-semibold">{followingCount}</div>
+          <div className="text-sm text-neutral-400">Highest Elo (All‑time)</div>
+          <div className="text-2xl font-semibold">{highestElo}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Leaderboard Rank</div>

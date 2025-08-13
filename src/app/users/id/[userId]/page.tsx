@@ -6,6 +6,7 @@ import FollowButton from '../../[username]/FollowButton';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getRanksSafe, pickRankForElo, getRankGradient } from '@/lib/ranks';
+import { getUserStatsCached } from '@/lib/cached';
 
 export default async function PublicProfileById({
   params,
@@ -33,18 +34,22 @@ export default async function PublicProfileById({
   const session = await getServerSession(authOptions);
   const viewerId = (session?.user as any)?.id as string | undefined;
   const isSelf = viewerId === user.id;
-  const [agg, ranks, followerCount, followingCount, higherCount, lastAttempt] = await Promise.all([
+  const [agg, ranks, followerCount, followingCount, higherCount, lastAttempt, stats] = await Promise.all([
     prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId: user.id }, _count: { _all: true } }),
     getRanksSafe(),
     prisma.follow.count({ where: { followingId: user.id } }),
     prisma.follow.count({ where: { followerId: user.id } }),
     prisma.user.count({ where: { elo: { gt: user.elo } } }),
     prisma.quizAttempt.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    getUserStatsCached(user.id),
   ]);
   const total = agg.reduce((a, r) => a + r._count._all, 0);
   const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
   const accuracy = total ? Math.round((correct / total) * 100) : 0;
   const lastActiveAt = user.lastStudiedAt || lastAttempt?.createdAt || null;
+  const lifetimeLectures = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
+  const highestElo = user.elo;
+  const lifetimeMastered = (stats as any)?.lifetime?.subtopicsMastered ?? (stats as any)?.masteredCount ?? user._count.masteredSubtopics;
 
   // Rank data and progress
   const rank = pickRankForElo(ranks, user.elo);
@@ -161,24 +166,24 @@ export default async function PublicProfileById({
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Mastered</div>
-          <div className="text-2xl font-semibold">{user._count.masteredSubtopics}</div>
+          <div className="text-sm text-neutral-400">Subtopics Mastered</div>
+          <div className="text-2xl font-semibold">{lifetimeMastered}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Accuracy</div>
-          <div className="text-2xl font-semibold">{accuracy}%</div>
+          <div className="text-2xl font-semibold">{correct}/{total}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Streak</div>
           <div className="text-2xl font-semibold">{user.streak}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Followers</div>
-          <div className="text-2xl font-semibold">{followerCount}</div>
+          <div className="text-sm text-neutral-400">Lectures Created (Lifetime)</div>
+          <div className="text-2xl font-semibold">{lifetimeLectures}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Following</div>
-          <div className="text-2xl font-semibold">{followingCount}</div>
+          <div className="text-sm text-neutral-400">Highest Elo (All‑time)</div>
+          <div className="text-2xl font-semibold">{highestElo}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Leaderboard Rank</div>

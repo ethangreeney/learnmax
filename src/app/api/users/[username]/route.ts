@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
+import { getUserStatsCached } from '@/lib/cached';
 
 export async function GET(
   _req: Request,
@@ -44,6 +45,12 @@ export async function GET(
     const ranks = await getRanksSafe();
     const rank = pickRankForElo(ranks, user.elo);
 
+    // Align counts with dashboard lifetime counters
+    const stats = await getUserStatsCached(user.id);
+    const lifetimeSubtopicsMastered =
+      (stats as any)?.lifetime?.subtopicsMastered ?? (stats as any)?.masteredCount ?? user._count.masteredSubtopics;
+    const lifetimeLecturesCreated = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
+
     return NextResponse.json({
       user: {
         id: user.id,
@@ -54,7 +61,10 @@ export async function GET(
         elo: user.elo,
         streak: user.streak,
         leaderboardOptOut: user.leaderboardOptOut,
-        masteredCount: user._count.masteredSubtopics,
+        masteredCount: lifetimeSubtopicsMastered,
+        lifetimeLecturesCreated,
+        lifetimeSubtopicsMastered,
+        highestElo: user.elo,
         quiz: { totalAttempts: total, correct, accuracy },
         rank: rank
           ? {
