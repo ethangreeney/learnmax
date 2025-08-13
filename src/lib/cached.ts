@@ -166,9 +166,9 @@ export async function getProfileForUser(
   const rank = r ? { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl } : null;
   const total = Array.isArray(quizAgg)
     ? quizAgg.reduce(
-        (acc: number, row: { _count: { _all: number } }) => acc + row._count._all,
-        0
-      )
+      (acc: number, row: { _count: { _all: number } }) => acc + row._count._all,
+      0
+    )
     : 0;
   const correct = Array.isArray(quizAgg)
     ? quizAgg.find((rr: any) => rr.isCorrect)?._count._all || 0
@@ -292,7 +292,7 @@ export async function getLeaderboardCached(period: LeaderboardPeriod, scope: Lea
       return items;
     },
     ['leaderboard', period, scope, viewerId || 'anon'],
-    { revalidate: 60, tags: [`leaderboard:${period}:${scope}:${viewerId || 'anon'}`] }
+    { revalidate: 60, tags: [`leaderboard:${period}:${scope}:${viewerId || 'anon'}`, 'ranks'] }
   );
   return fn();
 }

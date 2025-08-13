@@ -36,8 +36,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
     getLeaderboardCached(period, scope, viewerId || null),
     viewerId
       ? prisma.user
-          .findUnique({ where: { id: viewerId }, select: { elo: true } })
-          .catch(() => null)
+        .findUnique({ where: { id: viewerId }, select: { elo: true } })
+        .catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -88,16 +88,22 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
               </div>
             </div>
 
-            <div className="shrink-0">
-              <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 px-3 py-1 text-xs">
-                {u.rank?.iconUrl && (
-                  <Image src={u.rank.iconUrl} alt={u.rank.name} width={14} height={14} className="h-3.5 w-3.5 object-contain" unoptimized />
-                )}
-                <span className={`bg-gradient-to-r ${getRankGradient(u.rank?.slug)} bg-clip-text text-transparent font-semibold rank-shimmer`}>
-                  {u.rank?.name || 'Unranked'}
-                </span>
-                <span className="text-neutral-400">Elo {u.elo}</span>
-              </span>
+            <div className="shrink-0 grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-3">
+              {u.rank?.iconUrl ? (
+                <div className="relative col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u.rank.iconUrl} alt={u.rank.name} className="absolute inset-0 h-full w-full object-contain" />
+                </div>
+              ) : (
+                <div
+                  className={`col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8 rounded-md bg-gradient-to-br ${getRankGradient(u.rank?.slug)} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`}
+                  aria-hidden
+                />
+              )}
+              <div className={`col-start-2 row-start-1 bg-gradient-to-r ${getRankGradient(u.rank?.slug)} bg-clip-text text-[13px] font-semibold leading-none text-transparent rank-shimmer`}>
+                {u.rank?.name || 'Unranked'}
+              </div>
+              <div className="col-start-2 row-start-2 mt-1 text-[11px] leading-none text-neutral-400">Elo {u.elo}</div>
             </div>
           </div>
         ))}

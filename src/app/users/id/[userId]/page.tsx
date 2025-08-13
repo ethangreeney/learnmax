@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/prisma';
 import Link from 'next/link';
@@ -5,7 +6,6 @@ import FollowButton from '../../[username]/FollowButton';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getRanksSafe, pickRankForElo, getRankGradient } from '@/lib/ranks';
-import RankGuide from '@/components/RankGuide';
 
 export default async function PublicProfileById({
   params,
@@ -73,38 +73,91 @@ export default async function PublicProfileById({
           <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
         </div>
         <div className="relative z-10 p-6 md:p-7">
-          <div className="flex items-center gap-4">
-            <div className="h-20 w-20 overflow-hidden rounded-full bg-neutral-900 ring-1 ring-neutral-800">
-              {user.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.image} alt="avatar" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="h-full w-full" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="truncate text-2xl font-semibold md:text-3xl">{user.name || user.username || 'Learner'}</h1>
-                <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800">
-                  <span className={`bg-gradient-to-r ${rankColor} bg-clip-text font-semibold text-transparent`}>{rank?.name || 'Unranked'}</span>
-                  <span className="text-neutral-400">Elo {user.elo}</span>
-                </span>
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-4">
+              <div className="relative top-[2px] self-start">
+                <div className="relative h-24 w-24 rounded-full">
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/50 via-emerald-400/30 to-emerald-300/20 blur-sm" />
+                  <div className="relative h-full w-full overflow-hidden rounded-full bg-neutral-950 ring-2 ring-neutral-800">
+                    {user.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={user.image} alt="avatar" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-neutral-500" />
+                    )}
+                  </div>
+                </div>
               </div>
-              {user.username && <div className="text-sm text-neutral-500">@{user.username}</div>}
-              {lastActiveAt && (
-                <div className="mt-1 text-xs text-neutral-500">Last active {new Date(lastActiveAt).toLocaleDateString()}</div>
-              )}
+              <div className="min-w-0 pt-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{user.name || user.username || 'Learner'}</h1>
+                  {user.username && (
+                    <span className="rounded-full bg-neutral-900/70 px-2.5 py-0.5 text-xs text-neutral-300 ring-1 ring-neutral-800">@{user.username}</span>
+                  )}
+                </div>
+                {lastActiveAt && (
+                  <div className="mt-1 text-xs text-neutral-500">Last active {new Date(lastActiveAt).toLocaleDateString()}</div>
+                )}
+                {!isSelf && (
+                  <div className="mt-3">
+                    <FollowButton targetUserId={user.id} />
+                  </div>
+                )}
+                {/* Mobile rank */}
+                <div className="mt-3 flex flex-wrap items-center gap-2 md:hidden">
+                  <div className="flex shrink-0 flex-col items-center gap-2 px-1">
+                    {rank?.iconUrl ? (
+                      <Image src={rank.iconUrl} alt={rank.name} width={72} height={72} className="relative top-[6px] h-[72px] w-[72px] object-contain" />
+                    ) : null}
+                    <div className={`relative top-[4px] bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold leading-tight text-transparent rank-shimmer`}>
+                      {rank?.name || 'Unranked'}
+                    </div>
+                    <div className="text-xs leading-tight text-neutral-400">Elo {user.elo}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {isSelf && <RankGuide label="Rank Guide" />}
-              {!isSelf && <FollowButton targetUserId={user.id} />}
+            {/* Desktop right-side rank panel with progress bar */}
+            <div className="relative top-[4px] hidden shrink-0 items-center gap-6 md:flex">
+              <div className="w-56">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                    <span>{currentRank ? currentRank.name : 'Unranked'}</span>
+                    <span className="text-neutral-500">{nextRank ? nextRank.name : 'Max'}</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-900">
+                    <div className={`h-full bg-gradient-to-r ${rankColor}`} style={{ width: `${progressPct}%`, transition: 'width 700ms cubic-bezier(0.22,1,0.36,1)' }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-neutral-500">
+                    <span>{currentRank?.minElo ?? 0}</span>
+                    <span>{nextRank?.minElo ?? user.elo}</span>
+                  </div>
+                  {toNext != null && (
+                    <div className="text-[11px] text-neutral-400">{toNext} pts to next rank</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-center gap-2 px-1">
+                {rank?.iconUrl ? (
+                  <Image src={rank.iconUrl} alt={rank.name} width={72} height={72} className="relative top-[6px] h-[72px] w-[72px] object-contain" />
+                ) : null}
+                <div className={`relative top-[4px] bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold leading-tight text-transparent rank-shimmer`}>
+                  {rank?.name || 'Unranked'}
+                </div>
+                <div className="text-xs leading-tight text-neutral-400">Elo {user.elo}</div>
+              </div>
             </div>
           </div>
-          {user.bio && (
-            <p className="mt-3 max-w-3xl text-sm text-neutral-300 whitespace-pre-wrap">{user.bio}</p>
-          )}
+
         </div>
       </section>
+
+      {user.bio && (
+        <section className="card p-6">
+          <h2 className="mb-2 text-xl font-semibold">Bio</h2>
+          <p className="text-neutral-300 whitespace-pre-wrap">{user.bio}</p>
+        </section>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="card p-4">
@@ -133,34 +186,7 @@ export default async function PublicProfileById({
         </div>
       </section>
 
-      <section className="card p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className={`bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold text-transparent`}>Progress to next rank</div>
-            <div className="mt-1 text-xs text-neutral-400">
-              {nextRank ? (
-                <>
-                  {toNext === 0 ? 'Rank up available' : (
-                    <>Need <span className="font-medium text-neutral-200">{toNext}</span> Elo to reach <span className={`bg-gradient-to-r ${getRankGradient(nextRank?.slug)} bg-clip-text font-semibold text-transparent`}>{nextRank?.name}</span></>
-                  )}
-                </>
-              ) : (
-                'Top rank achieved'
-              )}
-            </div>
-          </div>
-          <div className="text-sm text-neutral-400">Elo {user.elo}</div>
-        </div>
-        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-neutral-800">
-          <div className={`h-full bg-gradient-to-r ${rankColor}`} style={{ width: `${progressPct}%` }} />
-        </div>
-        {nextRank && (
-          <div className="mt-1.5 flex items-center justify-between text-[10px] text-neutral-500">
-            <span>{currentRank?.minElo ?? 0}</span>
-            <span>{nextRank.minElo}</span>
-          </div>
-        )}
-      </section>
+
 
       <div className="text-sm text-neutral-500">
         <Link href="/leaderboard" className="hover:underline">

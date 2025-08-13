@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { rankGradient, rankFromElo } from '@/lib/client/rank-colors';
 
 type LBUser = {
   rank: number;
@@ -10,18 +11,13 @@ type LBUser = {
   image: string | null;
   elo: number;
   lastActiveAt: string | null;
+  rankInfo?: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
 };
 
-function getTier(elo: number): { name: string; gradient: string } {
-  if (elo >= 1600)
-    return { name: 'Master', gradient: 'from-fuchsia-400 via-purple-400 to-rose-400' };
-  if (elo >= 1200)
-    return { name: 'Diamond', gradient: 'from-cyan-300 via-sky-400 to-indigo-400' };
-  if (elo >= 800)
-    return { name: 'Gold', gradient: 'from-yellow-400 via-amber-300 to-orange-200' };
-  if (elo >= 400)
-    return { name: 'Silver', gradient: 'from-zinc-300 via-gray-300 to-slate-200' };
-  return { name: 'Bronze', gradient: 'from-amber-500 via-orange-500 to-yellow-500' };
+function getClientRank(u: LBUser) {
+  if (u.rankInfo) return u.rankInfo;
+  const r = rankFromElo(u.elo);
+  return { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: null };
 }
 
 export default function LeaderboardClient() {
@@ -145,20 +141,23 @@ export default function LeaderboardClient() {
                     </div>
                     <div className="shrink-0">
                       {(() => {
-                        const { name, gradient } = getTier(u.elo);
+                        const r = getClientRank(u);
+                        const grad = rankGradient(r.slug);
                         return (
-                          <span
-                            className={`inline-flex items-center gap-2 rounded-full bg-neutral-900/70 px-3 py-1 text-xs ring-1 ring-neutral-800`}
-                          >
-                            <span
-                              className={`bg-gradient-to-r ${gradient} bg-clip-text font-semibold text-transparent rank-shimmer`}
-                            >
-                              {name}
-                            </span>
-                            <span className="text-neutral-400">
-                              Elo {u.elo}
-                            </span>
-                          </span>
+                          <div className="grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-2">
+                            {r.iconUrl ? (
+                              <div className="relative col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={r.iconUrl} alt={r.name} className="absolute inset-0 h-full w-full object-contain" />
+                              </div>
+                            ) : (
+                              <div className={`col-start-1 row-span-2 self-center h-7 w-7 md:h-8 md:w-8 rounded-md bg-gradient-to-br ${grad} shadow-[inset_0_0_0,1px_rgba(0,0,0,0.25)]`} aria-hidden />
+                            )}
+                            <div className={`col-start-2 row-start-1 bg-gradient-to-r ${grad} bg-clip-text text-[13px] font-semibold leading-none text-transparent rank-shimmer`}>
+                              {r.name}
+                            </div>
+                            <div className="col-start-2 row-start-2 mt-1 text-[11px] leading-none text-neutral-400">Elo {u.elo}</div>
+                          </div>
                         );
                       })()}
                     </div>

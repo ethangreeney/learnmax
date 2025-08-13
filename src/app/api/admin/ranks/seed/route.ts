@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAdmin } from '@/lib/admin';
+import { revalidateTag } from 'next/cache';
 
 export async function POST() {
   await requireAdmin();
@@ -30,9 +31,11 @@ export async function POST() {
   for (const r of defaults) {
     await prisma.rank.upsert({
       where: { slug: r.slug },
-      update: { name: r.name, minElo: r.minElo },
-      create: r,
+      update: { name: r.name, minElo: r.minElo, iconUrl: null },
+      create: { ...r, iconUrl: null },
     });
   }
+  // Invalidate cached ranks so UI refresh reflects cleared icons
+  try { revalidateTag('ranks'); } catch { }
   return NextResponse.json({ ok: true });
 }

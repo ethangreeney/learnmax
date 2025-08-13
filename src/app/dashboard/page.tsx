@@ -179,15 +179,6 @@ export default async function Dashboard() {
             </div>
             {/* Desktop right-side rank panel */}
             <div className="relative top-[4px] hidden shrink-0 items-center gap-6 md:flex">
-              <div className="flex items-center gap-3">
-                <RankBadge
-                  name={me.rank?.name || currentRank?.name || 'Unranked'}
-                  slug={me.rank?.slug || currentRank?.slug || null}
-                  iconUrl={me.rank?.iconUrl || null}
-                  elo={me.elo}
-                  rankColorClass={rankColor}
-                />
-              </div>
               <div className="w-56">
                 <RankProgressBar
                   progressPct={progressPct}
@@ -197,6 +188,15 @@ export default async function Dashboard() {
                   gradientClass={rankColor}
                   min={currentRank?.minElo ?? 0}
                   max={nextRank?.minElo ?? me.elo}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <RankBadge
+                  name={me.rank?.name || currentRank?.name || 'Unranked'}
+                  slug={me.rank?.slug || currentRank?.slug || null}
+                  iconUrl={me.rank?.iconUrl || null}
+                  elo={me.elo}
+                  rankColorClass={rankColor}
                 />
               </div>
             </div>
@@ -297,7 +297,6 @@ export default async function Dashboard() {
             <p className="mb-4 text-sm text-neutral-400">You have admin access.</p>
             <div className="flex flex-wrap gap-3">
               <a href="/admin" className="btn-primary px-4 py-2">Open Admin Panel</a>
-              <a href="/admin/ranks" className="btn-ghost px-4 py-2">Manage Rank Icons</a>
             </div>
           </div>
         )}

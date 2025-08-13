@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRanksSafe } from '@/lib/ranks';
 import { requireAdmin } from '@/lib/admin';
+import { revalidateTag } from 'next/cache';
 
 export async function GET() {
   const ranks = await getRanksSafe();
@@ -58,5 +59,6 @@ export async function PATCH(req: Request) {
     });
   }
   const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
+  try { revalidateTag('ranks'); } catch { }
   return NextResponse.json({ ok: true, ranks });
 }

@@ -5,17 +5,23 @@ import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 
+const providers = [] as NonNullable<NextAuthOptions['providers']>;
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  providers.push(
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: true,
+    })
+  );
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!, // or GOOGLE_CLIENT_ID
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!, // or GOOGLE_CLIENT_SECRET
-      allowDangerousEmailAccountLinking: true,
-    }),
-  ],
+  providers,
   session: { strategy: 'jwt' }, // keep JWT sessions; adapter still persists User/Account
-  secret: process.env.NEXTAUTH_SECRET, // REQUIRED in production
+  secret: process.env.NEXTAUTH_SECRET || 'dev-secret-change-me',
+  debug: process.env.NODE_ENV !== 'production',
   callbacks: {
     async jwt({ token, user }) {
       if (user?.id) {
@@ -26,13 +32,12 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id?: string }).id = (token.sub ||
-          token.id ||
-          '') as string;
-        // Prefer the stored profile image from our database over the provider image
-        try {
-          const userId = (token.sub || token.id) as string | undefined;
-          if (userId) {
+        const tokenAny = token as any;
+        const userId = (tokenAny?.sub as string | undefined) || (tokenAny?.id as string | undefined);
+        if (userId) {
+          (session.user as { id?: string }).id = userId;
+          // Prefer the stored profile image from our database over the provider image
+          try {
             const dbUser = await prisma.user.findUnique({
               where: { id: userId },
               select: { image: true },
@@ -40,9 +45,9 @@ export const authOptions: NextAuthOptions = {
             if (dbUser?.image) {
               (session.user as { image?: string | null }).image = dbUser.image;
             }
+          } catch {
+            // Silently ignore; fall back to whatever image NextAuth provided
           }
-        } catch {
-          // Silently ignore; fall back to whatever image NextAuth provided
         }
       }
       return session;

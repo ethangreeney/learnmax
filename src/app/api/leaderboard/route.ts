@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
+import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
 function parseTimeframe(tf: string | null | undefined): 'all' | '30d' {
   if (!tf) return 'all';
@@ -113,6 +114,12 @@ export async function GET(req: NextRequest) {
       return a.id.localeCompare(b.id);
     });
 
+    const ranks = await getRanksSafe();
+    const toRank = (elo: number) => {
+      const r = pickRankForElo(ranks, elo);
+      return r ? { slug: r.slug, name: r.name, minElo: r.minElo, iconUrl: r.iconUrl } : null;
+    };
+
     const sliced = users.slice(0, limit).map((u, index) => ({
       rank: index + 1,
       id: u.id,
@@ -121,6 +128,7 @@ export async function GET(req: NextRequest) {
       image: u.image,
       elo: u.elo,
       lastActiveAt: u.lastStudiedAt ? u.lastStudiedAt.toISOString() : null,
+      rankInfo: toRank(u.elo),
     }));
 
     return NextResponse.json({ users: sliced });

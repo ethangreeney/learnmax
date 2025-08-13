@@ -23,6 +23,34 @@ export default function RankManagerClient({
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);
 
+  async function persistIcon(slug: string, iconUrl: string | null) {
+    try {
+      const current = ranks.find((r) => r.slug === slug) || null;
+      const res = await fetch('/api/ranks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ranks: [
+            {
+              slug,
+              // Include current name/minElo so new rows are created with correct metadata
+              name: current?.name,
+              minElo: current?.minElo,
+              iconUrl,
+            },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        // Surface but don't block UI
+        alert(e.error || 'Failed to save rank icon');
+      }
+    } catch {
+      // Non-fatal; admin can retry Save Changes
+    }
+  }
+
   useEffect(() => {
     // If server provided no data, fetch as a fallback (shouldn't happen)
     (async () => {
@@ -69,6 +97,8 @@ export default function RankManagerClient({
       setRanks((prev) =>
         prev.map((r) => (r.slug === slug ? { ...r, iconUrl: url } : r))
       );
+      // Auto-persist immediately so other UIs (leaderboard) pick up the change
+      await persistIcon(slug, url);
       return;
     }
 
@@ -124,6 +154,9 @@ export default function RankManagerClient({
                   r.slug === pendingSlug ? { ...r, iconUrl: url } : r
                 )
               );
+              if (pendingSlug) {
+                await persistIcon(pendingSlug, url);
+              }
             } finally {
               URL.revokeObjectURL(cropSrc);
               setCropSrc(null);
