@@ -4,9 +4,12 @@
 
 LearnMax is a full-stack web application built with Next.js that revolutionizes studying. Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science principles, powered by the Google Gemini API, to deconstruct complex materials, generate focused learning modules, and verify your understanding every step of the way.
 
- <img width="1470" height="787" alt="image" src="https://github.com/user-attachments/assets/7a9cf5ec-03a4-4bb6-a700-34deed0735b1" />
-<img width="1470" height="789" alt="image" src="https://github.com/user-attachments/assets/5af0e37a-c1bb-4262-bf60-757bd4c7cfcc" />
-<img width="725" height="575" alt="image" src="https://github.com/user-attachments/assets/8b784b6d-8fa2-4a49-a4d8-12aec793ef46" />
+<img width="1470" height="794" alt="image" src="https://github.com/user-attachments/assets/4bb6d3f8-1a7a-4ff6-93e5-abe3dffb42aa" />
+<img width="1470" height="793" alt="image" src="https://github.com/user-attachments/assets/f6e3fdc5-7231-4443-8954-93373ce89713" />
+<img width="1470" height="794" alt="image" src="https://github.com/user-attachments/assets/1b5c14e2-9339-41bf-9f65-4376e7d546e4" />
+<img width="1470" height="794" alt="image" src="https://github.com/user-attachments/assets/0686f35e-9e6c-40a3-84a4-5f80ebf087fc" />
+<img width="508" height="714" alt="image" src="https://github.com/user-attachments/assets/f9544554-fb27-4215-9ee6-0179e626fc5b" />
+
 
 ---
 
