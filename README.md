@@ -1,8 +1,10 @@
 # LearnMax 🧠✨
 
-**The Science of Learning, Perfected by AI.**
+**AI-powered mastery learning — from raw notes to real understanding.**
 
-LearnMax is a full-stack web application built with Next.js that revolutionizes studying. Stop wasting hours on inefficient rereading. LearnMax applies proven cognitive science principles, powered by the Google Gemini API, to deconstruct complex materials, generate focused learning modules, and verify your understanding every step of the way.
+LearnMax is a full-stack Next.js app that turns any text or PDF into a focused learning path. It breaks content into bite-size subtopics, explains each one clearly, and checks your understanding with targeted quizzes so you only move on when you’re ready.
+
+## Screenshots
 
 <img width="1470" height="794" alt="image" src="https://github.com/user-attachments/assets/4bb6d3f8-1a7a-4ff6-93e5-abe3dffb42aa" />
 <img width="1470" height="793" alt="image" src="https://github.com/user-attachments/assets/f6e3fdc5-7231-4443-8954-93373ce89713" />
@@ -10,123 +12,108 @@ LearnMax is a full-stack web application built with Next.js that revolutionizes 
 <img width="1470" height="794" alt="image" src="https://github.com/user-attachments/assets/0686f35e-9e6c-40a3-84a4-5f80ebf087fc" />
 <img width="508" height="714" alt="image" src="https://github.com/user-attachments/assets/f9544554-fb27-4215-9ee6-0179e626fc5b" />
 
+---
+
+## 🚀 What it does
+
+* **📚 Deconstruct any content**
+  Paste text or upload a PDF. LearnMax analyzes it and builds a sequenced outline of the most important subtopics by difficulty and importance.
+
+* **💡 Learn with clarity**
+  Each subtopic gets a concise, grounded explanation (with math/markdown support) to reduce cognitive overload and help concepts stick.
+
+* **🎯 Mastery before momentum**
+  Move forward only after passing concept-specific checks. Questions are grounded in your material—not trivia.
+
+* **💬 Built-in AI tutor**
+  Ask targeted questions in a side panel that’s aware of your current lesson and source document.
+
+* **📊 Progress that motivates**
+  A personal dashboard tracks lectures, mastered subtopics, streaks, and a “Learning Elo” that climbs as you improve.
+
+* **🔐 Simple, secure sign-in**
+  NextAuth.js with Google keeps accounts and sessions safe.
 
 ---
 
-## 🚀 About The Project
+## 🛠️ Tech stack
 
-This application is designed to create a hyper-efficient study path from any text-based content, like lecture notes or PDF slides. It breaks down the material, explains each part, and quizzes you to ensure you've mastered the concept before moving on.
-
-### Core Features
-
-- **📚 AI Content Deconstruction**: Upload a PDF or paste raw text. The AI analyzes the material and structures it into a logical learning path of subtopics, ordered by importance and difficulty.
-- **💡 Guided Mastery Learning**: Tackle one core concept at a time. The app provides AI-generated explanations in various styles (simplified, detailed, or with examples) to prevent cognitive overload and embed knowledge effectively.
-- **🎯 Verified Comprehension**: Before advancing, pass a targeted, AI-generated quiz to prove you've mastered the current concept. This guarantees a rock-solid foundation for lasting knowledge.
-- **💬 Interactive AI Tutor**: Have a question? An AI tutor is available in a side panel, ready to answer questions about the source material or related general knowledge topics.
-- **📊 Personalized Dashboard**: Keep track of your learning journey. View stats like your total lectures, mastered subtopics, and even a "Learning Elo" score that reflects your progress.
-- **🔐 Secure Authentication**: User accounts and sessions are securely managed using NextAuth.js with Google as an OAuth provider.
+* **Framework:** Next.js 15 (App Router)
+* **Language:** TypeScript
+* **AI:** Google Gemini API
+* **Database:** PostgreSQL + Prisma ORM
+* **Auth:** NextAuth.js (Google OAuth)
+* **Styling:** Tailwind CSS
+* **State:** Zustand
+* **Icons:** Lucide
 
 ---
 
-## 🛠️ Built With
-
-This project leverages a modern, powerful tech stack:
-
-- **Framework**: [Next.js](https://nextjs.org/) (v15) with App Router
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **AI**: [Google Gemini API](https://ai.google.dev/)
-- **Database**: [PostgreSQL](https://www.postgresql.org/)
-- **ORM**: [Prisma](https://www.prisma.io/)
-- **Authentication**: [NextAuth.js](https://next-auth.js.org/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Client-side State**: [Zustand](https://github.com/pmndrs/zustand)
-- **Icons**: [Lucide React](https://lucide.dev/)
-
----
-
-## 🏁 Getting Started
-
-To get a local copy up and running, follow these simple steps.
+## 🏁 Getting started
 
 ### Prerequisites
 
-- **Node.js**: v20.x or higher
-- **pnpm**: `npm install -g pnpm`
-- **PostgreSQL**: A running instance of PostgreSQL.
+* Node.js v20+
+* pnpm (`npm i -g pnpm`)
+* A PostgreSQL instance
 
-### Installation & Setup
+### 1) Clone & install
 
-1.  **Clone the repository:**
+```bash
+git clone https://github.com/ethangreeney/learnmax.git
+cd learnmax
+pnpm install
+```
 
-    ```sh
-    git clone https://github.com/your-username/learnmax.git
-    cd learnmax
-    ```
+### 2) Configure environment
 
-2.  **Install dependencies:**
+Create `.env.local` in the project root:
 
-    ```sh
-    pnpm install
-    ```
+```env
+# Google AI API Key (Gemini)
+GOOGLE_API_KEY="your_google_api_key"
 
-3.  **Set up environment variables:**
-    Create a `.env.local` file in the root of your project and add the following variables.
+# PostgreSQL connection strings
+POSTGRES_URL="postgresql://user:password@host:port/database"
+POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database"
+POSTGRES_SHADOW_URL="postgresql://user:password@host:port/database_shadow"
 
-    ```env
-    # Google AI API Key (for Gemini)
-    GOOGLE_API_KEY="your_google_api_key"
+# NextAuth
+NEXTAUTH_SECRET="your_nextauth_secret"
+GOOGLE_CLIENT_ID="your_google_client_id"
+GOOGLE_CLIENT_SECRET="your_google_client_secret"
+```
 
-    # PostgreSQL Connection URLs (get from your provider)
-    # Used by Prisma for migrations and the app
-    POSTGRES_URL="postgresql://user:password@host:port/database"
-    # Direct connection for Prisma Migrate/Studio
-    POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database"
-    # Shadow database for development migrations
-    POSTGRES_SHADOW_URL="postgresql://user:password@host:port/database_shadow"
+### 3) Migrate the database
 
-    # NextAuth.js Configuration
-    # Generate a secret with: openssl rand -base64 32
-    NEXTAUTH_SECRET="your_nextauth_secret"
-    # Google OAuth credentials
-    GOOGLE_CLIENT_ID="your_google_client_id"
-    GOOGLE_CLIENT_SECRET="your_google_client_secret"
-    ```
+```bash
+pnpm prisma migrate dev
+```
 
-4.  **Run database migrations:**
-    This will sync the Prisma schema with your PostgreSQL database.
+### 4) Run the app
 
-    ```sh
-    pnpm prisma migrate dev
-    ```
+```bash
+pnpm dev
+```
 
-5.  **Run the development server:**
-    ```sh
-    pnpm dev
-    ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result!
+Open [http://localhost:3000](http://localhost:3000) to get started.
 
 ---
 
-## 📁 Project Structure
+## 📁 Project structure
 
-The codebase is organized to be clean and maintainable:
+* `prisma/` — Prisma schema & migrations
+* `public/` — Static assets (SVGs, images)
+* `src/app/` — App Router routes and API endpoints
 
-- `prisma/`: Contains the database `schema.prisma` and migration files.
-- `public/`: Static assets like images and SVGs.
-- `src/app/`: The core of the Next.js application, using the App Router.
-  - `(pages)/`: Main routes like `/`, `/dashboard`, and `/learn`.
-  - `api/`: All backend API endpoints, organized by resource.
-- `src/components/`: Shared, reusable React components used across the application.
-- `src/lib/`: Essential logic and utilities.
-  - `ai.ts`: Functions for interacting with the Google Gemini API.
-  - `auth.ts`: NextAuth.js configuration.
-  - `prisma.ts`: Prisma client instance.
-  - `client/`: Client-side specific helpers and state stores (Zustand).
-- `src/types/`: TypeScript type definitions.
+  * `api/` — Server routes (lesson generation, quizzes, chat, etc.)
+  * Pages like `/`, `/dashboard`, `/learn`, `/profile`, `/leaderboard`
+* `src/components/` — Reusable UI components (chat, quiz, rank, etc.)
+* `src/lib/` — Server/client utilities (AI, auth, Prisma, caching)
+* `src/types/` — Shared TypeScript types
 
 ---
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See `LICENSE` for details.
