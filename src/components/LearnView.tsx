@@ -239,6 +239,19 @@ function stripLeadingTitle(md: string, title?: string): string {
   return out;
 }
 
+function formatImportanceLabel(importance?: string): string {
+  const normalized = String(importance || '').toLowerCase();
+  if (!normalized) return 'Medium';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatDifficultyLabel(difficulty?: number): string {
+  const value = Number.isFinite(difficulty as number) ? Number(difficulty) : 2;
+  if (value <= 1) return 'Low';
+  if (value >= 3) return 'High';
+  return 'Medium';
+}
+
 export default function LearnView({
   initial,
   readonly = false,
@@ -1253,10 +1266,10 @@ export default function LearnView({
               <h3 className="text-3xl font-bold tracking-tight">
                 {currentSubtopic.title}
               </h3>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-400">
-                <span>Importance: {currentSubtopic.importance}</span>{' '}
-                <span>•</span>{' '}
-                <span>Difficulty: {currentSubtopic.difficulty}</span>
+              <div className="mt-2 text-sm text-neutral-400">
+                <span>
+                  {formatImportanceLabel(currentSubtopic.importance)} Importance&nbsp;&nbsp;•&nbsp;&nbsp;{formatDifficultyLabel(currentSubtopic.difficulty)} Difficulty
+                </span>
               </div>
               {!readonly && !demo && (
                 <hr className="my-6 border-neutral-800" />
