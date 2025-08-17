@@ -140,10 +140,10 @@ ${answer}
     // Generous timeout and determinism via seed when supported by backend
     let result: any = {};
     try {
-      const preferred = 'gemini-2.5-flash-lite';
+      const preferred = 'gemini-2.5-flash';
       result = await generateJSON(
         gradingPrompt,
-        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
         undefined
       );
     } catch {}

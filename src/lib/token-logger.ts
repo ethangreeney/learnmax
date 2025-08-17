@@ -22,7 +22,7 @@ function canonicalizeModelId(name: string): string {
     let m = withoutProvider;
     // Map deprecated/alias names
     m = m.replace(/gpt-5-mini/gi, 'gpt-5');
-    m = m.replace(/flash-lite/gi, 'flash');
+    m = m.replace(/flash/gi, 'flash');
     return m;
   } catch {
     return String(name || '').trim();

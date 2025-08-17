@@ -19,11 +19,11 @@ type CleanQ = {
   explanation: string;
 };
 
-// Allow tuning via env vars
+// Allow tuning via env vars (very generous defaults for testing)
 const GEN_TIMEOUT_MS: number =
-  Number(process.env.QUIZ_GEN_TIMEOUT_MS || '') || 20000;
+  Number(process.env.QUIZ_GEN_TIMEOUT_MS || '') || 240000;
 const AUDIT_TIMEOUT_MS: number =
-  Number(process.env.QUIZ_AUDIT_TIMEOUT_MS || '') || 8000;
+  Number(process.env.QUIZ_AUDIT_TIMEOUT_MS || '') || 90000;
 const ALLOW_SECOND_TRY: boolean =
   (process.env.QUIZ_ALLOW_SECOND_TRY || '0') === '1';
 

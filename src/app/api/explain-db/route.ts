@@ -160,6 +160,11 @@ export async function POST(req: Request) {
 
     const systemMsg =
       'You are writing ONE section of an in-progress lecture. Be concise, instructional, and avoid preambles, meta commentary, and disclaimers.';
+    const docLen = (documentContent || '').trim().length;
+    const groundingLine =
+      docLen < 400
+        ? `If the DOCUMENT CONTEXT is missing or too short to be useful, write a concise, generally valid explanation of the subtopic. Make it accurate and educational without fabricating document-specific details.`
+        : `Ground your explanation STRICTLY in the DOCUMENT CONTEXT when relevant.`;
     const prompt = [
       `Lecture title: "${lectureTitle}"`,
       `Subtopic: "${subtopic}"`,
@@ -167,7 +172,7 @@ export async function POST(req: Request) {
       coveredList.length
         ? `Previously covered subtopics (avoid repeating their content; build upon them where natural):\n${JSON.stringify(coveredList, null, 2)}`
         : '',
-      `Ground your explanation STRICTLY in the DOCUMENT CONTEXT below when relevant. If the context is missing or does not cover the subtopic, provide a concise, generally valid explanation of the subtopic without inventing document-specific details.`,
+      groundingLine,
       `Write 300–600 words of clean Markdown.`,
       `Start directly with content. No preamble (e.g., "Of course", "Here is", etc.). Do NOT mention the words "document", "context", "provided context", "this section", or any limitations. No meta commentary or disclaimers.`,
       `Do NOT number subtopics. Do NOT add a standalone H1.`,
@@ -180,6 +185,8 @@ export async function POST(req: Request) {
     // Streaming mode: return text/event-stream with incremental chunks
     const url = new URL(req.url);
     const doStream = url.searchParams.get('stream') === '1';
+    // For testing slower models, extend request timeout at the route level
+    // (maxDuration is already increased to 300s in module scope)
     if (doStream) {
       const encoder = new TextEncoder();
       let full = '';
@@ -191,10 +198,13 @@ export async function POST(req: Request) {
               preferredModel,
               systemMsg
             )) {
-              full = appendChunkSafely(full, chunk);
+              const text = String(chunk || '');
+              if (!text) continue;
+              full = appendChunkSafely(full, text);
+              // Emit each chunk immediately
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: 'chunk', delta: chunk })}\n\n`
+                  `data: ${JSON.stringify({ type: 'chunk', delta: text })}\n\n`
                 )
               );
             }

@@ -50,12 +50,12 @@ ${userQuestion}
     const METRICS =
       process.env.AI_METRICS === '1' || process.env.LOG_AI === '1';
     // Global selection: cookie overrides body/env
-    const selected = 'gemini-2.5-flash-lite';
+    const selected = 'gemini-2.5-flash';
     const tutorDefaultModel =
       process.env.AI_TUTOR_MODEL?.trim() ||
       process.env.AI_FAST_MODEL?.trim() ||
       (process.env.NODE_ENV === 'production' ? 'gpt-5' : undefined);
-    const chosenModel = 'gemini-2.5-flash-lite';
+    const chosenModel = 'gemini-2.5-flash';
 
     // If query param stream=1, return Server-Sent Events style text/event-stream
     const url = new URL(req.url);

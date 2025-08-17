@@ -138,7 +138,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
     try {
       // Canonicalize model ids at query time to coalesce aliases
       // - Strip provider prefix (e.g., "openai:")
-      // - Map "flash-lite" -> "flash"
+      // - Map "flash" -> "flash"
       // - Map "gpt-5-mini" -> "gpt-5"
       const canonExpr = Prisma.sql`
         CASE
@@ -149,7 +149,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
       const canonMapped = Prisma.sql`
         CASE
           WHEN LOWER(${canonExpr}) LIKE '%gpt-5-mini%' THEN regexp_replace(${canonExpr}, '(?i)gpt-5-mini', 'gpt-5', 'g')
-          WHEN LOWER(${canonExpr}) LIKE '%flash-lite%' THEN regexp_replace(${canonExpr}, '(?i)flash-lite', 'flash', 'g')
+          WHEN LOWER(${canonExpr}) LIKE '%flash%' THEN regexp_replace(${canonExpr}, '(?i)flash', 'flash', 'g')
           ELSE ${canonExpr}
         END
       `;
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
       const withoutProvider = raw.replace(/^(?:openai:|google:|gemini:)/i, '');
       let m = withoutProvider;
       m = m.replace(/gpt-5-mini/gi, 'gpt-5');
-      m = m.replace(/flash-lite/gi, 'flash');
+      m = m.replace(/flash/gi, 'flash');
       return m;
     };
     const coalescedModels = (() => {

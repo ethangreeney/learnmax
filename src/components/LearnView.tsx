@@ -838,6 +838,11 @@ export default function LearnView({
         const decoder = new TextDecoder();
         let buffer = '';
         let started = false;
+        // Buffer small initial chunks to avoid showing just a heading/one-liner
+        let firstBuf = '';
+        // Accumulate the full text for a reliable final flush on 'done'
+        let fullAgg = '';
+        const MIN_FIRST_CHARS = 120;
         const yieldFrame = () =>
           new Promise<void>((r) => {
             if (typeof requestAnimationFrame !== 'undefined')
@@ -877,12 +882,17 @@ export default function LearnView({
                 explainRunIdRef.current.get(targetId) === runId;
               if (stillActive && isLatestRun) {
                 const delta = payload.delta as string;
+                fullAgg = appendChunkSafely(fullAgg, delta);
+                // Accumulate small initial chunks before first paint
                 if (!started) {
-                  started = true;
-                  setExplanations((e) => ({
-                    ...e,
-                    [targetId]: sanitizeMarkdown(delta),
-                  }));
+                  firstBuf = appendChunkSafely(firstBuf, delta);
+                  const readyToFlush =
+                    firstBuf.length >= MIN_FIRST_CHARS || /\n/.test(firstBuf);
+                  if (readyToFlush) {
+                    started = true;
+                    const initialOut = sanitizeMarkdown(firstBuf);
+                    setExplanations((e) => ({ ...e, [targetId]: initialOut }));
+                  }
                 } else {
                   setExplanations((e) => ({
                     ...e,
@@ -896,6 +906,22 @@ export default function LearnView({
               const isLatestRun =
                 explainRunIdRef.current.get(targetId) === runId;
               if (isLatestRun) {
+                // If nothing flushed yet (single-chunk stream or very small first chunk), ensure we paint final content
+                if (!started && firstBuf.trim()) {
+                  const finalOut = sanitizeMarkdown(firstBuf);
+                  setExplanations((e) => ({ ...e, [targetId]: finalOut }));
+                  started = true;
+                }
+                // If we accumulated full output, ensure final state reflects it
+                if (fullAgg && fullAgg.trim()) {
+                  const finalOut = sanitizeMarkdown(fullAgg);
+                  setExplanations((e) => {
+                    const existing = String(e[targetId] || '');
+                    return existing.length >= finalOut.length
+                      ? e
+                      : { ...e, [targetId]: finalOut };
+                  });
+                }
                 setExplanationDone((m) => ({ ...m, [targetId]: true }));
               }
             } else if (payload?.type === 'error') {
