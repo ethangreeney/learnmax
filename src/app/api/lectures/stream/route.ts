@@ -77,9 +77,9 @@ You are an expert instructional designer. Create an exhaustive, sequential break
 
 Goals:
 - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
-- Preserve the original document order from start to finish.
+- Return subtopics in a logical pedagogical order (prerequisites before dependents). Prefer the document's order; minor local reordering is allowed for clarity.
 - Be concise but complete: each subtopic should map to a coherent portion of the document.
- - Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
+- Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
 
 Return ONLY a single JSON object with exactly these keys:
 {
