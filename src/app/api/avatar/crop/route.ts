@@ -34,11 +34,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid source path' }, { status: 403 });
     }
 
-    // Try dynamic import at runtime without bundler/module resolution
+    // Dynamically import sharp so Next.js can include it in the server bundle
     let sharp: any;
     try {
-      const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<any>;
-      sharp = (await dynamicImport('sharp')).default;
+      const mod = await import('sharp');
+      sharp = (mod as any).default || (mod as any);
     } catch {
       return NextResponse.json(
         { error: 'GIF cropping not available on this deployment (sharp not installed)' },
