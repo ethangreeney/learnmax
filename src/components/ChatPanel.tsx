@@ -14,6 +14,9 @@ import useFocusTrap from '@/hooks/useFocusTrap';
 function sanitizeMd(md: string): string {
   if (!md) return md;
   let t = md.trim();
+
+  // Clean up any legacy leaked mask placeholders
+  t = t.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '').replace(/<<MD_MASK_\d+>>/g, '');
   const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
   if (exactFence) t = exactFence[1].trim();
   else {
@@ -42,6 +45,21 @@ function sanitizeMd(md: string): string {
   }
   const ticks = (t.match(/```/g) || []).length;
   if (ticks === 1) t = t.replace(/```/g, '');
+  // Escape stray angle brackets outside code/math to prevent HTML stripping
+  try {
+    const masks: string[] = [];
+    const mask = (m: string) => {
+      masks.push(m);
+      return `%%MDMASK:${masks.length - 1}%%`;
+    };
+    t = t.replace(/```[\s\S]*?```/g, mask);
+    t = t.replace(/\$\$[\s\S]*?\$\$/g, mask);
+    t = t.replace(/`[^`]*`/g, mask);
+    t = t.replace(/(?<!\$)\$([^$\n]|[^$\n][\s\S]*?[^$\n])\$(?!\$)/g, mask);
+    t = t.replace(/\\\([\s\S]*?\\\)/g, mask).replace(/\\\[[\s\S]*?\\\]/g, mask);
+    t = t.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    t = t.replace(/%%MDMASK:(\d+)%%/g, (_, i) => masks[Number(i)] || '');
+  } catch {}
   return t;
 }
 

@@ -115,6 +115,7 @@ model Subtopic {
   // New relations for quiz progress/reset
   quizProgresses QuizProgress[]
   quizResets     QuizReset[]
+  // TTS audio metadata removed
 
   @@unique([lectureId, order])
   @@index([lectureId])
@@ -293,3 +294,5 @@ model TokenUsage {
   @@index([route])
   @@index([model])
 }
+
+// SubtopicAudio model removed

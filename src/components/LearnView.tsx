@@ -108,6 +108,9 @@ function sanitizeMarkdown(md: string): string {
   // that can arrive at chunk boundaries, causing words to concatenate.
   let t = md;
 
+  // Clean up any legacy leaked mask placeholders
+  t = t.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '').replace(/<<MD_MASK_\d+>>/g, '');
+
   // 1) Unwrap a single full-document fenced block (```md / ```markdown / ``` / any)
   const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
   if (exactFence) {
@@ -144,6 +147,26 @@ function sanitizeMarkdown(md: string): string {
   if (tickCount === 1) {
     t = t.replace(/```/g, '');
   }
+
+  // 4) Escape stray angle brackets outside code/math so ReactMarkdown
+  //    never interprets them as HTML tags (which would drop content).
+  try {
+    const masks: string[] = [];
+    const mask = (m: string) => {
+      masks.push(m);
+      return `%%MDMASK:${masks.length - 1}%%`;
+    };
+    // Protect code fences, math blocks, inline code, inline math, LaTeX delimiters
+    t = t.replace(/```[\s\S]*?```/g, mask);
+    t = t.replace(/\$\$[\s\S]*?\$\$/g, mask);
+    t = t.replace(/`[^`]*`/g, mask);
+    t = t.replace(/(?<!\$)\$([^$\n]|[^$\n][\s\S]*?[^$\n])\$(?!\$)/g, mask);
+    t = t.replace(/\\\([\s\S]*?\\\)/g, mask).replace(/\\\[[\s\S]*?\\\]/g, mask);
+    // Escape remaining angle brackets
+    t = t.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Restore masks
+    t = t.replace(/%%MDMASK:(\d+)%%/g, (_, i) => masks[Number(i)] || '');
+  } catch {}
 
   return t;
 }
@@ -588,6 +611,8 @@ export default function LearnView({
     )
   );
 
+  // TTS removed
+
   // Start streaming missing subtopics (used on mount and on retry)
   const startStreaming = useCallback(async () => {
     if (readonly) return;
@@ -989,6 +1014,7 @@ export default function LearnView({
       // Start fetching explanation immediately
       fetchExplanationFor(s, 'default');
     }
+    // TTS removed
     if (s) {
       if (typeof requestAnimationFrame !== 'undefined') {
         requestAnimationFrame(() => scrollToMainTop());
@@ -1227,7 +1253,9 @@ export default function LearnView({
         {/* No deletion error state in lesson view */}
 
         <ul className="space-y-1">
-          {initial.subtopics.map((s, i) => (
+          {initial.subtopics
+            .filter((_, i) => i <= unlockedIndex + 1) // show up to current unlocked and only the next one
+            .map((s, i) => (
             <li key={s.id}>
               <button
                 onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
@@ -1271,6 +1299,7 @@ export default function LearnView({
                   {formatImportanceLabel(currentSubtopic.importance)} Importance&nbsp;&nbsp;•&nbsp;&nbsp;{formatDifficultyLabel(currentSubtopic.difficulty)} Difficulty
                 </span>
               </div>
+              {/* TTS UI removed */}
               {!readonly && !demo && (
                 <hr className="my-6 border-neutral-800" />
               )}

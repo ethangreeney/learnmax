@@ -451,7 +451,8 @@ export async function POST(req: Request) {
     const systemMsg = [
       'You are writing ONE section of an in-progress lecture.',
       'Follow DELTA RULES strictly to avoid repetition and only add new information for the current section.',
-      'Be concise, instructional; avoid preambles, meta commentary, and disclaimers.'
+      'Be concise and instructional; avoid preambles, meta commentary, and disclaimers.',
+      'Format strictly in Markdown: no raw HTML; do not wrap prose in code fences; use $...$ or $$...$$ for math (prefer inline for short expressions); use **bold** only for short key terms; use backticks only for code identifiers; keep paragraphs short and use lists when helpful.'
     ].join(' ');
     const docLen = (documentContent || '').trim().length;
     const groundingLine =
@@ -514,7 +515,13 @@ export async function POST(req: Request) {
       deltaRules,
       packLines.join('\n'),
       groundingLine,
-      `Write 280–560 words of clean Markdown.`,
+      `Write 190–390 words of clean Markdown.`,
+      `Formatting:`,
+      `- Use Markdown only. Do NOT use raw HTML tags.`,
+      `- Do NOT wrap the entire answer or normal prose in code fences. Use fenced code blocks only for actual program code.`,
+      `- Use inline math $...$ (or \\(...\\)) for short expressions; use $$...$$ (or \\[...\\]) only for multi-line display math.`,
+      `- Use **bold** only for short key terms on first mention; never bold whole sentences.`,
+      `- Use backticks only for code identifiers, never for math or prose.`,
       `Start directly with content. Do NOT mention the words "document", "context", "provided context", "this section", or any limitations.`,
       `Do NOT number subtopics. Do NOT add a standalone H1.`,
       `Use short paragraphs, bullet lists, or small inline examples when useful. Favor lists and short blocks over dense text.`,
@@ -550,6 +557,11 @@ export async function POST(req: Request) {
               );
             }
             let markdown = stripPreamble(full, { title: subtopic, lectureTitle });
+            // Normalize final combined output to enforce Markdown-only and escape stray angle brackets
+            try {
+              const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+              markdown = normalizeModelMarkdown(markdown);
+            } catch {}
             // Optional last-mile dedupe against prior sections
             try {
               if (coveragePack && coveragePack.recentFull.length) {
@@ -599,6 +611,10 @@ export async function POST(req: Request) {
     // Non-streaming fallback
     const raw = await generateText(prompt, preferredModel, systemMsg);
     let markdown = stripPreamble(raw, { title: subtopic, lectureTitle });
+    try {
+      const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+      markdown = normalizeModelMarkdown(markdown);
+    } catch {}
     // Optional last-mile dedupe against prior sections
     try {
       if (coveragePack && coveragePack.recentFull.length) {

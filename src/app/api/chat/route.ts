@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemMsg = `You are an expert academic tutor. Be clear, direct, encouraging, and do not include meta commentary or disclaimers.`;
+    const systemMsg = `You are an expert academic tutor. Be clear, direct, encouraging, and do not include meta commentary or disclaimers. Format strictly in Markdown: no raw HTML; do not wrap prose in code fences; use inline math $...$ (or \\(...\\)) for short expressions and $$...$$ (or \\[...\\]) only for display math; use **bold** only for short key terms; use backticks only for true code identifiers.`;
     const userMsg = `
 CURRENT SUBTOPIC CONTENT
 ${
@@ -98,6 +98,11 @@ ${userQuestion}
                 )
               );
             }
+            // Normalize full transcript before persisting
+            try {
+              const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+              full = normalizeModelMarkdown(full);
+            } catch {}
             const ms = Date.now() - t0;
             const used = (gen as any)?.usedModel || usedModel;
             controller.enqueue(
@@ -186,7 +191,12 @@ ${userQuestion}
     }
 
     // Fallback: non-streaming JSON
-    const aiTextResponse = await generateText(userMsg, chosenModel, systemMsg);
+    const aiTextResponseRaw = await generateText(userMsg, chosenModel, systemMsg);
+    let aiTextResponse = aiTextResponseRaw;
+    try {
+      const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+      aiTextResponse = normalizeModelMarkdown(aiTextResponseRaw);
+    } catch {}
     if (canPersist) {
       try {
         await prisma.tutorMessage.create({

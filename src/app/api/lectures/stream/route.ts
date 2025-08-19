@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
@@ -115,6 +116,10 @@ ${text}
               where: { id: lectureId },
               data: { title: topic },
             });
+            // Ensure the cached lectures list reflects the updated title immediately
+            try {
+              revalidateTag(`user-lectures:${userId}`);
+            } catch {}
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: 'title', title: topic })}\n\n`
@@ -151,6 +156,7 @@ ${text}
                 lectureId,
               },
             });
+            // TTS enqueue removed
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({

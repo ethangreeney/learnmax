@@ -336,7 +336,7 @@ async function generateSectionMarkdowns(
 
   const tasks = subtopics.map((s) => async () => {
     const systemMsg =
-      'You are writing ONE section of a lecture. Be concise, instructional, avoid preambles or meta commentary, and write clean Markdown.';
+      'You are writing ONE section of a lecture. Be concise and instructional; avoid preambles or meta commentary. Format strictly in Markdown: no raw HTML; do not wrap prose in code fences; use $...$ or $$...$$ for math (prefer inline for short expressions); use **bold** only for short key terms; use backticks only for code identifiers; keep paragraphs short and use lists when helpful.';
     const title = s.title;
     const overview = s.overview || '';
     const prompt = [
@@ -344,7 +344,13 @@ async function generateSectionMarkdowns(
       `Lecture: "${lectureTitle}"`,
       `Subtopic: "${title}"`,
       `Overview: ${overview}`,
-      `Write 180–320 words of clean Markdown.`,
+      `Write 125–225 words of clean Markdown.`,
+      `Formatting:`,
+      `- Use Markdown only. Do NOT use raw HTML tags.`,
+      `- Do NOT wrap the entire answer or normal prose in code fences. Use fenced code blocks only for actual program code.`,
+      `- Use inline math $...$ for short expressions; use $$...$$ only for multi-line display math.`,
+      `- Use **bold** only for short key terms on first mention; never bold whole sentences.`,
+      `- Use backticks only for code identifiers (e.g., function names), never for math or prose.`,
       `Use short paragraphs and bullet lists where helpful.`,
       `Start directly with content. No preamble. No H1.`,
       `Focus on definitions, theorems, algorithms, and examples that appear in the document; avoid generic use cases unless present.`,
@@ -357,7 +363,14 @@ async function generateSectionMarkdowns(
       ),
     ].join('\n');
     const mdRaw = await generateText(prompt, preferredModel, systemMsg);
-    result[title.trim().toLowerCase()] = sanitizeDbText(mdRaw);
+    // Normalize to ensure clean Markdown and escape stray angle brackets
+    try {
+      const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+      const normalized = normalizeModelMarkdown(mdRaw);
+      result[title.trim().toLowerCase()] = sanitizeDbText(normalized);
+    } catch {
+      result[title.trim().toLowerCase()] = sanitizeDbText(mdRaw);
+    }
   });
 
   // Enqueue tasks and run with concurrency
