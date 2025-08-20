@@ -32,10 +32,12 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true },
     });
+    // Only return real chat messages. Exclude other roles (e.g., 'short-q')
     const messages = await prisma.tutorMessage.findMany({
       where: {
         userId,
         lectureId,
+        role: { in: ['user', 'ai'] },
         ...(lastReset ? { createdAt: { gt: lastReset.createdAt } } : {}),
       },
       select: { role: true, text: true, refs: true, createdAt: true },

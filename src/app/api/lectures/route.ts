@@ -354,6 +354,7 @@ async function generateSectionMarkdowns(
       `Use short paragraphs and bullet lists where helpful.`,
       `Start directly with content. No preamble. No H1.`,
       `Focus on definitions, theorems, algorithms, and examples that appear in the document; avoid generic use cases unless present.`,
+      `Value simplicity and clarity very highly. Only use jargon and complex words when necessary.`,
       `---`,
       `DOCUMENT EXCERPTS (relevant slices only):`,
       selectRelevantContext(

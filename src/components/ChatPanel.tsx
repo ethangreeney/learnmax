@@ -167,11 +167,13 @@ export default function ChatPanel({
         const res = await fetch(`/api/chat/history?lectureId=${encodeURIComponent(lectureId)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
-          messages?: Array<{ role: 'user' | 'ai'; text: string }>;
+          messages?: Array<{ role: string; text: string }>;
         };
         if (cancelled) return;
         const msgs = Array.isArray(data?.messages)
-          ? data.messages.map((m) => ({ sender: m.role, text: m.text }))
+          ? data.messages
+              .filter((m) => m && (m.role === 'user' || m.role === 'ai'))
+              .map((m) => ({ sender: m.role as 'user' | 'ai', text: m.text }))
           : [];
         if (msgs.length > 0) setHistory(msgs);
         else

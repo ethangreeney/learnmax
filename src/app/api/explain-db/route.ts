@@ -98,9 +98,9 @@ const STOPWORDS = new Set(
 
 function stripMarkdownFormatting(md: string): string {
   let t = String(md || '');
-  // Remove code fences and inline code
+  // Remove code fences and unwrap inline code (preserve the content)
   t = t.replace(/```[\s\S]*?```/g, ' ');
-  t = t.replace(/`[^`]*`/g, ' ');
+  t = t.replace(/`([^`]*)`/g, '$1');
   // Remove ATX headings and setext headings
   t = t.replace(/^\s{0,3}#{1,6}\s+.*$/gm, ' ');
   t = t.replace(/^.+\n(?:=+|-+)\s*$/gm, ' ');

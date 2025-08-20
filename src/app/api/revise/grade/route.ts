@@ -25,10 +25,12 @@ export async function POST(req: NextRequest) {
       lectureId?: string;
       prompt?: string;
       answer?: string;
+      suppressElo?: boolean;
     };
     const lectureId = String(body?.lectureId || '').trim();
     const prompt = String(body?.prompt || '').trim();
     const answer = String(body?.answer || '').trim();
+    const suppressElo = Boolean(body?.suppressElo);
     if (!lectureId || !prompt || !answer) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
@@ -100,10 +102,16 @@ Use closest model match; accept equivalent wording and DB-agnostic phrasing.`;
 
     const genericRubric = `Scoring rules (0-10):
 - 10: Completely correct and comprehensive; covers all key points.
-- 7-9: Mostly correct; minor omissions but core ideas present.
-- 4-6: Partially correct; significant gaps or misunderstandings.
-- 1-3: Minimal understanding; major errors or missing key concepts.
-- 0: Incorrect or off-topic.`;
+- 8-9: Correct and clear; minor omissions acceptable when core ideas are present.
+- 6-7: Mostly correct; core ideas present even if incomplete or slightly imprecise.
+- 3-5: Partial understanding; some correct ideas mixed with gaps/misconceptions.
+- 1-2: Minimal understanding; major errors or missing key concepts.
+- 0: Incorrect or off-topic.
+
+Leniency guidance:
+- Prefer rounding borderline scores up (e.g., a strong 7 can be graded as 8).
+- Accept equivalent phrasing and synonyms; do not penalize minor grammar.
+- Award partial credit generously when key ideas are named correctly.`;
 
     const gradingPrompt = matchesIndexCalibration
       ? `You are grading a short-answer response using ONLY the provided LESSON.
@@ -149,41 +157,46 @@ ${answer}
     } catch {}
     let score = Math.max(0, Math.min(10, Number(result?.score)));
     if (!Number.isFinite(score)) score = 0;
+    // Leniency: bump borderline 7 to 8 to reduce false negatives around the threshold
+    if (score === 7) score = 8;
     const modelAnswer = String(result?.modelAnswer || '').trim().slice(0, 3000);
 
     // Award ELO once per (user, lecture, prompt, answer) using stable hash key
-    const ELO_REVISE_SHORT_8PLUS = parseInt(process.env.ELO_REVISE_SHORT_8PLUS || '20', 10);
-    const ELO_REVISE_SHORT_6TO7 = parseInt(process.env.ELO_REVISE_SHORT_6TO7 || '10', 10);
-    let delta = 0;
-    if (score >= 8) delta = ELO_REVISE_SHORT_8PLUS;
-    else if (score >= 6) delta = ELO_REVISE_SHORT_6TO7;
+    let appliedDelta = 0;
+    if (!suppressElo) {
+      const ELO_REVISE_SHORT_8PLUS = parseInt(process.env.ELO_REVISE_SHORT_8PLUS || '20', 10);
+      let delta = 0;
+      // Award points for any explanation strictly over 7 (i.e., 8–10). A lenient 7 is bumped to 8 above.
+      if (score > 7) delta = ELO_REVISE_SHORT_8PLUS;
 
-    if (delta && Number.isFinite(delta) && delta !== 0) {
-      try {
-        await prisma.$transaction(async (tx) => {
-          // Dedupe by user/key
-          await tx.eloEvent.create({
-            data: {
-              userId,
-              kind: 'revise-short',
-              ref: key,
-              delta,
-            },
-          });
-          await tx.user.update({ where: { id: userId }, data: { elo: { increment: delta } } });
-        }, INTERACTIVE_TX_OPTIONS);
+      if (delta && Number.isFinite(delta) && delta !== 0) {
         try {
-          revalidateTag(`user-stats:${userId}`);
-        } catch {}
-      } catch (e: any) {
-        // Unique constraint violation means already awarded
-        if (!(e && typeof e === 'object' && (e as any).code === 'P2002')) {
-          // Swallow other errors, still return grade
+          await prisma.$transaction(async (tx) => {
+            // Dedupe by user/key
+            await tx.eloEvent.create({
+              data: {
+                userId,
+                kind: 'revise-short',
+                ref: key,
+                delta,
+              },
+            });
+            await tx.user.update({ where: { id: userId }, data: { elo: { increment: delta } } });
+          }, INTERACTIVE_TX_OPTIONS);
+          appliedDelta = delta;
+          try {
+            revalidateTag(`user-stats:${userId}`);
+          } catch {}
+        } catch (e: any) {
+          // Unique constraint violation means already awarded
+          if (!(e && typeof e === 'object' && (e as any).code === 'P2002')) {
+            // Swallow other errors, still return grade
+          }
         }
       }
     }
 
-    const out = { score, modelAnswer };
+    const out = { score, modelAnswer, eloDelta: appliedDelta };
     gradeCache.set(key, out);
     return NextResponse.json(out);
   } catch (e: any) {
