@@ -39,12 +39,8 @@ export default async function PublicProfilePage({
   const viewerId = (session?.user as any)?.id as string | undefined;
   const isSelf = viewerId === user.id;
 
-  const [agg, ranks, followerCount, followingCount, higherCount, lastAttempt, stats] = await Promise.all([
-    prisma.quizAttempt.groupBy({
-      by: ['isCorrect'],
-      where: { userId: user.id },
-      _count: { _all: true },
-    }),
+  const [medianRows, ranks, followerCount, followingCount, higherCount, lastAttempt, stats, fallbackRows] = await Promise.all([
+    prisma.$queryRaw<{ median: number | null }[]>`SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY "score") AS median FROM "ShortAnswerGrade" WHERE "userId" = ${user.id}`.catch(() => [{ median: null }] as any),
     getRanksSafe(),
     prisma.follow.count({ where: { followingId: user.id } }),
     prisma.follow.count({ where: { followerId: user.id } }),
@@ -55,11 +51,20 @@ export default async function PublicProfilePage({
       select: { createdAt: true },
     }),
     getUserStatsCached(user.id),
+    prisma.tutorMessage.findMany({ where: { userId: user.id, role: 'short-q' }, select: { refs: true }, orderBy: { createdAt: 'desc' }, take: 200 }).catch(() => [] as any[]),
   ]);
-
-  const total = agg.reduce((a, r) => a + r._count._all, 0);
-  const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
-  const accuracy = total ? Math.round((correct / total) * 100) : 0;
+  const medianFromGrade = Array.isArray(medianRows) && medianRows[0] && typeof (medianRows[0] as any).median === 'number' ? ((medianRows[0] as any).median as number) : null;
+  const fallbackScores = Array.isArray(fallbackRows)
+    ? (fallbackRows as any[])
+        .map((r) => {
+          const s = Number((r as any)?.refs?.score);
+          return Number.isFinite(s) ? s : null;
+        })
+        .filter((n) => n != null) as number[]
+    : [];
+  fallbackScores.sort((a, b) => a - b);
+  const medianFromTutor = fallbackScores.length ? fallbackScores[Math.ceil(fallbackScores.length / 2) - 1] : null;
+  const medianShort = medianFromGrade ?? medianFromTutor;
   const lastActiveAt = user.lastStudiedAt || lastAttempt?.createdAt || null;
   const lifetimeLectures = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
   const highestElo = user.elo;
@@ -163,8 +168,8 @@ export default async function PublicProfilePage({
           <div className="text-2xl font-semibold">{lifetimeMastered}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Accuracy</div>
-          <div className="text-2xl font-semibold">{correct}/{total}</div>
+          <div className="text-sm text-neutral-400">Median Short‑answer Grade</div>
+          <div className="text-2xl font-semibold">{medianShort != null ? `${medianShort}/10` : '—'}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Streak</div>

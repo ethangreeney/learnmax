@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       'Analyze this PDF end-to-end (text and images).',
       'Return ONLY valid JSON in this exact shape (no extra prose):',
       '{ "topic": string, "subtopics": [ { "title": string, "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string } ] }',
-      'Generate between 8 and 15 subtopics total. Aim for about 12 on average. Never exceed 15.',
+      'Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.',
     ].join('\n');
 
     const res = await model.generateContent([
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
         ? json.topic.trim()
         : 'Generating lesson... Please Wait';
     const subs = Array.isArray(json?.subtopics) ? json.subtopics : [];
-    const cappedSubs = subs.slice(0, 15);
+    const cappedSubs = subs.slice(0, 12);
 
     const lecture = await prisma.lecture.create({
       data: {

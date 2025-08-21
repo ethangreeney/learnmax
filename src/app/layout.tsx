@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     'Master any subject by breaking complex lectures into focused steps, reviewing key insights, and advancing only when you master each concept.',
 };
 const navLinks = [
-  { href: '/', label: 'Home' },
+  { href: '/welcome', label: 'Home' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/leaderboard', label: 'Leaderboard' },
   // Keep Learn as the rightmost link for prominence

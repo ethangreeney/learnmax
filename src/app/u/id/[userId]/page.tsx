@@ -25,20 +25,30 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
   const viewerId = (session?.user as any)?.id as string | undefined;
   const isSelf = viewerId === user.id;
 
-  const [ranks, agg, followerCount, followingCount, higherCount, lastAttempt, stats] = await Promise.all([
+  const [ranks, medianRows, followerCount, followingCount, higherCount, lastAttempt, stats, fallbackRows] = await Promise.all([
     getRanksSafe(),
-    prisma.quizAttempt.groupBy({ by: ['isCorrect'], where: { userId: user.id }, _count: { _all: true } }),
+    prisma.$queryRaw<{ median: number | null }[]>`SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY "score") AS median FROM "ShortAnswerGrade" WHERE "userId" = ${user.id}`.catch(() => [{ median: null }] as any),
     prisma.follow.count({ where: { followingId: user.id } }),
     prisma.follow.count({ where: { followerId: user.id } }),
     prisma.user.count({ where: { elo: { gt: user.elo } } }),
     prisma.quizAttempt.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
     getUserStatsCached(user.id),
+    prisma.tutorMessage.findMany({ where: { userId: user.id, role: 'short-q' }, select: { refs: true }, orderBy: { createdAt: 'desc' }, take: 200 }).catch(() => [] as any[]),
   ]);
   const rank = pickRankForElo(ranks, user.elo);
   const rankColor = getRankGradient(rank?.slug);
-  const total = agg.reduce((a, r) => a + r._count._all, 0);
-  const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
-  const accuracy = total ? Math.round((correct / total) * 100) : 0;
+  const medianFromGrade = Array.isArray(medianRows) && medianRows[0] && typeof (medianRows[0] as any).median === 'number' ? ((medianRows[0] as any).median as number) : null;
+  const fallbackScores = Array.isArray(fallbackRows)
+    ? (fallbackRows as any[])
+        .map((r) => {
+          const s = Number((r as any)?.refs?.score);
+          return Number.isFinite(s) ? s : null;
+        })
+        .filter((n) => n != null) as number[]
+    : [];
+  fallbackScores.sort((a, b) => a - b);
+  const medianFromTutor = fallbackScores.length ? fallbackScores[Math.ceil(fallbackScores.length / 2) - 1] : null;
+  const medianShort = medianFromGrade ?? medianFromTutor;
   const lastActiveAt = user.lastStudiedAt || lastAttempt?.createdAt || null;
   const lifetimeMastered = (stats as any)?.lifetime?.subtopicsMastered ?? (stats as any)?.masteredCount ?? user._count.masteredSubtopics;
   const lifetimeLectures = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
@@ -134,8 +144,8 @@ export default async function PublicProfileById({ params }: { params: Promise<{ 
           <div className="text-2xl font-semibold">{lifetimeMastered}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Accuracy</div>
-          <div className="text-2xl font-semibold">{correct}/{total}</div>
+          <div className="text-sm text-neutral-400">Median Short‑answer Grade</div>
+          <div className="text-2xl font-semibold">{medianShort != null ? `${medianShort}/10` : '—'}</div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Streak</div>

@@ -70,6 +70,8 @@ model User {
   quizResets        QuizReset[]
   tutorMessages     TutorMessage[]
   tutorResets       TutorReset[]
+  // Persistent short-answer grades (lifetime, not deleted when lecture is deleted)
+  shortAnswerGrades ShortAnswerGrade[]
 
   // Social graph
   following  Follow[] @relation("UserFollows")
@@ -95,6 +97,8 @@ model Lecture {
   // New relations for tutor chat persistence
   tutorMessages   TutorMessage[]
   tutorResets     TutorReset[]
+  // Optional relation for grades; lecture may be deleted without removing grades
+  shortAnswerGrades ShortAnswerGrade[]
 
   @@index([userId, starred, createdAt])
   @@index([userId, starred, lastOpenedAt, createdAt], map: "Lecture_userId_starred_lastOpened_createdAt_idx")
@@ -239,6 +243,34 @@ model TutorReset {
   lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
 
   @@index([userId, lectureId, createdAt])
+  @@index([lectureId])
+}
+
+model ShortAnswerGrade {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  userId     String
+  lectureId  String?
+  promptHash String
+  score      Int
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture Lecture? @relation(fields: [lectureId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, promptHash])
+  @@index([userId, createdAt])
+}
+
+// Global per-lecture short-answer prompts (not tied to a specific User or Lecture row)
+model ShortAnswerPrompt {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  lectureId   String
+  subtopicId  String
+  prompt      String   @db.Text
+  modelAnswer String   @db.Text
+
+  @@unique([lectureId, subtopicId])
   @@index([lectureId])
 }
 

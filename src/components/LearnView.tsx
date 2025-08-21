@@ -156,14 +156,21 @@ function sanitizeMarkdown(md: string): string {
       masks.push(m);
       return `%%MDMASK:${masks.length - 1}%%`;
     };
-    // Protect code fences, math blocks, inline code, inline math, LaTeX delimiters
+    // Protect code fences, math blocks, inline code, inline math, LaTeX delimiters, and leaked masks
     t = t.replace(/```[\s\S]*?```/g, mask);
     t = t.replace(/\$\$[\s\S]*?\$\$/g, mask);
     t = t.replace(/`[^`]*`/g, mask);
     t = t.replace(/(?<!\$)\$([^$\n]|[^$\n][\s\S]*?[^$\n])\$(?!\$)/g, mask);
     t = t.replace(/\\\([\s\S]*?\\\)/g, mask).replace(/\\\[[\s\S]*?\\\]/g, mask);
+    t = t.replace(/%%MDMASK:\d+%%/g, '');
     // Escape remaining angle brackets
     t = t.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Escape stray dollar signs so remark-math doesn't start math at Qlik's $
+    try {
+      t = t.replace(/(?<!\\)\$/g, '\\\$');
+    } catch {
+      t = t.replace(/(^|[^\\])\$/g, '$1\\$');
+    }
     // Restore masks
     t = t.replace(/%%MDMASK:(\d+)%%/g, (_, i) => masks[Number(i)] || '');
   } catch {}
@@ -182,7 +189,11 @@ function appendChunkSafely(previous: string, next: string): string {
     // word + word (e.g., "feathers" + "While")
     ((isWordChar(lastChar) && isWordChar(firstChar)) ||
       // sentence/colon punctuation followed by a word with no whitespace
-      (/[\.:;!?]$/.test(previous) && isWordChar(firstChar))) &&
+      (/[\.:;!?]$/.test(previous) && isWordChar(firstChar)) ||
+      // closing paren/bracket followed by a word
+      (/[)\]]$/.test(previous) && isWordChar(firstChar)) ||
+      // emphasis or strong markers starting at boundary
+      (/[*_]$/.test(previous) && isWordChar(firstChar))) &&
     !/^\s/.test(next);
   return needsSpace ? previous + ' ' + next : previous + next;
 }
@@ -284,30 +295,11 @@ export default function LearnView({
   readonly?: boolean;
   demo?: boolean;
 }) {
-  // UI-only store per page mount
+  // UI-only store per page mount. To avoid hydration mismatches, seed with
+  // server-stable values only; restore localStorage progress after mount.
   const initialUnlocked = deriveUnlockedIndex(initial.subtopics);
-  // Try to hydrate initial indices from localStorage synchronously to avoid a flash/reset to index 0
-  let initialCurrentFromStorage = initialUnlocked;
-  let initialUnlockedFromStorage = initialUnlocked;
-  try {
-    if (typeof window !== 'undefined') {
-      const key = `lesson:progress:${initial.id}`;
-      const raw = window.localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw || '{}');
-        const savedCurrent = Number(parsed?.currentIndex ?? NaN);
-        const savedUnlocked = Number(parsed?.unlockedIndex ?? NaN);
-        const maxIdx = Math.max(0, initial.subtopics.length - 1);
-        const clamp = (v: number) => Math.max(0, Math.min(maxIdx, Math.trunc(v)));
-        if (Number.isFinite(savedCurrent)) initialCurrentFromStorage = clamp(savedCurrent);
-        if (Number.isFinite(savedUnlocked)) initialUnlockedFromStorage = Math.max(
-          initialUnlocked,
-          clamp(savedUnlocked),
-          initialCurrentFromStorage
-        );
-      }
-    }
-  } catch {}
+  const initialCurrentFromStorage = initialUnlocked;
+  const initialUnlockedFromStorage = initialUnlocked;
   const storeRef = useRef(
     createLearnUIStore({
       currentIndex: initialCurrentFromStorage,
@@ -443,19 +435,54 @@ export default function LearnView({
 
   useEffect(() => {
     try {
+      if (typeof window === 'undefined') return;
+      // Restore progress after mount to avoid SSR/CSR mismatches
+      const key = `lesson:progress:${initial.id}`;
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw || '{}');
+        const savedCurrent = Number(parsed?.currentIndex ?? NaN);
+        const savedUnlocked = Number(parsed?.unlockedIndex ?? NaN);
+        const maxIdx = Math.max(0, initial.subtopics.length - 1);
+        const clamp = (v: number) => Math.max(0, Math.min(maxIdx, Math.trunc(v)));
+        const nextCurrent = Number.isFinite(savedCurrent) ? clamp(savedCurrent) : ui.getState().currentIndex;
+        const nextUnlocked = Number.isFinite(savedUnlocked)
+          ? Math.max(deriveUnlockedIndex(initial.subtopics), clamp(savedUnlocked), nextCurrent)
+          : ui.getState().unlockedIndex;
+        ui.setState((s) => ({ ...s, currentIndex: nextCurrent, unlockedIndex: nextUnlocked }));
+        // Remember pending scroll if present
+        const savedScrollY = Number(parsed?.scrollY ?? NaN);
+        if (Number.isFinite(savedScrollY) && savedScrollY > 0) pendingScrollYRef.current = Math.max(0, Math.trunc(savedScrollY));
+        restoringIndexRef.current = true;
+        try {
+          const idx = Math.max(0, Math.min(maxIdx, nextCurrent));
+          pendingSubtopicIdRef.current = initial.subtopics[idx]?.id || null;
+        } catch { pendingSubtopicIdRef.current = null; }
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.id]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
       const key = `lesson:progress:${initial.id}`;
       const payload = {
         currentIndex,
         unlockedIndex,
-        scrollY: typeof window !== 'undefined' ? window.scrollY : 0,
+        scrollY: window.scrollY,
         ts: Date.now(),
       };
-      if (typeof window !== 'undefined') window.localStorage.setItem(key, JSON.stringify(payload));
+      window.localStorage.setItem(key, JSON.stringify(payload));
     } catch {}
   }, [currentIndex, unlockedIndex, initial.id]);
 
-  // Seed base ELO for toast animation to sync with navbar counter
+  // Seed base ELO for toast animation to sync with navbar counter (skip in demo)
   useEffect(() => {
+    if (demo) {
+      eloBaseRef.current = 0;
+      return;
+    }
     (async () => {
       try {
         const res = await fetch('/api/users/me', { cache: 'no-store' });
@@ -467,7 +494,7 @@ export default function LearnView({
         eloBaseRef.current = eloBaseRef.current ?? 0;
       }
     })();
-  }, []);
+  }, [demo]);
 
   // Show a brief in-content toast when ELO increases so it's visible even if navbar is off-screen
   useEffect(() => {
@@ -1200,8 +1227,8 @@ export default function LearnView({
 
             // Prefetch short-answer question for the next subtopic once content is ready
             try {
-              const prefLectureId = demo ? '' : initial.id;
-              const prefSubtopicId = demo ? '' : next.id;
+              const prefLectureId = initial.id;
+              const prefSubtopicId = next.id;
               // First try to restore an existing saved question
               const prev = await fetch(
                 `/api/revise/short?lectureId=${encodeURIComponent(prefLectureId)}&subtopicId=${encodeURIComponent(prefSubtopicId)}`
@@ -1593,13 +1620,29 @@ function ShortAnswerPanel({
         setLoaded(false);
         const payload = (lessonMd || '').trim();
         if (!explanationReady || payload.length < 50) return;
+        // Local ephemeral cache key (for signed-out stability)
+        const cacheKey = `sap:${lectureId}:${subtopicId}`;
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem(cacheKey) : null;
+          if (raw) {
+            const j = JSON.parse(raw || '{}');
+            const pLocal = sanitizeMarkdown(String(j?.prompt || '').trim());
+            if (pLocal) {
+              setPrompt(pLocal);
+              const maLocal = sanitizeMarkdown(String(j?.modelAnswer || ''));
+              if (maLocal) setModelAnswer(maLocal);
+              setLoaded(true);
+              return;
+            }
+          }
+        } catch {}
         // First try to restore a previously saved short question for this subtopic
         const prev = await fetch(
           `/api/revise/short?lectureId=${encodeURIComponent(lectureId)}&subtopicId=${encodeURIComponent(subtopicId)}`
         );
         if (prev.ok) {
           const data = (await prev.json().catch(() => ({}))) as any;
-          const p = String(data?.prompt || '').trim();
+          const p = sanitizeMarkdown(String(data?.prompt || '').trim());
           if (p) {
             setPrompt(p);
             // Restore prior answer and score if available so the text box retains user input
@@ -1610,6 +1653,11 @@ function ShortAnswerPanel({
               setScore(Number(data.score));
             }
             // Do not reveal model answer until graded in-session
+            try {
+              const ma = sanitizeMarkdown(String(data?.modelAnswer || ''));
+              const toSave = JSON.stringify({ prompt: p, modelAnswer: ma });
+              if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
+            } catch {}
             setLoaded(true);
             return;
           }
@@ -1625,8 +1673,12 @@ function ShortAnswerPanel({
         });
         if (!res.ok) throw new Error('Failed to generate');
         const data = (await res.json().catch(() => ({}))) as { prompt?: string; modelAnswer?: string };
-        const q = String(data?.prompt || '').trim();
+        const q = sanitizeMarkdown(String(data?.prompt || '').trim());
         setPrompt(q);
+        try {
+          const toSave = JSON.stringify({ prompt: q, modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')) });
+          if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
+        } catch {}
         // Persist the generated prompt so it survives reloads/sessions
         try {
           await fetch('/api/revise/short', {
@@ -1636,7 +1688,7 @@ function ShortAnswerPanel({
               lectureId,
               subtopicId,
               prompt: q,
-              modelAnswer: String(data?.modelAnswer || ''),
+              modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')),
             }),
           });
         } catch {}
@@ -1676,13 +1728,13 @@ function ShortAnswerPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Allow server to award elo when appropriate
-        body: JSON.stringify({ lectureId, prompt, answer: a, suppressElo: false }),
+        body: JSON.stringify({ lectureId, prompt, answer: a, suppressElo: false, lessonMd }),
       });
       if (!res.ok) throw new Error('Failed to grade');
       const data = (await res.json()) as { score: number; modelAnswer?: string; eloDelta?: number };
       const s = Math.max(0, Math.min(10, Number(data?.score)));
       setScore(Number.isFinite(s) ? s : 0);
-      if (data?.modelAnswer && !modelAnswer) setModelAnswer(String(data.modelAnswer));
+      if (data?.modelAnswer && !modelAnswer) setModelAnswer(sanitizeMarkdown(String(data.modelAnswer)));
       // Fire ELO UI update if server awarded points
       try {
         const delta = Number(data?.eloDelta ?? 0);

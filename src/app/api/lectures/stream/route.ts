@@ -80,7 +80,7 @@ Goals:
 - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
 - Return subtopics in a logical pedagogical order (prerequisites before dependents). Prefer the document's order; minor local reordering is allowed for clarity.
 - Be concise but complete: each subtopic should map to a coherent portion of the document.
-- Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
+- Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.
 
 Return ONLY a single JSON object with exactly these keys:
 {

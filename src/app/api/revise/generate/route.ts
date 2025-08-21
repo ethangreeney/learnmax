@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
+import { normalizeModelMarkdown, stripDependentPhrasing } from '@/lib/text/normalize-markdown';
 
 type MCQ = {
   prompt: string;
@@ -106,6 +107,7 @@ Return only JSON:
 { "questions": [ { "prompt": "string", "modelAnswer": "string" } ] }
 Rules:
 - Questions must target key concepts, definitions, mechanisms, or reasoning steps from the lesson.
+- The question text must be self-contained and must not include phrases like "Based on the lesson/content", "According to the text", or similar dependent wording.
 - Model answers must be concise (2–6 sentences) and complete.
 - Do not include any content not grounded in the lesson.
 ---
@@ -119,8 +121,8 @@ ${lessonMd.slice(0, 6000)}
         );
         const arr = Array.isArray(json?.questions) ? json.questions : [];
         for (const q of arr) {
-          const p = String(q?.prompt || '').trim();
-          const a = String(q?.modelAnswer || '').trim();
+          const p = stripDependentPhrasing(normalizeModelMarkdown(String(q?.prompt || '').trim()));
+          const a = stripDependentPhrasing(normalizeModelMarkdown(String(q?.modelAnswer || '').trim()));
           if (p && a) shortQs.push({ prompt: p, modelAnswer: a });
           if (shortQs.length >= shortCount) break;
         }

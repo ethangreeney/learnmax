@@ -30,9 +30,10 @@ export function normalizeModelMarkdown(input: string): string {
     }
   }
 
-  // Handle legacy placeholders from a previous sanitizer bug
+  // Handle legacy placeholders from a previous sanitizer bug and any leaked masks
   text = text.replace(/<<MD_MASK_\d+>>/g, '');
   text = text.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '');
+  text = text.replace(/%%MDMASK:\d+%%/g, '');
   // Heuristic repairs for common masked holes seen in prior content
   // e.g., "time complexity (-notation)" -> "time complexity (Big-O notation)"
   text = text.replace(/\(\s*-\s*notation\s*\)/gi, '(Big-O notation)');
@@ -101,6 +102,15 @@ export function normalizeModelMarkdown(input: string): string {
   // Escape remaining angle brackets
   text = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+  // Escape stray dollar signs so remark-math does not treat $...$ across
+  // unrelated content (e.g., Qlik's $ identifier). Preserve already-escaped \$.
+  try {
+    text = text.replace(/(?<!\\)\$/g, '\\\$');
+  } catch {
+    // Fallback when lookbehind unsupported (shouldn't happen in Node 18+)
+    text = text.replace(/(^|[^\\])\$/g, '$1\\$');
+  }
+
   // Restore masks
   text = text.replace(/%%MDMASK:(\d+)%%/g, (_, idx) => masks[Number(idx)] || '');
 
@@ -126,4 +136,38 @@ export function withStrictMarkdownRules(prompt: string): string {
   return `${prompt}\n\n${rules}`;
 }
 
+
+/**
+ * Strip meta/dependent phrasing like "Based on the lesson" or "According to the text"
+ * from model outputs so prompts/answers read as self-contained.
+ */
+export function stripDependentPhrasing(input: string): string {
+  let s = String(input || '');
+  if (!s.trim()) return '';
+
+  // 1) Remove common leading meta qualifiers
+  const leadingPatterns: RegExp[] = [
+    /^(\s*)(based on|according to|from|using|with reference to|given|considering|in)\s+(?:the\s+)?(?:lesson|content|text|passage|reading|material|document|context|above|provided|this(?:\s+(?:lesson|content|text|passage|reading|material|document|context))?)\s*(?:,|:|-)?\s*/i,
+    /^(\s*)(in\s+(?:the|this)\s+(?:lesson|content|text|passage|reading|material|document|context))\s*(?:,|:|-)?\s*/i,
+  ];
+  for (const re of leadingPatterns) s = s.replace(re, '');
+
+  // 2) Remove in-line meta references that add dependency wording
+  const inlinePatterns: RegExp[] = [
+    /\b(based on|according to|from|within|using|in)\s+(?:the\s+)?(?:lesson|content|text|passage|reading|material|document|context|above|provided|this(?:\s+(?:lesson|content|text|passage|reading|material|document|context))?)\b/gi,
+    /\b(as\s+described\s+in|as\s+stated\s+in)\s+(?:the\s+)?(?:lesson|content|text|passage|reading|material|document|context)\b/gi,
+    /\b(in\s+(?:the|this)\s+(?:lesson|content|text|passage|reading|material|document|context))\b/gi,
+  ];
+  for (const re of inlinePatterns) s = s.replace(re, '');
+
+  // 3) Remove trailing qualifiers like ", in the lesson." or ", from the text."
+  s = s.replace(/(,?\s*)(in|from|within)\s+(?:the\s+)?(?:lesson|content|text|passage|reading|material|document|context|above)\s*[\.]?\s*$/i, '');
+
+  // 4) Collapse extra spaces and fix common punctuation spacing
+  s = s.replace(/\s{2,}/g, ' ');
+  s = s.replace(/\s+([,.;!?])/g, '$1');
+  s = s.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+
+  return s.trim();
+}
 

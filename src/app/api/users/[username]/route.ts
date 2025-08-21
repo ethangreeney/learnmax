@@ -31,15 +31,19 @@ export async function GET(
     if (!user)
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    // Compute accuracy
-    const agg = await prisma.quizAttempt.groupBy({
-      by: ['isCorrect'],
-      where: { userId: user.id },
-      _count: { _all: true },
-    });
-    const total = agg.reduce((a, r) => a + r._count._all, 0);
-    const correct = agg.find((r) => r.isCorrect)?._count._all || 0;
-    const accuracy = total ? Math.round((correct / total) * 100) : 0;
+    // Compute median short-answer grade (lifetime)
+    const medRows = await prisma.$queryRaw<{ median: number | null }[]>`SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY "score") AS median FROM "ShortAnswerGrade" WHERE "userId" = ${user.id}`.catch(() => [{ median: null }] as any);
+    let medianShort = Array.isArray(medRows) && medRows[0] && typeof (medRows[0] as any).median === 'number' ? ((medRows[0] as any).median as number) : null;
+    if (medianShort == null) {
+      try {
+        const rows = await prisma.tutorMessage.findMany({ where: { userId: user.id, role: 'short-q' }, select: { refs: true }, orderBy: { createdAt: 'desc' }, take: 200 });
+        const scores = rows
+          .map((r: any) => Number(r?.refs?.score))
+          .filter((n: any) => Number.isFinite(n)) as number[];
+        scores.sort((a, b) => a - b);
+        if (scores.length) medianShort = scores[Math.ceil(scores.length / 2) - 1];
+      } catch {}
+    }
 
     // Determine rank based on ELO
     const ranks = await getRanksSafe();
@@ -65,7 +69,7 @@ export async function GET(
         lifetimeLecturesCreated,
         lifetimeSubtopicsMastered,
         highestElo: user.elo,
-        quiz: { totalAttempts: total, correct, accuracy },
+        quiz: { medianShort },
         rank: rank
           ? {
               slug: rank.slug,

@@ -829,7 +829,7 @@ export async function POST(req: NextRequest) {
       - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
       - Preserve the original document order from start to finish.
       - Be concise but complete: each subtopic should map to a coherent portion of the document.
-      - Generate between 8 and 15 subtopics in total. Aim for about 12 on average. Never exceed 15.
+      - Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.
 
       Return ONLY a single JSON object with exactly these keys:
       {
@@ -857,7 +857,7 @@ export async function POST(req: NextRequest) {
     );
     let bd = sanitizeBreakdown(bdRaw, text);
     // Select coverage-maximizing subtopics up to cap
-    const MAX_SUBTOPICS = 15;
+    const MAX_SUBTOPICS = 12;
     if (bd.subtopics.length > MAX_SUBTOPICS) {
       const picked = await selectTopSubtopics(
         bd.subtopics,
