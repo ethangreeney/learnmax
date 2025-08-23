@@ -362,6 +362,43 @@ export default function LearnView({
   const firstSubtopicIdRef = useRef<string | null>(null);
   const overlayHiddenRef = useRef<boolean>(false);
 
+  // Subtopics Show/Hide state (default: expanded)
+  const [subtopicsCollapsed, setSubtopicsCollapsed] = useState<boolean>(false);
+  const hasAnySubtopics = (initial.subtopics?.length ?? 0) > 0;
+  const subtopicsContainerId = useMemo(() => `subtopics-container-${initial.id}` as const, [initial.id]);
+  const onToggleSubtopics = useCallback(() => {
+    const next = !subtopicsCollapsed;
+    setSubtopicsCollapsed(next);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('subtopicsCollapsed', next ? 'true' : 'false');
+      }
+    } catch {}
+    // Optional analytics without relying on postTelemetry ordering
+    try {
+      void fetch('/api/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'subtopics_toggle',
+          lectureId: initial.id,
+          ts: Date.now(),
+          state: next ? 'collapsed' : 'expanded',
+        }),
+      });
+    } catch {}
+  }, [subtopicsCollapsed, initial.id]);
+
+  // Restore persisted state after mount (avoids hydration mismatch)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = window.localStorage.getItem('subtopicsCollapsed');
+        if (raw !== null) setSubtopicsCollapsed(raw === 'true');
+      }
+    } catch {}
+  }, []);
+
   // Cleanup: abort any active streams on unmount
   useEffect(() => {
     return () => {
@@ -1302,7 +1339,26 @@ export default function LearnView({
         className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:col-span-3 lg:p-7 xl:p-8"
         data-tour="outline"
       >
-        <h2 className="text-xl font-semibold">Lecture</h2>
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-xl font-semibold">Lecture</h2>
+          {hasAnySubtopics && (
+            <button
+              type="button"
+              onClick={onToggleSubtopics}
+              aria-expanded={!subtopicsCollapsed}
+              aria-controls={subtopicsContainerId}
+              title={subtopicsCollapsed ? 'Show subtopics' : 'Hide subtopics'}
+              aria-label={subtopicsCollapsed ? 'Show subtopics' : 'Hide subtopics'}
+              className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] leading-none text-neutral-200 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+            >
+              <span>{subtopicsCollapsed ? 'Show' : 'Hide'}</span>
+              <ArrowUpRight
+                className={`h-4 w-4 transition-transform duration-200 ${subtopicsCollapsed ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
+            </button>
+          )}
+        </div>
 
         {/* Progress bar */}
         <div className="mt-2" data-tour="progress">
@@ -1341,27 +1397,30 @@ export default function LearnView({
 
         {/* No deletion error state in lesson view */}
 
-        <ul className="space-y-1">
-          {initial.subtopics
-            .filter((_, i) => i <= unlockedIndex + 1) // show up to current unlocked and only the next one
-            .map((s, i) => (
-            <li key={s.id}>
-              <button
-                onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
-                disabled={!canSelect(i)}
-                className={`w-full rounded-md px-4 py-3.5 text-left text-sm leading-snug transition-colors ${
-                  i > unlockedIndex
-                    ? 'text-neutral-600'
-                    : i === currentIndex
-                      ? 'bg-neutral-800 font-semibold text-white'
-                      : 'text-neutral-300 hover:bg-neutral-900'
-                }`}
-              >
-                {s.title}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div id={subtopicsContainerId}>
+          <ul className="space-y-1">
+            {(subtopicsCollapsed
+              ? initial.subtopics.map((s, i) => ({ s, i })).filter(({ i }) => i <= unlockedIndex + 1)
+              : initial.subtopics.map((s, i) => ({ s, i }))
+            ).map(({ s, i }) => (
+              <li key={s.id}>
+                <button
+                  onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
+                  disabled={!canSelect(i)}
+                  className={`w-full rounded-md px-4 py-3.5 text-left text-sm leading-snug transition-colors ${
+                    i > unlockedIndex
+                      ? 'text-neutral-600'
+                      : i === currentIndex
+                        ? 'bg-neutral-800 font-semibold text-white'
+                        : 'text-neutral-300 hover:bg-neutral-900'
+                  }`}
+                >
+                  {s.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </aside>
 
       {/* Center: Explanation + Quiz */}

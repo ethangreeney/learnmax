@@ -15,7 +15,7 @@ export default function LearnClient() {
 
   const handleCreate = async () => {
     const text = input.trim();
-    if ((files.length === 0 && !text) || loading) return;
+    if ((files.length === 0 && !text) || loading || uploading) return;
     setLoading(true);
     setErr(null);
     try {
@@ -62,6 +62,12 @@ export default function LearnClient() {
         placeholder="What do you want to learn about? Paste any study notes or PDF lecture slides here"
         value={input}
         onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && e.metaKey) {
+            e.preventDefault();
+            handleCreate();
+          }
+        }}
         disabled={loading}
       />
       <div className="flex gap-2">
@@ -72,13 +78,7 @@ export default function LearnClient() {
         >
           {loading || uploading ? 'Preparing…' : 'Create Lecture'}
         </button>
-        <button
-          onClick={() => setInput('')}
-          disabled={loading}
-          className="btn-ghost disabled:opacity-50"
-        >
-          Reset
-        </button>
+        <span className="self-center text-xs text-neutral-500">Cmd + Enter to create</span>
       </div>
 
       {/* Upload PDFs */}
