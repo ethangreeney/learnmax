@@ -97,7 +97,7 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
       <div className="container-narrow py-16">
         <div className="grid items-stretch gap-8 md:grid-cols-2">
           <div className="card relative overflow-hidden p-8">
-            <div className="absolute inset-0 opacity-[0.08]">
+            <div className="pointer-events-none absolute inset-0 opacity-[0.08]">
               <div className="absolute -right-24 -top-24 h-60 w-60 rounded-full bg-emerald-500/30 blur-3xl" />
             </div>
             <div className="space-y-6">
