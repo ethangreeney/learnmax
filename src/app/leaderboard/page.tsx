@@ -2,6 +2,9 @@
 import RankGuide from '@/components/RankGuide';
 import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
 import { getRankGradient } from '@/lib/ranks';
+import Podium from './Podium';
+import LeaderboardRow from '@/components/LeaderboardRow';
+import JumpToMe from './JumpToMe';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
@@ -43,70 +46,33 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
 
   return (
     <div className="container-narrow space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Leaderboard</h1>
-        <div className="flex items-center gap-3">
-          <Tabs period={period} scope={scope} />
-          <RankGuide label="Ranks" initialElo={viewer ? viewer.elo : undefined} />
+      <div className="sticky top-0 z-10 -mx-4 border-b border-neutral-900/80 bg-neutral-950/80 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Leaderboard</h1>
+            <div className="text-sm text-neutral-500">{period === '30d' ? 'Last 30 days' : 'All-time'}</div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Tabs period={period} scope={scope} />
+            <RankGuide label="Ranks" initialElo={viewer ? viewer.elo : undefined} />
+            <JumpToMe meId={viewerId || null} />
+          </div>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 divide-y divide-neutral-800">
-        {items.map((u, idx) => (
-          <div key={u.id} className="flex items-center justify-between px-4 py-4 md:px-6">
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="w-8 text-center text-neutral-400 tabular-nums">{idx + 1}</div>
-              <div className="relative h-10 w-10 overflow-hidden rounded-full bg-neutral-900 ring-2 ring-neutral-800">
-                {u.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={u.image}
-                    alt={u.name || ''}
-                    className="absolute inset-0 h-full w-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="h-full w-full" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <a
-                    href={u.username ? `/u/${u.username}` : `/u/id/${u.id}`}
-                    className="truncate text-lg font-semibold hover:underline"
-                  >
-                    {u.name || 'Unnamed'}
-                  </a>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 ring-1 ring-neutral-800 text-neutral-400">#{idx + 1}</span>
-                </div>
-                <div className="text-sm text-neutral-500 flex items-center gap-2">
-                  {u.username ? <a href={`/u/${u.username}`} className="hover:underline">@{u.username}</a> : <span>—</span>}
-                  <span className="opacity-50">•</span>
-                  <span>last active {u.lastActiveISO ? new Date(u.lastActiveISO).toLocaleDateString() : '—'}</span>
-                </div>
-              </div>
-            </div>
+      <Podium top3={items.slice(0, 3)} />
 
-            <div className="shrink-0 grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-3">
-              {u.rank?.iconUrl ? (
-                <div className="relative col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={u.rank.iconUrl} alt={u.rank.name} className="absolute inset-0 h-full w-full object-contain" />
-                </div>
-              ) : (
-                <div
-                  className={`col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10 rounded-md bg-gradient-to-br ${getRankGradient(u.rank?.slug)} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`}
-                  aria-hidden
-                />
-              )}
-              <div className={`col-start-2 row-start-1 bg-gradient-to-r ${getRankGradient(u.rank?.slug)} bg-clip-text text-[13px] font-semibold leading-none text-transparent rank-shimmer`}>
-                {u.rank?.name || 'Unranked'}
-              </div>
-              <div className="col-start-2 row-start-2 mt-1 text-[11px] leading-none text-neutral-400">Elo {u.elo}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-6 text-sm text-neutral-400">
+          No users yet{scope === 'following' ? '. Try Global scope to discover people.' : '.'}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 divide-y divide-neutral-800">
+          {items.map((u, idx) => (
+            <LeaderboardRow key={u.id} user={u} index={idx} isViewer={u.id === viewerId} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
