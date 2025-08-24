@@ -7,7 +7,7 @@ import { isSessionWithUser } from '@/lib/session-utils';
 import crypto from 'crypto';
 
 // Simple in-memory cache to stabilize repeated grading for identical inputs in a single server instance
-const gradeCache = new Map<string, { score: number; modelAnswer?: string }>();
+const gradeCache = new Map<string, { score: number; modelAnswer?: string; feedback?: string }>();
 
 // Deterministic hashing to stabilize grading for identical answers
 function stableHash(s: string): string {
@@ -121,8 +121,18 @@ Leniency guidance:
 
     const gradingPrompt = matchesIndexCalibration
       ? `You are grading a short-answer response using ONLY the provided LESSON.
-Return ONLY JSON exactly in this shape: { "score": number, "modelAnswer": string }
-Use the following calibration STRICTLY when the prompt matches or is a close paraphrase. Score out of 10 by awarding 0–2 points per bullet in the scoring guide (allow partial credit 1 point when partially satisfied). Prefer 3–6 sentences but do not penalize length if content is correct. Accept equivalent wording and DB-agnostic phrasing.
+Return ONLY JSON exactly in this shape: { "score": number, "modelAnswer": string, "feedback": string }
+Use the following calibration STRICTLY when the prompt matches or is a close paraphrase. Score out of 10 by awarding 0–2 points per bullet in the scoring guide (allow partial credit 1 point when partially satisfied). Accept equivalent wording and DB-agnostic phrasing.
+
+Model answer requirements:
+- Keep to 120 words or fewer.
+
+Feedback requirements:
+- 24 sentences, 120 words or fewer.
+- Start with what the learner got right; then whats missing or inaccurate.
+- Give one specific improvement suggestion.
+- Ground strictly in the LESSON; optionally include one short verbatim quote in "double quotes".
+- No meta/disclaimers; no grading-rubric prose.
 ---
 CALIBRATION
 ${calibrationBlock}
@@ -137,9 +147,11 @@ LEARNER_ANSWER (hash:${key.slice(0, 8)}):
 ${answer}
 ---`
       : `You are grading a short-answer response using ONLY the provided LESSON.
-Return ONLY JSON: { "score": number, "modelAnswer": string }
+Return ONLY JSON: { "score": number, "modelAnswer": string, "feedback": string }
 ${genericRubric}
 Ignore minor grammar/spelling. Ground strictly in the LESSON. Do not invent facts.
+Model answer: keep to 120 words or fewer.
+Feedback: 24 sentences; start with strengths, then gaps; add one concrete improvement; 120 words or fewer; optionally include one short quote in "double quotes"; no meta/disclaimers.
 Ensure identical answers produce the same score for the same prompt.
 ---
 LESSON:
@@ -155,10 +167,12 @@ ${answer}
     let cameFromCache = false;
     let score = 0;
     let modelAnswer = '';
+    let feedback = '';
     if (cached) {
       cameFromCache = true;
       score = Math.max(0, Math.min(10, Number((cached as any)?.score)));
       modelAnswer = String((cached as any)?.modelAnswer || '').trim().slice(0, 3000);
+      feedback = String((cached as any)?.feedback || '').trim().slice(0, 3000);
     } else {
       let result: any = {};
       try {
@@ -174,11 +188,24 @@ ${answer}
       if (score === 7) score = 8;
       try {
         const { normalizeModelMarkdown, stripDependentPhrasing } = await import('@/lib/text/normalize-markdown');
-        modelAnswer = stripDependentPhrasing(
-          normalizeModelMarkdown(String(result?.modelAnswer || ''))
+        const limitWords = (s: string, maxWords = 120) => {
+          const words = (s || '').trim().split(/\s+/);
+          if (words.length <= maxWords) return (s || '').trim();
+          return words.slice(0, maxWords).join(' ').trim();
+        };
+        modelAnswer = limitWords(
+          stripDependentPhrasing(
+            normalizeModelMarkdown(String(result?.modelAnswer || ''))
+          )
+        ).slice(0, 3000);
+        feedback = limitWords(
+          stripDependentPhrasing(
+            normalizeModelMarkdown(String(result?.feedback || ''))
+          )
         ).slice(0, 3000);
       } catch {
         modelAnswer = String(result?.modelAnswer || '').trim().slice(0, 3000);
+        feedback = String(result?.feedback || '').trim().slice(0, 3000);
       }
     }
 
@@ -232,7 +259,7 @@ ${answer}
       }
     }
 
-    const out = { score, modelAnswer, eloDelta: appliedDelta };
+    const out = { score, modelAnswer, feedback, eloDelta: appliedDelta };
     gradeCache.set(key, out);
     return NextResponse.json(out);
   } catch (e: any) {

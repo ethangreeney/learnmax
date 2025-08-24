@@ -12,7 +12,8 @@ export default async function RevisePage({
 }) {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
-    redirect('/api/auth/signin');
+    const { lectureId } = await params;
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/revise/${lectureId}`)}`);
   }
   const { lectureId } = await params;
   const userId = session.user.id;

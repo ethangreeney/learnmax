@@ -13,6 +13,13 @@ export default function LearnClient() {
   const [files, setFiles] = useState<Array<{ name: string; url: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    ((typeof (navigator as any).userAgentData !== 'undefined' && (navigator as any).userAgentData?.platform === 'macOS') ||
+      /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ||
+      /Mac/i.test(navigator.userAgent));
+  const shortcutLabel = isMac ? 'Cmd + Enter' : 'Ctrl + Enter';
+
   const handleCreate = async () => {
     const text = input.trim();
     if ((files.length === 0 && !text) || loading || uploading) return;
@@ -63,7 +70,7 @@ export default function LearnClient() {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && e.metaKey) {
+          if (e.key === 'Enter' && (isMac ? e.metaKey : e.ctrlKey)) {
             e.preventDefault();
             handleCreate();
           }
@@ -74,11 +81,12 @@ export default function LearnClient() {
         <button
           onClick={handleCreate}
           disabled={loading || uploading || (!input.trim() && files.length === 0)}
+          title={`${shortcutLabel} to create`}
           className="btn-primary disabled:opacity-50"
         >
           {loading || uploading ? 'Preparing…' : 'Create Lecture'}
         </button>
-        <span className="self-center text-xs text-neutral-500">Cmd + Enter to create</span>
+        <span className="self-center text-xs text-neutral-500">{shortcutLabel} to create</span>
       </div>
 
       {/* Upload PDFs */}

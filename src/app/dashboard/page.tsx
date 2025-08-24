@@ -64,7 +64,7 @@ function formatTimeAgo(iso: string): string {
 async function getData() {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
-    redirect('/api/auth/signin');
+    redirect('/login?callbackUrl=/dashboard');
   }
   const userId = session.user.id;
   const email = (session.user as any)?.email || null;

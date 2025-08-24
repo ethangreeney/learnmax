@@ -237,45 +237,69 @@ export async function getLeaderboardCached(period: LeaderboardPeriod, scope: Lea
         }
       }
 
+      // Build a base user filter to respect opt-outs and optional following scope
+      const baseUserWhere: any = { leaderboardOptOut: false };
+      if (followingIds && followingIds.length > 0) {
+        baseUserWhere.id = { in: followingIds };
+      }
+
       if (period === '30d') {
         const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const baseWhere: any = { createdAt: { gte: since } };
-        if (followingIds && followingIds.length > 0) baseWhere.userId = { in: followingIds };
-        const grouped = await prisma.userMastery.groupBy({
-          by: ['userId'],
-          where: baseWhere,
-          _count: { userId: true },
-          orderBy: { _count: { userId: 'desc' } },
-          take: 50,
+        // Start from top candidates by Elo to bound the set, then compute last activity within 30d
+        const topCandidates = await prisma.user.findMany({
+          where: baseUserWhere,
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            image: true,
+            elo: true,
+            lastStudiedAt: true,
+          },
+          orderBy: [{ elo: 'desc' }, { lastStudiedAt: 'desc' }, { id: 'asc' }],
+          take: 500,
         });
-        const userIds = grouped.map((g) => g.userId);
-        const users = await prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
+        if (topCandidates.length === 0) return [];
+        const ids = topCandidates.map((u) => u.id);
+        const attempts = await prisma.quizAttempt.findMany({
+          where: { userId: { in: ids }, createdAt: { gte: since } },
+          select: { userId: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
         });
-        const idToUser = new Map(users.map((u) => [u.id, u]));
-        const items: LeaderboardItem[] = grouped
-          .map((g) => {
-            const u = idToUser.get(g.userId);
-            if (!u) return null;
-            return {
-              id: u.id,
-              name: u.name,
-              username: (u as any).username ?? null,
-              image: u.image,
-              elo: u.elo,
-              rank: toRank(u.elo),
-              masteries30d: (g as any)._count?.userId ?? 0,
-              lastActiveISO: (u as any).lastStudiedAt ? (u as any).lastStudiedAt.toISOString() : null,
-            } as LeaderboardItem;
-          })
-          .filter(Boolean) as LeaderboardItem[];
-        return items;
+        const lastByUser = new Map<string, Date>();
+        for (const a of attempts) {
+          if (!lastByUser.has(a.userId)) lastByUser.set(a.userId, a.createdAt);
+        }
+        const active = topCandidates
+          .map((u) => ({
+            ...u,
+            lastStudiedAt: lastByUser.get(u.id) || u.lastStudiedAt,
+          }))
+          .filter((u) => (u.lastStudiedAt ? u.lastStudiedAt >= since : false));
+
+        active.sort((a, b) => {
+          if (b.elo !== a.elo) return b.elo - a.elo;
+          const at = b.lastStudiedAt?.getTime() || 0;
+          const bt = a.lastStudiedAt?.getTime() || 0;
+          if (at !== bt) return at - bt;
+          return a.id.localeCompare(b.id);
+        });
+
+        const sliced = active.slice(0, 50).map((u) => ({
+          id: u.id,
+          name: u.name,
+          username: (u as any).username ?? null,
+          image: u.image,
+          elo: u.elo,
+          rank: toRank(u.elo),
+          lastActiveISO: (u as any).lastStudiedAt ? (u as any).lastStudiedAt.toISOString() : null,
+        })) as LeaderboardItem[];
+        return sliced;
       }
 
       // Default: all-time ordered by Elo
       const users = await prisma.user.findMany({
-        where: followingIds && followingIds.length > 0 ? { id: { in: followingIds } } : undefined,
+        where: baseUserWhere,
         select: { id: true, name: true, username: true, image: true, elo: true, lastStudiedAt: true },
         orderBy: { elo: 'desc' },
         take: 50,

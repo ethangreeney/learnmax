@@ -1,4 +1,4 @@
-import Image from 'next/image';
+// Avoid next/image here to reduce remote domain issues in anon sessions
 import RankGuide from '@/components/RankGuide';
 import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
 import { getRankGradient } from '@/lib/ranks';
@@ -58,12 +58,11 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
               <div className="w-8 text-center text-neutral-400 tabular-nums">{idx + 1}</div>
               <div className="relative h-10 w-10 overflow-hidden rounded-full bg-neutral-900 ring-2 ring-neutral-800">
                 {u.image ? (
-                  <Image
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={u.image}
                     alt={u.name || ''}
-                    fill
-                    sizes="40px"
-                    className="object-cover"
+                    className="absolute inset-0 h-full w-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 ) : (

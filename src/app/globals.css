@@ -403,10 +403,25 @@ body[data-page='complete'] footer {
   display: none !important;
 }
 
-/* Home page: disable scroll */
+/* Home page: enable scroll */
 body[data-page='home'] {
-  overflow: hidden !important;
-  overscroll-behavior: none;
+  overflow: auto !important;
+  overscroll-behavior: auto;
+}
+
+/* Shared lesson page: tighten top spacing under the global header */
+body[data-page='shared-preview'] main {
+  padding-top: 0.2rem; /* even tighter spacing */
+}
+
+/* Example demo page: reduce top padding too */
+body[data-page='demo-example'] main {
+  padding-top: 0.2rem;
+}
+
+/* Home landing page: slightly reduce spacing beneath header */
+body[data-page='home'] main {
+  padding-top: 1.25rem; /* default was 2.5rem from py-10 */
 }
 
 /* Hide navbar ELO on home page */
@@ -430,7 +445,9 @@ body[data-page='home'] .nav-elo { display: none !important; }
     linear-gradient(to right, rgba(var(--line)) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(var(--line)) 1px, transparent 1px);
   background-size: 60px 60px, 60px 60px;
-  mask-image: radial-gradient(60% 60% at 50% 40%, black 40%, transparent 100%);
+  /* Extend grid full-width; softly fade only top/bottom */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
 }
 @keyframes subtle-pulse {
   0%, 100% { opacity: 0.7; }

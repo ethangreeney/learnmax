@@ -1393,6 +1393,8 @@ export default function LearnView({
           <div className="text-lg font-semibold">{title}</div>
         </div>
 
+        {/* Share controls removed from lesson page; available in Learn Workspace only */}
+
         {/* Deletion is managed on the dashboard; no delete button here */}
 
         {/* No deletion error state in lesson view */}
@@ -1667,6 +1669,7 @@ function ShortAnswerPanel({
   const [modelAnswer, setModelAnswer] = useState<string>('');
   const [answer, setAnswer] = useState<string>('');
   const [score, setScore] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<string>('');
   const [grading, setGrading] = useState<boolean>(false);
   const [loaded, setLoaded] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -1690,6 +1693,8 @@ function ShortAnswerPanel({
               setPrompt(pLocal);
               const maLocal = sanitizeMarkdown(String(j?.modelAnswer || ''));
               if (maLocal) setModelAnswer(maLocal);
+              const fbLocal = sanitizeMarkdown(String(j?.feedback || ''));
+              if (fbLocal) setFeedback(fbLocal);
               setLoaded(true);
               return;
             }
@@ -1711,10 +1716,14 @@ function ShortAnswerPanel({
             if (typeof data?.score === 'number') {
               setScore(Number(data.score));
             }
+            if (typeof data?.feedback === 'string' && data?.feedback.trim()) {
+              setFeedback(sanitizeMarkdown(String(data.feedback)));
+            }
             // Do not reveal model answer until graded in-session
             try {
               const ma = sanitizeMarkdown(String(data?.modelAnswer || ''));
-              const toSave = JSON.stringify({ prompt: p, modelAnswer: ma });
+              const fb = typeof data?.feedback === 'string' ? sanitizeMarkdown(String(data.feedback)) : '';
+              const toSave = JSON.stringify({ prompt: p, modelAnswer: ma, feedback: fb });
               if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
             } catch {}
             setLoaded(true);
@@ -1735,7 +1744,7 @@ function ShortAnswerPanel({
         const q = sanitizeMarkdown(String(data?.prompt || '').trim());
         setPrompt(q);
         try {
-          const toSave = JSON.stringify({ prompt: q, modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')) });
+          const toSave = JSON.stringify({ prompt: q, modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')), feedback: '' });
           if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
         } catch {}
         // Persist the generated prompt so it survives reloads/sessions
@@ -1790,10 +1799,11 @@ function ShortAnswerPanel({
         body: JSON.stringify({ lectureId, prompt, answer: a, suppressElo: false, lessonMd }),
       });
       if (!res.ok) throw new Error('Failed to grade');
-      const data = (await res.json()) as { score: number; modelAnswer?: string; eloDelta?: number };
+      const data = (await res.json()) as { score: number; modelAnswer?: string; feedback?: string; eloDelta?: number };
       const s = Math.max(0, Math.min(10, Number(data?.score)));
       setScore(Number.isFinite(s) ? s : 0);
       if (data?.modelAnswer && !modelAnswer) setModelAnswer(sanitizeMarkdown(String(data.modelAnswer)));
+      if (typeof data?.feedback === 'string') setFeedback(sanitizeMarkdown(String(data.feedback)));
       // Fire ELO UI update if server awarded points
       try {
         const delta = Number(data?.eloDelta ?? 0);
@@ -1814,6 +1824,7 @@ function ShortAnswerPanel({
             modelAnswer,
             answer: a,
             score: s,
+            feedback,
           }),
         });
       } catch {}
@@ -1867,6 +1878,14 @@ function ShortAnswerPanel({
           </span>
         )}
       </div>
+      {typeof score === 'number' && feedback && (
+        <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+          <div className="text-neutral-400">Feedback:</div>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+            {feedback}
+          </ReactMarkdown>
+        </div>
+      )}
       {typeof score === 'number' && modelAnswer && (
         <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
           <div className="text-neutral-400">Model answer:</div>

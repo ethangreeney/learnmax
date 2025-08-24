@@ -29,7 +29,7 @@ const PillarCard = ({
 
 function HeroBackground() {
   return (
-    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 -z-10">
       <div className="hero-spotlight absolute left-1/2 top-[-30%] h-[120vmax] w-[120vmax] -translate-x-1/2" />
       <div className="hero-grid absolute inset-0" />
       <div className="absolute left-[10%] top-[15%] h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
@@ -67,13 +67,10 @@ export default function HomeLanding() {
       <div className="mx-auto flex min-h-[calc(100svh-160px)] max-w-6xl flex-col items-center justify-center text-center">
         <div className="w-full">
           <h1 className="bg-gradient-to-b from-white via-neutral-200 to-neutral-400 bg-clip-text pb-2 text-4xl font-semibold leading-[1.06] tracking-tight text-transparent md:text-6xl lg:text-7xl">
-            The Science of Learning,
-            <br className="hidden md:block" /> Perfected by AI.
+            The science of learning, accelerated by AI.
           </h1>
           <p className="mx-auto mt-5 max-w-3xl text-base text-neutral-300 md:text-lg">
-            Stop wasting hours on inefficient rereading. LearnMax applies proven
-            cognitive science to build a hyper-efficient study path, ensuring
-            you master every concept with minimal time and effort.
+            Skip the rereads. LearnMax builds a focused path and verifies mastery so you truly remember.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link

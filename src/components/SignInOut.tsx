@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { useEffect } from 'react';
 import { useMeStore } from '@/lib/client/me-store';
 import Link from 'next/link';
@@ -29,13 +29,19 @@ export default function SignInOut() {
   }
 
   if (!session) {
+    const href = (() => {
+      try {
+        const path = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search || ''}${window.location.hash || ''}` : '/learn';
+        const p = new URLSearchParams({ next: path, reason: 'general', src: 'ui_button' });
+        return `/login?${p.toString()}`;
+      } catch {
+        return '/login';
+      }
+    })();
     return (
-      <button
-        onClick={() => signIn('google')}
-        className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black"
-      >
+      <Link href={href} className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black">
         Sign In
-      </button>
+      </Link>
     );
   }
 

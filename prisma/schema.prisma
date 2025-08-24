@@ -100,8 +100,17 @@ model Lecture {
   // Optional relation for grades; lecture may be deleted without removing grades
   shortAnswerGrades ShortAnswerGrade[]
 
+  // Sharing/import
+  shareToken       String?   @unique
+  sharedAt         DateTime?
+  shareRevokedAt   DateTime?
+  isDiscoverable   Boolean   @default(false)
+  sourceLectureId  String?
+
   @@index([userId, starred, createdAt])
   @@index([userId, starred, lastOpenedAt, createdAt], map: "Lecture_userId_starred_lastOpened_createdAt_idx")
+  @@index([isDiscoverable])
+  @@index([sourceLectureId])
 }
 
 model Subtopic {

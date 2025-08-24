@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     // 2) Load most recent user-specific saved answer/score from TutorMessage (source of truth for answers)
-    let userSaved: { answer?: string; score?: number } | undefined = undefined;
+    let userSaved: { answer?: string; score?: number; feedback?: string } | undefined = undefined;
     if (isAuthed) {
       const rows = await prisma.tutorMessage.findMany({
         where: { userId, lectureId, role: 'short-q' },
@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
           userSaved = {
             answer: typeof refs.answer === 'string' ? refs.answer : undefined,
             score: typeof refs.score === 'number' ? refs.score : undefined,
+            feedback: typeof refs.feedback === 'string' ? refs.feedback : undefined,
           };
           break;
         }
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest) {
         modelAnswer: promptRow.modelAnswer || '',
         answer: userSaved?.answer || '',
         score: userSaved?.score,
+        feedback: userSaved?.feedback,
       });
     }
     // Fallback for legacy saves that only used TutorMessage
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest) {
             modelAnswer: refs.modelAnswer || '',
             answer: refs.answer || '',
             score: typeof refs.score === 'number' ? refs.score : undefined,
+            feedback: typeof refs.feedback === 'string' ? refs.feedback : undefined,
           });
         }
       }
@@ -89,6 +92,7 @@ export async function POST(req: NextRequest) {
       modelAnswer?: string;
       answer?: string;
       score?: number;
+      feedback?: string;
     };
     const lectureId = String(body?.lectureId || '').trim();
     const subtopicId = String(body?.subtopicId || '').trim();
@@ -97,6 +101,7 @@ export async function POST(req: NextRequest) {
     const answer = String(body?.answer || '').trim();
     const scoreRaw = body?.score;
     const score = typeof scoreRaw === 'number' && Number.isFinite(scoreRaw) ? Math.max(0, Math.min(10, Math.trunc(scoreRaw))) : undefined;
+    const feedback = String(body?.feedback || '').trim();
     if (!lectureId || !subtopicId || !prompt) {
       return NextResponse.json({ error: 'lectureId, subtopicId, and prompt are required' }, { status: 400 });
     }
@@ -143,6 +148,7 @@ export async function POST(req: NextRequest) {
           modelAnswer,
           answer,
           score,
+          feedback: feedback || undefined,
         } as any;
         if (target) {
           await prisma.tutorMessage.update({

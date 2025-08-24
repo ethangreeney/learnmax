@@ -9,7 +9,7 @@ import { getLecturesCached } from '@/lib/cached';
 async function getData() {
   const session = await getServerSession(authOptions);
   if (!isSessionWithUser(session)) {
-    redirect('/api/auth/signin');
+    redirect('/login?callbackUrl=/learn');
   }
   const userId = session.user.id;
   const lectures = await getLecturesCached(userId);

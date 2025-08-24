@@ -93,6 +93,8 @@ type ChatPanelProps = {
   lectureId?: string; // for persistence scope
   intro?: string;
   demoMode?: boolean;
+  inputDisabled?: boolean;
+  inputPlaceholder?: string;
 };
 
 async function postJSON<T>(url: string, body: any): Promise<T> {
@@ -113,6 +115,8 @@ export default function ChatPanel({
   lectureId,
   intro,
   demoMode,
+  inputDisabled,
+  inputPlaceholder,
 }: ChatPanelProps) {
   const [history, setHistory] = useState<Message[]>([
     {
@@ -651,15 +655,15 @@ export default function ChatPanel({
                 handleSendMessage();
               }
             }}
-            placeholder="Ask about the content..."
-            className={`input flex-1 resize-none border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.12)] py-2 pl-4 ring-1 ring-transparent placeholder:text-neutral-400 focus:ring-[rgb(var(--accent))] ${expanded ? 'mx-auto max-w-[80ch]' : ''}`}
+            placeholder={(inputDisabled && inputPlaceholder) ? inputPlaceholder : (inputPlaceholder || 'Ask about the content...')}
+            className={`input flex-1 resize-none border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.12)] py-2 pl-4 ring-1 ring-transparent placeholder:text-neutral-400 focus:ring-[rgb(var(--accent))] ${expanded ? 'mx-auto max-w-[80ch]' : ''} ${(isLoading || !documentContent || inputDisabled) ? 'opacity-60 cursor-not-allowed' : ''}`}
             rows={1}
             style={{ minHeight: 44, maxHeight: 160, overflowY: 'auto' }}
-            disabled={isLoading || !documentContent}
+            disabled={isLoading || !documentContent || Boolean(inputDisabled)}
           />
           <button
             onClick={handleSendMessage}
-            disabled={isLoading || !input.trim() || !documentContent}
+            disabled={isLoading || !input.trim() || !documentContent || Boolean(inputDisabled)}
             className="flex h-[44px] w-[44px] items-center justify-center rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50 md:h-[48px] md:w-[48px]"
           >
             <Send className="h-4 w-4" />

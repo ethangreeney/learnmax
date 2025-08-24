@@ -12,11 +12,11 @@ export default async function LearnPage({
   params: Promise<{ lectureId: string }>;
 }) {
   const session = await getServerSession(authOptions);
+  const { lectureId } = await params;
   if (!isSessionWithUser(session)) {
-    redirect('/api/auth/signin');
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/learn/${lectureId}`)}`);
   }
   const userId = session.user.id;
-  const { lectureId } = await params;
 
   const lecture = await prisma.lecture.findFirst({
     where: { id: lectureId, userId },

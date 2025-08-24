@@ -50,7 +50,7 @@ export default function ReviseClient({
   const [mcqAnswers, setMcqAnswers] = useState<Record<number, number | undefined>>({});
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [shortAns, setShortAns] = useState<Record<number, string>>({});
-  const [shortScore, setShortScore] = useState<Record<number, { score: number; modelAnswer?: string }>>({});
+  const [shortScore, setShortScore] = useState<Record<number, { score: number; modelAnswer?: string; feedback?: string }>>({});
   const [grading, setGrading] = useState<Record<number, boolean>>({});
 
   const lectureDoc = useMemo(() => {
@@ -135,8 +135,8 @@ export default function ReviseClient({
         body: JSON.stringify({ lectureId: lecture.id, prompt: q.data.prompt, answer }),
       });
       if (!res.ok) throw new Error('Failed to grade');
-      const data = (await res.json()) as { score: number; modelAnswer?: string };
-      setShortScore((m) => ({ ...m, [idx]: { score: data.score, modelAnswer: data.modelAnswer } }));
+      const data = (await res.json()) as { score: number; modelAnswer?: string; feedback?: string };
+      setShortScore((m) => ({ ...m, [idx]: { score: data.score, modelAnswer: data.modelAnswer, feedback: data.feedback } }));
       setSummary((s) => ({
         ...s,
         attempted: s.attempted + 1,
@@ -304,6 +304,14 @@ export default function ReviseClient({
                     </span>
                   )}
                 </div>
+                {shortScore[idx]?.feedback && (
+                  <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
+                    <div className="text-neutral-400">Feedback:</div>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {shortScore[idx]!.feedback as string}
+                    </ReactMarkdown>
+                  </div>
+                )}
                 {shortScore[idx]?.modelAnswer && (
                   <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
                     <div className="text-neutral-400">Model answer:</div>

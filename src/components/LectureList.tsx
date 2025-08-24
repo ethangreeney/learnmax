@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Star, StarOff, Pencil, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import YourLessonActions from '@/components/YourLessonActions';
 import DeleteLectureButton from '@/components/DeleteLectureButton';
 
 export type ClientLecture = {
@@ -173,6 +174,7 @@ export default function LectureList({
               >
                 <Pencil className="h-4 w-4" /> Rename
               </button>
+              <YourLessonActions lectureId={lec.id} />
               <DeleteLectureButton
                 lectureId={lec.id}
                 onDeleting={() =>
