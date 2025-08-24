@@ -56,8 +56,16 @@ export async function POST(
 
     try { revalidateTag(`user-lectures:${userId}`); } catch {}
 
-    const base = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL || '';
-    const origin = base ? (base.startsWith('http') ? base : `https://${base}`) : req.nextUrl.origin;
+    // Prefer a configured public base URL, otherwise use the actual request host.
+    // Avoid using VERCEL_URL for public links to ensure we stick to the custom domain.
+    const h = req.headers;
+    const forwardedProto = h.get('x-forwarded-proto') || 'https';
+    const forwardedHost = h.get('x-forwarded-host') || h.get('host') || '';
+    const requestOrigin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : req.nextUrl.origin;
+    const base = process.env.NEXT_PUBLIC_BASE_URL || '';
+    const origin = base
+      ? (base.startsWith('http') ? base : `https://${base}`)
+      : requestOrigin;
     const shareUrl = `${origin}/lectures/share/${updated.shareToken}`;
     try {
       void fetch('/api/telemetry', {
