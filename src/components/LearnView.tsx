@@ -110,6 +110,8 @@ function sanitizeMarkdown(md: string): string {
 
   // Clean up any legacy leaked mask placeholders
   t = t.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '').replace(/<<MD_MASK_\d+>>/g, '');
+  // Remove any leaked MDMASK placeholders from prior runs BEFORE creating new masks
+  t = t.replace(/%%MDMASK:\d+%%/g, '');
 
   // 1) Unwrap a single full-document fenced block (```md / ```markdown / ``` / any)
   const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
@@ -162,7 +164,6 @@ function sanitizeMarkdown(md: string): string {
     t = t.replace(/`[^`]*`/g, mask);
     t = t.replace(/(?<!\$)\$([^$\n]|[^$\n][\s\S]*?[^$\n])\$(?!\$)/g, mask);
     t = t.replace(/\\\([\s\S]*?\\\)/g, mask).replace(/\\\[[\s\S]*?\\\]/g, mask);
-    t = t.replace(/%%MDMASK:\d+%%/g, '');
     // Escape remaining angle brackets
     t = t.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // Escape stray dollar signs so remark-math doesn't start math at Qlik's $
@@ -173,7 +174,7 @@ function sanitizeMarkdown(md: string): string {
     }
     // Restore masks
     t = t.replace(/%%MDMASK:(\d+)%%/g, (_, i) => masks[Number(i)] || '');
-  } catch {}
+  } catch { }
 
   return t;
 }
@@ -230,7 +231,7 @@ function stripLeadingTitle(md: string, title?: string): string {
 
   // Iteratively remove leading headings or exact title lines at the very start
   // to be resilient to streaming joins or minor variations.
-  for (;;) {
+  for (; ;) {
     let changed = false;
     // ATX heading at very beginning
     const atx = out.match(/^\s{0,3}#{1,6}\s+([^\n]+)\n+/);
@@ -373,7 +374,7 @@ export default function LearnView({
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('subtopicsCollapsed', next ? 'true' : 'false');
       }
-    } catch {}
+    } catch { }
     // Optional analytics without relying on postTelemetry ordering
     try {
       void fetch('/api/telemetry', {
@@ -386,7 +387,7 @@ export default function LearnView({
           state: next ? 'collapsed' : 'expanded',
         }),
       });
-    } catch {}
+    } catch { }
   }, [subtopicsCollapsed, initial.id]);
 
   // Restore persisted state after mount (avoids hydration mismatch)
@@ -396,7 +397,7 @@ export default function LearnView({
         const raw = window.localStorage.getItem('subtopicsCollapsed');
         if (raw !== null) setSubtopicsCollapsed(raw === 'true');
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // Cleanup: abort any active streams on unmount
@@ -404,10 +405,10 @@ export default function LearnView({
     return () => {
       try {
         if (abortRef.current) abortRef.current.abort();
-      } catch {}
+      } catch { }
       try {
         for (const [, ctl] of explainControllersRef.current) ctl.abort();
-      } catch {}
+      } catch { }
       explainControllersRef.current.clear();
       explainRunIdRef.current.clear();
     };
@@ -426,7 +427,7 @@ export default function LearnView({
             ...data,
           }),
         });
-      } catch {}
+      } catch { }
     },
     [initial.id]
   );
@@ -466,7 +467,7 @@ export default function LearnView({
           pendingSubtopicIdRef.current = null;
         }
       }
-    } catch {}
+    } catch { }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.id]);
 
@@ -496,7 +497,7 @@ export default function LearnView({
           pendingSubtopicIdRef.current = initial.subtopics[idx]?.id || null;
         } catch { pendingSubtopicIdRef.current = null; }
       }
-    } catch {}
+    } catch { }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.id]);
 
@@ -511,7 +512,7 @@ export default function LearnView({
         ts: Date.now(),
       };
       window.localStorage.setItem(key, JSON.stringify(payload));
-    } catch {}
+    } catch { }
   }, [currentIndex, unlockedIndex, initial.id]);
 
   // Seed base ELO for toast animation to sync with navbar counter (skip in demo)
@@ -561,14 +562,14 @@ export default function LearnView({
           if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
           eloToastTimerRef.current = window.setTimeout(() => setShowEloToast(false), 1500);
         }
-      } catch {}
+      } catch { }
     };
     window.addEventListener('elo:delta', onDelta as EventListener);
     return () => {
       window.removeEventListener('elo:delta', onDelta as EventListener);
       try {
         if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
-      } catch {}
+      } catch { }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -794,7 +795,7 @@ export default function LearnView({
           }
         });
       }
-    } catch {}
+    } catch { }
 
     const qs = new URLSearchParams({ lectureId: initial.id });
     const ac = new AbortController();
@@ -984,7 +985,7 @@ export default function LearnView({
         if (activeId !== targetId) {
           return;
         }
-      } catch {}
+      } catch { }
       // Guard: avoid duplicate in-flight generation for the same subtopic.
       // If a background prefetch has reserved this ID (no controller), override it so active view wins.
       if (!reserveExplanation(targetId)) {
@@ -1005,8 +1006,8 @@ export default function LearnView({
         const covered =
           targetIndex > 0
             ? initial.subtopics
-                .slice(0, targetIndex)
-                .map((st) => ({ title: st.title, overview: st.overview }))
+              .slice(0, targetIndex)
+              .map((st) => ({ title: st.title, overview: st.overview }))
             : [];
         // Prepare abort + run guard for this subtopic
         const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1015,7 +1016,7 @@ export default function LearnView({
         try {
           const prev = explainControllersRef.current.get(targetId);
           if (prev) prev.abort();
-        } catch {}
+        } catch { }
         const ac = new AbortController();
         explainControllersRef.current.set(targetId, ac);
 
@@ -1078,7 +1079,7 @@ export default function LearnView({
                   (ui as any)?.getState?.().currentIndex ?? currentIndex;
                 const activeId = initial.subtopics[activeIndex]?.id;
                 stillActive = activeId === targetId;
-              } catch {}
+              } catch { }
               // Guard: ensure this chunk belongs to the latest run for this subtopic
               const isLatestRun =
                 explainRunIdRef.current.get(targetId) === runId;
@@ -1143,7 +1144,7 @@ export default function LearnView({
         try {
           const c = explainControllersRef.current.get(targetId);
           if (c) c.abort();
-        } catch {}
+        } catch { }
         explainControllersRef.current.delete(targetId);
         explainRunIdRef.current.delete(targetId);
         releaseExplanation(targetId);
@@ -1173,7 +1174,7 @@ export default function LearnView({
       for (const [id, ctl] of explainControllersRef.current) {
         if (s && id !== s.id) ctl.abort();
       }
-    } catch {}
+    } catch { }
     if (s && !explanations[s.id]) {
       // Start fetching explanation immediately
       fetchExplanationFor(s, 'default');
@@ -1276,7 +1277,7 @@ export default function LearnView({
                   const data = (await prev.json()) as any;
                   const p = String(data?.prompt || '').trim();
                   havePrompt = Boolean(p);
-                } catch {}
+                } catch { }
               }
               if (!havePrompt) {
                 // Generate a new short-answer question grounded in the prefetched content
@@ -1306,11 +1307,11 @@ export default function LearnView({
                           modelAnswer: String(data?.modelAnswer || ''),
                         }),
                       });
-                    } catch {}
+                    } catch { }
                   }
                 }
               }
-            } catch {}
+            } catch { }
 
             // MCQ prefetch removed: lesson now uses a single short-answer mastery check
             try {
@@ -1409,13 +1410,12 @@ export default function LearnView({
                 <button
                   onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
                   disabled={!canSelect(i)}
-                  className={`w-full rounded-md px-4 py-3.5 text-left text-sm leading-snug transition-colors ${
-                    i > unlockedIndex
+                  className={`w-full rounded-md px-4 py-3.5 text-left text-sm leading-snug transition-colors ${i > unlockedIndex
                       ? 'text-neutral-600'
                       : i === currentIndex
                         ? 'bg-neutral-800 font-semibold text-white'
                         : 'text-neutral-300 hover:bg-neutral-900'
-                  }`}
+                    }`}
                 >
                   {s.title}
                 </button>
@@ -1505,39 +1505,39 @@ export default function LearnView({
                         const isLast =
                           currentIndex === initial.subtopics.length - 1;
                         // Persist mastery only outside demo
-                         if (passed && !demo) {
-                           try {
-                             // Determine if the first check for this set was a perfect 2/2
-                             void (async () => {
-                               const res = await fetch('/api/mastery', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({
-                                   subtopicId: currentSubtopic.id,
-                                   firstPerfect: true,
-                                 }),
-                               });
-                               if (res.ok) {
-                                 const data = (await res.json().catch(() => ({}))) as any;
-                                 const d = Number(data?.eloDelta ?? 0);
-                                 if (Number.isFinite(d) && d > 0) {
-                                   try {
-                                     window.dispatchEvent(
-                                       new CustomEvent('elo:delta', { detail: { delta: Math.trunc(d) } })
-                                     );
-                                   } catch {}
-                                 } else {
-                                   // If no delta returned but mastery succeeded, attempt a refresh
-                                   if (data && data.ok) {
-                                     try {
-                                       window.dispatchEvent(new Event('elo:maybeRefresh'));
-                                     } catch {}
-                                   }
-                                 }
-                               }
-                             })();
-                           } catch {}
-                         }
+                        if (passed && !demo) {
+                          try {
+                            // Determine if the first check for this set was a perfect 2/2
+                            void (async () => {
+                              const res = await fetch('/api/mastery', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  subtopicId: currentSubtopic.id,
+                                  firstPerfect: true,
+                                }),
+                              });
+                              if (res.ok) {
+                                const data = (await res.json().catch(() => ({}))) as any;
+                                const d = Number(data?.eloDelta ?? 0);
+                                if (Number.isFinite(d) && d > 0) {
+                                  try {
+                                    window.dispatchEvent(
+                                      new CustomEvent('elo:delta', { detail: { delta: Math.trunc(d) } })
+                                    );
+                                  } catch { }
+                                } else {
+                                  // If no delta returned but mastery succeeded, attempt a refresh
+                                  if (data && data.ok) {
+                                    try {
+                                      window.dispatchEvent(new Event('elo:maybeRefresh'));
+                                    } catch { }
+                                  }
+                                }
+                              }
+                            })();
+                          } catch { }
+                        }
 
                         if (isLast) {
                           // Mark complete so progress bar hits 100%
@@ -1558,7 +1558,7 @@ export default function LearnView({
                             setTimeout(() => {
                               try {
                                 router.push(`/learn/${initial.id}/complete`);
-                              } catch {}
+                              } catch { }
                             }, 1600);
                           }
                           return;
@@ -1623,7 +1623,7 @@ export default function LearnView({
               const ok = typeof window !== 'undefined' ? window.confirm('Cancel generation?') : true;
               if (ok) abortRef.current.abort();
             }
-          } catch {}
+          } catch { }
         }}
         onRetry={() => {
           setGenHasError(false);
@@ -1634,7 +1634,7 @@ export default function LearnView({
         onBack={() => {
           try {
             router.push('/dashboard');
-          } catch {}
+          } catch { }
         }}
       />
 
@@ -1699,7 +1699,7 @@ function ShortAnswerPanel({
               return;
             }
           }
-        } catch {}
+        } catch { }
         // First try to restore a previously saved short question for this subtopic
         const prev = await fetch(
           `/api/revise/short?lectureId=${encodeURIComponent(lectureId)}&subtopicId=${encodeURIComponent(subtopicId)}`
@@ -1725,7 +1725,7 @@ function ShortAnswerPanel({
               const fb = typeof data?.feedback === 'string' ? sanitizeMarkdown(String(data.feedback)) : '';
               const toSave = JSON.stringify({ prompt: p, modelAnswer: ma, feedback: fb });
               if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
-            } catch {}
+            } catch { }
             setLoaded(true);
             return;
           }
@@ -1746,7 +1746,7 @@ function ShortAnswerPanel({
         try {
           const toSave = JSON.stringify({ prompt: q, modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')), feedback: '' });
           if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
-        } catch {}
+        } catch { }
         // Persist the generated prompt so it survives reloads/sessions
         try {
           await fetch('/api/revise/short', {
@@ -1759,7 +1759,7 @@ function ShortAnswerPanel({
               modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')),
             }),
           });
-        } catch {}
+        } catch { }
       } catch (e: any) {
         setError(e?.message || 'Failed to prepare question');
       } finally {
@@ -1781,7 +1781,7 @@ function ShortAnswerPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-      } catch {}
+      } catch { }
     };
     const t = setTimeout(save, 600);
     return () => clearTimeout(t);
@@ -1811,7 +1811,7 @@ function ShortAnswerPanel({
           window.dispatchEvent(new CustomEvent('elo:delta', { detail: { delta: Math.trunc(delta) } }));
           window.dispatchEvent(new Event('elo:maybeRefresh'));
         }
-      } catch {}
+      } catch { }
       // Persist the answer + score so the user resumes where they left off
       try {
         await fetch('/api/revise/short', {
@@ -1827,7 +1827,7 @@ function ShortAnswerPanel({
             feedback,
           }),
         });
-      } catch {}
+      } catch { }
     } catch (e: any) {
       setError(e?.message || 'Grading failed');
     } finally {
@@ -2062,7 +2062,7 @@ function QuizPanel({
           }
         }
       }
-    } catch {}
+    } catch { }
   };
   const tryAgain = () => setRevealed(false);
 
@@ -2131,7 +2131,7 @@ function QuizPanel({
             try {
               if (data?.debug)
                 console.debug('[quiz]', { subtopicId, debug: data.debug });
-            } catch {}
+            } catch { }
             for (const cand of data.questions || []) {
               const prompt = String(cand?.prompt || '').trim();
               if (
@@ -2145,7 +2145,7 @@ function QuizPanel({
               if (generated.length >= needed) break;
             }
           }
-        } catch {}
+        } catch { }
 
         if (generated.length) {
           if (disablePersistence) {
@@ -2193,7 +2193,7 @@ function QuizPanel({
                 // Inform parent so future mounts use the saved questions and avoid re-generating
                 try {
                   onQuestionsSaved?.(processed as unknown as QuizQuestion[]);
-                } catch {}
+                } catch { }
               }
             }
             // Fallback: if not saved to DB, still show the generated questions with temporary IDs
@@ -2221,7 +2221,7 @@ function QuizPanel({
         setHardLoaded((prev) => prev || success);
         try {
           releaseQuestions?.(subtopicId);
-        } catch {}
+        } catch { }
       }
     })();
   }, [
@@ -2285,7 +2285,7 @@ function QuizPanel({
                 subtopicId,
                 debug: data.debug,
               });
-          } catch {}
+          } catch { }
           for (const cand of data.questions || []) {
             const prompt = String(cand?.prompt || '').trim();
             if (
@@ -2298,7 +2298,7 @@ function QuizPanel({
             avoid.add(prompt);
           }
         }
-      } catch {}
+      } catch { }
 
       if (generated.length === 0) throw new Error('No questions returned');
 
@@ -2333,15 +2333,15 @@ function QuizPanel({
             };
             saved = payload.questions || [];
           }
-        } catch {}
+        } catch { }
       }
 
       const nextItemsRaw = (saved.length > 0
         ? saved
         : generated.map((q, idx) => ({
-            ...q,
-            id: `${subtopicId}-temp-${Date.now()}-${idx}`,
-          }))) as unknown as QuizQuestion[];
+          ...q,
+          id: `${subtopicId}-temp-${Date.now()}-${idx}`,
+        }))) as unknown as QuizQuestion[];
       const nextItems = nextItemsRaw.map(shuffleForDisplay);
 
       // Update state and ensure re-render
@@ -2354,7 +2354,7 @@ function QuizPanel({
       if (!disablePersistence && saved.length > 0) {
         try {
           onQuestionsSaved?.(nextItems);
-        } catch {}
+        } catch { }
       }
     } catch (_e) {
       // Do not use any fallback question variants; leave questions unchanged on failure.
@@ -2410,15 +2410,14 @@ function QuizPanel({
                   const isCorrect = revealed && j === q.answerIndex;
                   const isIncorrect =
                     revealed && isSelected && j !== q.answerIndex;
-                  const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${
-                    isCorrect
+                  const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${isCorrect
                       ? 'border-green-500 bg-green-900/30'
                       : isIncorrect
                         ? 'border-red-500 bg-red-900/30'
                         : isSelected
                           ? 'border-blue-500 bg-blue-900/20'
                           : 'border-neutral-700 hover:bg-neutral-800'
-                  }`;
+                    }`;
                   return (
                     <button
                       key={j}
