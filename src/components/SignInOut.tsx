@@ -5,12 +5,16 @@ import { useEffect } from 'react';
 import { useMeStore } from '@/lib/client/me-store';
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 export default function SignInOut() {
   const { data: session, status } = useSession();
   const setMe = useMeStore((s) => s.setMe);
   const meImage = useMeStore((s) => s.image);
   const meName = useMeStore((s) => s.name);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeKey = `${pathname || ''}|${searchParams?.toString() || ''}`;
 
   // Place hooks before any conditional returns to preserve hook order
   useEffect(() => {
@@ -29,17 +33,34 @@ export default function SignInOut() {
   }
 
   if (!session) {
+    // If we're already on the login page (either /login or any subpath like /login/...),
+    // hide the Sign In link so it doesn't appear while the user is already on the sign-in UI.
+    const isLoginPage = pathname === '/login' || (pathname && pathname.startsWith('/login/'));
+    if (isLoginPage) {
+      return null;
+    }
+
     const href = (() => {
       try {
-        const path = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search || ''}${window.location.hash || ''}` : '/learn';
-        const p = new URLSearchParams({ next: path, reason: 'general', src: 'ui_button' });
+        const path = pathname
+          ? `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ''}${typeof window !== 'undefined' ? window.location.hash || '' : ''}`
+          : '/learn';
+        const p = new URLSearchParams({
+          next: path,
+          reason: 'general',
+          src: 'ui_button',
+        });
         return `/login?${p.toString()}`;
       } catch {
         return '/login';
       }
     })();
     return (
-      <Link href={href} className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black">
+      <Link
+        key={routeKey}
+        href={href}
+        className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black"
+      >
         Sign In
       </Link>
     );
@@ -47,16 +68,22 @@ export default function SignInOut() {
 
   const user = session.user as { name?: string | null; image?: string | null };
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3" key={routeKey}>
       <Link
         href="/profile"
         className="group relative inline-flex h-8 w-8 overflow-hidden rounded-full ring-1 ring-neutral-800"
         aria-label="Open profile"
       >
-        {(meImage || user?.image) ? (
-          ((meImage || user?.image || '').toLowerCase().includes('.gif') || (meImage || user?.image || '').toLowerCase().includes('.webp')) ? (
+        {meImage || user?.image ? (
+          (meImage || user?.image || '').toLowerCase().includes('.gif') ||
+          (meImage || user?.image || '').toLowerCase().includes('.webp') ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={meImage || user?.image || ''} alt={meName || user?.name || 'avatar'} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+            <img
+              src={meImage || user?.image || ''}
+              alt={meName || user?.name || 'avatar'}
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+            />
           ) : (
             <Image
               src={meImage || user?.image || ''}

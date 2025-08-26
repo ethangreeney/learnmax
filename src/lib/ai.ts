@@ -13,32 +13,67 @@ function gg(): GoogleGenerativeAI {
 }
 
 /* ------------------------- helpers for loose JSON ------------------------- */
-function tryParseJson(s: string): any | null { try { return JSON.parse(s); } catch { return null; } }
+function tryParseJson(s: string): any | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
 function extractFromCodeFence(text: string): string | null {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   return m ? m[1].trim() : null;
 }
 function extractFirstJSONObject(text: string): string | null {
-  let depth = 0, start = -1, inStr = false, esc = false;
+  let depth = 0,
+    start = -1,
+    inStr = false,
+    esc = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
-    if (ch === '"') { inStr = true; continue; }
-    if (ch === '{') { if (depth === 0) start = i; depth++; continue; }
-    if (ch === '}') { if (depth > 0 && --depth === 0 && start >= 0) return text.slice(start, i + 1); }
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (ch === '}') {
+      if (depth > 0 && --depth === 0 && start >= 0)
+        return text.slice(start, i + 1);
+    }
   }
   return null;
 }
 
 /* ------------------------------ text (single) ----------------------------- */
-export async function generateText(prompt: string, _preferredModel?: string, system?: string): Promise<string> {
-  const model = gg().getGenerativeModel({ model: PRIMARY_MODEL, ...(system ? { systemInstruction: system } : {}) });
+export async function generateText(
+  prompt: string,
+  _preferredModel?: string,
+  system?: string
+): Promise<string> {
+  const model = gg().getGenerativeModel({
+    model: PRIMARY_MODEL,
+    ...(system ? { systemInstruction: system } : {}),
+  });
   const res = await model.generateContent(prompt);
   return (res.response?.text?.() || '').trim();
 }
 
 /* ------------------------------ json (single) ----------------------------- */
-export async function generateJSON(prompt: string, _preferredModel?: string, system?: string): Promise<any> {
+export async function generateJSON(
+  prompt: string,
+  _preferredModel?: string,
+  system?: string
+): Promise<any> {
   const model = gg().getGenerativeModel({
     model: PRIMARY_MODEL,
     ...(system ? { systemInstruction: system } : {}),
@@ -47,9 +82,18 @@ export async function generateJSON(prompt: string, _preferredModel?: string, sys
   const res = await model.generateContent(prompt);
   const txt = res.response?.text?.() || '';
 
-  const direct = tryParseJson(txt); if (direct) return direct;
-  const fenced = extractFromCodeFence(txt); if (fenced) { const j = tryParseJson(fenced); if (j) return j; }
-  const balanced = extractFirstJSONObject(txt); if (balanced) { const j = tryParseJson(balanced); if (j) return j; }
+  const direct = tryParseJson(txt);
+  if (direct) return direct;
+  const fenced = extractFromCodeFence(txt);
+  if (fenced) {
+    const j = tryParseJson(fenced);
+    if (j) return j;
+  }
+  const balanced = extractFirstJSONObject(txt);
+  if (balanced) {
+    const j = tryParseJson(balanced);
+    if (j) return j;
+  }
 
   throw new Error('AI returned non-JSON payload');
 }
@@ -67,18 +111,22 @@ export async function* streamTextChunks(
   _preferredModel?: string,
   system?: string
 ): AsyncGenerator<string> {
-  const model = gg().getGenerativeModel({ model: PRIMARY_MODEL, ...(system ? { systemInstruction: system } : {}) });
-  // @ts-ignore SDK versions vary
-  const stream = await model.generateContentStream({ contents: [{ role: 'user', parts: [{ text: prompt }]}] });
+  const model = gg().getGenerativeModel({
+    model: PRIMARY_MODEL,
+    ...(system ? { systemInstruction: system } : {}),
+  });
+  const stream = await model.generateContentStream({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  });
 
-  let seen = '';   // tracks cumulative text if events are cumulative
-  let carry = '';  // buffer until we hit a safe boundary
+  let seen = ''; // tracks cumulative text if events are cumulative
+  let carry = ''; // buffer until we hit a safe boundary
   let emitted = false;
 
   const boundary = /(?<=\S[.!?])\s+(?=[A-Z0-9("\[])/; // sentence-ish
-  const listBoundary = /\n(?=\* |\d+\. )/;            // bullets / numbered lists
-  const paraBoundary = /\n{2,}/;                      // blank line
-  const MAX_CHUNK = 600;                              // size fallback (~2–3 sentences)
+  const listBoundary = /\n(?=\* |\d+\. )/; // bullets / numbered lists
+  const paraBoundary = /\n{2,}/; // blank line
+  const MAX_CHUNK = 600; // size fallback (~2–3 sentences)
 
   function* drain(append: string, final = false): Generator<string> {
     carry += append;
@@ -87,7 +135,10 @@ export async function* streamTextChunks(
       // Prefer paragraph break, then bullets, then sentence end
       for (const re of [paraBoundary, listBoundary, boundary]) {
         const m = carry.match(re);
-        if (m) { idx = (m.index! + m[0].length); break; }
+        if (m) {
+          idx = m.index! + m[0].length;
+          break;
+        }
       }
       // Fallback: if too big, break at last space before MAX_CHUNK
       if (idx < 0 && carry.length >= MAX_CHUNK && !final) {
@@ -99,18 +150,24 @@ export async function* streamTextChunks(
       carry = carry.slice(idx);
       if (out.trim()) yield out;
     }
-    if (final && carry.trim()) { const out = carry; carry = ''; yield out; }
+    if (final && carry.trim()) {
+      const out = carry;
+      carry = '';
+      yield out;
+    }
   }
 
-  // @ts-ignore tolerate SDK iter surface
-  for await (const ev of (stream.stream ?? stream)) {
+  for await (const ev of stream.stream ?? stream) {
     // Try official .text(); otherwise stitch parts
-    // @ts-ignore
-    const t = typeof ev.text === 'function'
-      // @ts-ignore
-      ? String(ev.text() || '')
-      // @ts-ignore
-      : String(ev?.candidates?.[0]?.content?.parts?.map((p:any)=>p?.text).filter(Boolean).join('') || '');
+    const t =
+      typeof ev.text === 'function'
+        ? String(ev.text() || '')
+        : String(
+            ev?.candidates?.[0]?.content?.parts
+              ?.map((p: any) => p?.text)
+              .filter(Boolean)
+              .join('') || ''
+          );
 
     if (!t) continue;
 
