@@ -51,8 +51,6 @@ export const authOptions: NextAuthOptions = {
   providers,
   session: { strategy: 'jwt' }, // keep JWT sessions; adapter still persists User/Account
   secret: process.env.NEXTAUTH_SECRET || 'dev-secret-change-me',
-  // Avoid next-auth host validation issues when behind proxies or on localhost
-  trustHost: true,
   debug: process.env.NODE_ENV !== 'production',
   pages: { signIn: '/login' },
   callbacks: {
