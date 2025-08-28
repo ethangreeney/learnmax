@@ -25,9 +25,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
-    const body = (await req.json().catch(() => ({}))) as { lectureId?: string; size?: number };
+    const body = (await req.json().catch(() => ({}))) as { lectureId?: string; size?: number; subtopicId?: string };
     const lectureId = String(body?.lectureId || '').trim();
-    const size = Math.min(8, Math.max(4, Number(body?.size) || 6));
+    const subtopicId = String(body?.subtopicId || '').trim();
+    // Force exactly two short-answer questions for revision flow
+    const size = 2;
     if (!lectureId) {
       return NextResponse.json({ error: 'lectureId required' }, { status: 400 });
     }
@@ -47,57 +49,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Build a composite lesson markdown to ground generation (subtopics with explanations preferred)
-    const blocks: string[] = [];
-    blocks.push(`# ${lecture.title}`);
-    for (const s of lecture.subtopics) {
-      const title = (s.title || '').trim();
-      const overview = (s.overview || '').trim();
-      const explanation = (s.explanation || '').trim();
-      if (title) blocks.push(`\n## ${title}`);
-      if (overview) blocks.push(overview);
-      if (explanation) blocks.push(explanation);
+    // Build lesson markdown, optionally scoped to a single subtopic when provided
+    let lessonMd = '';
+    if (subtopicId) {
+      const sub = lecture.subtopics.find((s) => s.id === subtopicId);
+      if (sub) {
+        const parts: string[] = [];
+        parts.push(`# ${lecture.title}`);
+        const title = (sub.title || '').trim();
+        const overview = (sub.overview || '').trim();
+        const explanation = (sub.explanation || '').trim();
+        if (title) parts.push(`\n## ${title}`);
+        if (overview) parts.push(overview);
+        if (explanation) parts.push(explanation);
+        const scoped = parts.join('\n\n').trim();
+        lessonMd = (scoped && scoped.length >= 50) ? scoped : (lecture.originalContent || '');
+      }
     }
-    const composite = blocks.join('\n\n').trim() || lecture.originalContent;
-    const lessonMd = composite.length >= 50 ? composite : lecture.originalContent;
+    if (!lessonMd) {
+      const blocks: string[] = [];
+      blocks.push(`# ${lecture.title}`);
+      for (const s of lecture.subtopics) {
+        const title = (s.title || '').trim();
+        const overview = (s.overview || '').trim();
+        const explanation = (s.explanation || '').trim();
+        if (title) blocks.push(`\n## ${title}`);
+        if (overview) blocks.push(overview);
+        if (explanation) blocks.push(explanation);
+      }
+      const composite = blocks.join('\n\n').trim() || lecture.originalContent;
+      lessonMd = composite.length >= 50 ? composite : lecture.originalContent;
+    }
     if (!lessonMd || lessonMd.trim().length < 50) {
       return NextResponse.json({ error: 'Lecture content is too short for revise' }, { status: 400 });
     }
 
-    // Strategy: request 3 MCQs and 3 Short Answer prompts, then shuffle
-    // Reuse existing MCQ generator route to ensure consistent format and auditing
-    let mcqs: MCQ[] = [];
-    try {
-      const base = req.nextUrl?.origin || '';
-      const res = await fetch(`${base}/api/quiz`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonMd, lectureId: lecture.id, count: Math.ceil(size / 2) }),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { questions: MCQ[] };
-        mcqs = Array.isArray(data.questions) ? data.questions.slice(0, Math.ceil(size / 2)) : [];
-      }
-    } catch {}
-
-    // If we somehow got 0 MCQs, try once more to fetch at least 1
-    if (mcqs.length === 0) {
-      try {
-        const base = req.nextUrl?.origin || '';
-        const res = await fetch(`${base}/api/quiz`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lessonMd, lectureId: lecture.id, count: 1 }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { questions: MCQ[] };
-          mcqs = Array.isArray(data.questions) ? data.questions.slice(0, 1) : [];
-        }
-      } catch {}
-    }
-
-    // Generate short-answer prompts + model answers via AI
-    const shortCount = size - mcqs.length;
+    // Generate short-answer prompts + model answers via AI (exactly two)
+    const shortCount = size;
     const shortQs: ShortQ[] = [];
     if (shortCount > 0) {
       // Use ai.ts generateJSON with a strict rubric
@@ -126,15 +114,13 @@ ${lessonMd.slice(0, 6000)}
           if (p && a) shortQs.push({ prompt: p, modelAnswer: a });
           if (shortQs.length >= shortCount) break;
         }
-      } catch {}
+      } catch { }
     }
 
-    // Compose and shuffle
-    type Mixed = { kind: 'mcq' | 'short'; data: any };
+    // Compose and shuffle (short answers only)
+    type Mixed = { kind: 'short'; data: any };
     const mixed: Mixed[] = [];
-    for (const q of mcqs) mixed.push({ kind: 'mcq', data: q });
     for (const q of shortQs) mixed.push({ kind: 'short', data: q });
-    // Fisher-Yates
     for (let i = mixed.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [mixed[i], mixed[j]] = [mixed[j], mixed[i]];

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Star, StarOff, Pencil, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import YourLessonActions from '@/components/YourLessonActions';
 import DeleteLectureButton from '@/components/DeleteLectureButton';
+import { formatDateTimeUTC } from '@/lib/text/format-date';
 
 export type ClientLecture = {
   id: string;
@@ -47,11 +48,10 @@ export default function LectureList({
         <div
           role="status"
           aria-live="polite"
-          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
-            notice.type === 'success'
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${notice.type === 'success'
               ? 'border-green-700 bg-green-900/30 text-green-200'
               : 'border-red-700 bg-red-900/30 text-red-200'
-          }`}
+            }`}
         >
           {notice.type === 'success' ? (
             <CheckCircle2 className="h-4 w-4" />
@@ -66,14 +66,13 @@ export default function LectureList({
         return (
           <div
             key={lec.id}
-            className={`relative card flex items-center justify-between p-4 transition-colors hover:bg-neutral-900 ${
-              isDeleting ? 'opacity-70' : ''
-            }`}
+            className={`relative card flex items-center justify-between p-4 transition-colors hover:bg-neutral-900 ${isDeleting ? 'opacity-70' : ''
+              }`}
           >
             <div className={isDeleting ? 'pointer-events-none' : ''}>
               <h4 className="font-semibold">{lec.title}</h4>
               <p className="text-sm text-neutral-400">
-                {new Date(lec.createdAtISO).toLocaleString()} • {lec.subtopicCount}{' '}
+                {formatDateTimeUTC(lec.createdAtISO)} • {lec.subtopicCount}{' '}
                 subtopics
               </p>
             </div>
@@ -123,11 +122,10 @@ export default function LectureList({
                     // Revert pessimistically by refetching state from server on next load
                   }
                 }}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
-                  lec.starred
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${lec.starred
                     ? 'border-yellow-500/40 bg-yellow-900/20 text-yellow-200 hover:bg-yellow-900/30'
                     : 'border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
-                }`}
+                  }`}
                 title={lec.starred ? 'Unstar' : 'Star'}
               >
                 {lec.starred ? (
@@ -148,7 +146,7 @@ export default function LectureList({
                   if (!newTitle) return;
                   const t = newTitle.trim();
                   if (t.length < 3) {
-                    
+
                     alert('Title must be at least 3 characters.');
                     return;
                   }
@@ -165,7 +163,7 @@ export default function LectureList({
                       throw new Error('Failed');
                     }
                   } catch (e) {
-                    
+
                     alert((e as Error)?.message || 'Failed to rename');
                   }
                 }}

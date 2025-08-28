@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -45,6 +44,8 @@ export default function ReviseClient({
     mcqTotal: number;
     shortScores: number[];
   }>({ attempted: 0, mcqCorrect: 0, mcqTotal: 0, shortScores: [] });
+  const [selectedSubtopicId, setSelectedSubtopicId] = useState<string>(lecture.subtopics[0]?.id || '');
+  const [activeSubtopicId, setActiveSubtopicId] = useState<string>('');
 
   // Declare per-question states BEFORE any callbacks/effects that reference them
   const [mcqAnswers, setMcqAnswers] = useState<Record<number, number | undefined>>({});
@@ -52,6 +53,12 @@ export default function ReviseClient({
   const [shortAns, setShortAns] = useState<Record<number, string>>({});
   const [shortScore, setShortScore] = useState<Record<number, { score: number; modelAnswer?: string; feedback?: string }>>({});
   const [grading, setGrading] = useState<Record<number, boolean>>({});
+  const [progress, setProgress] = useState<number>(0);
+
+  const activeSubtopicTitle = useMemo(() => {
+    const found = lecture.subtopics.find((s) => s.id === activeSubtopicId);
+    return found?.title || 'Select a subtopic';
+  }, [lecture.subtopics, activeSubtopicId]);
 
   const lectureDoc = useMemo(() => {
     const parts: string[] = [
@@ -68,18 +75,19 @@ export default function ReviseClient({
     return doc.length >= 50 ? doc : lecture.originalContent;
   }, [lecture]);
 
-  const generateSet = useCallback(async () => {
+  const generateSet = useCallback(async (subId: string) => {
     setLoading(true);
+    setProgress(0);
     setError(null);
     try {
       const res = await fetch('/api/revise/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lectureId: lecture.id }),
+        body: JSON.stringify({ lectureId: lecture.id, subtopicId: subId || undefined }),
       });
       if (!res.ok) throw new Error('Failed to generate');
       const data = (await res.json()) as { questions: MixedQuestion[] };
-      const qs = data.questions || [];
+      const qs = (data.questions || []).filter((q) => q.kind === 'short');
       setItems(qs);
       // Reset session state for new set
       setMcqAnswers({});
@@ -87,15 +95,17 @@ export default function ReviseClient({
       setShortAns({});
       setShortScore({});
       setSummary({ attempted: 0, mcqCorrect: 0, mcqTotal: 0, shortScores: [] });
+      setActiveSubtopicId(subId);
     } catch (e: any) {
       setError(e?.message || 'Failed');
     } finally {
+      setProgress(100);
       setLoading(false);
     }
   }, [lecture.id]);
 
   useEffect(() => {
-    // Restore from localStorage if present
+    // Restore from localStorage if present (only on mount/lecture change)
     try {
       const key = `revise:${lecture.id}`;
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
@@ -107,20 +117,38 @@ export default function ReviseClient({
         if (parsed.shortAns) setShortAns(parsed.shortAns);
         if (parsed.shortScore) setShortScore(parsed.shortScore);
         if (parsed.summary) setSummary(parsed.summary);
+        if (parsed.selectedSubtopicId) setSelectedSubtopicId(parsed.selectedSubtopicId);
+        if (parsed.activeSubtopicId) setActiveSubtopicId(parsed.activeSubtopicId);
         return;
       }
-    } catch {}
-    void generateSet();
-  }, [generateSet]);
+    } catch { }
+    // Initial generation uses first subtopic when available
+    const initialSubId = lecture.subtopics[0]?.id || selectedSubtopicId || '';
+    if (initialSubId !== selectedSubtopicId && initialSubId) setSelectedSubtopicId(initialSubId);
+    void generateSet(initialSubId);
+  }, [lecture.id]);
 
   // Persist to localStorage on change
   useEffect(() => {
     try {
       const key = `revise:${lecture.id}`;
-      const payload = JSON.stringify({ items, mcqAnswers, revealed, shortAns, shortScore, summary });
+      const payload = JSON.stringify({ items, mcqAnswers, revealed, shortAns, shortScore, summary, selectedSubtopicId, activeSubtopicId });
       if (typeof window !== 'undefined') window.localStorage.setItem(key, payload);
-    } catch {}
-  }, [lecture.id, items, mcqAnswers, revealed, shortAns, shortScore, summary]);
+    } catch { }
+  }, [lecture.id, items, mcqAnswers, revealed, shortAns, shortScore, summary, selectedSubtopicId, activeSubtopicId]);
+
+  // Animate a determinate-feel progress bar while loading
+  useEffect(() => {
+    if (!loading) return;
+    setProgress(0);
+    let p = 0;
+    const id = window.setInterval(() => {
+      // Ease out: fast at start, slower near ~92%
+      p = Math.min(92, p + (p < 60 ? 5 : p < 80 ? 3 : 1));
+      setProgress(p);
+    }, 140);
+    return () => window.clearInterval(id);
+  }, [loading]);
 
   const submitShort = async (idx: number) => {
     const q = items[idx];
@@ -145,7 +173,7 @@ export default function ReviseClient({
       // The server may have incremented Elo based on score thresholds; request navbar refresh
       try {
         window.dispatchEvent(new Event('elo:maybeRefresh'));
-      } catch {}
+      } catch { }
     } catch (e: any) {
       // ignore
     } finally {
@@ -178,7 +206,7 @@ export default function ReviseClient({
     setRevealed({});
     setShortAns({});
     setShortScore({});
-    void generateSet();
+    void generateSet(selectedSubtopicId || '');
   };
 
   const avgShort = useMemo(() => {
@@ -191,26 +219,51 @@ export default function ReviseClient({
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Revise: {lecture.title}</h1>
-          <p className="text-sm text-neutral-400">Mixed practice: MCQ + Short Answer</p>
+          <p className="text-sm text-neutral-400">{activeSubtopicTitle}</p>
         </div>
         <div className="flex gap-2">
-          <Link
-            href="/dashboard"
-            className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700"
-          >
-            Back to Dashboard
-          </Link>
+          {lecture.subtopics.length > 0 && (
+            <select
+              value={selectedSubtopicId}
+              onChange={(e) => setSelectedSubtopicId(e.target.value)}
+              disabled={loading}
+              className="rounded-md border border-neutral-600 bg-neutral-900 px-4 pr-8 py-2 text-sm text-white text-center hover:bg-neutral-800 focus:outline-none focus:ring-1 focus:ring-[rgb(var(--accent))] w-48 cursor-pointer truncate"
+              aria-label="Choose subtopic"
+              title={lecture.subtopics.find((s) => s.id === selectedSubtopicId)?.title || 'Choose subtopic'}
+            >
+              {lecture.subtopics.map((s) => (
+                <option key={s.id} value={s.id} title={s.title || 'Untitled subtopic'}>
+                  {s.title || 'Untitled subtopic'}
+                </option>
+              ))}
+            </select>
+          )}
           <button
-            onClick={resetSet}
-            className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
+            onClick={() => generateSet(selectedSubtopicId || '')}
+            className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50 text-center"
             disabled={loading}
           >
-            {loading ? 'Preparing…' : 'New mixed set'}
+            {loading ? 'Preparing…' : 'New short-answer set'}
           </button>
         </div>
       </header>
 
       {error && <div className="text-sm text-red-400">{error}</div>}
+
+      {loading && (
+        <div className="card p-6" role="status" aria-live="polite" aria-label="Preparing your short-answer set…">
+          <div className="space-y-3">
+            <div className="text-sm text-neutral-300">Preparing your short-answer set…</div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}>
+              <div
+                className="h-2 rounded-full bg-[rgb(var(--accent))] transition-[width] duration-200"
+                style={{ width: `${Math.max(8, Math.min(100, progress))}%` }}
+              />
+            </div>
+            <div className="text-xs text-neutral-500">Grounding in your lesson and composing short-answer questions…</div>
+          </div>
+        </div>
+      )}
 
       <ul className="space-y-6">
         {items.map((q, idx) => (
@@ -221,67 +274,7 @@ export default function ReviseClient({
               </ReactMarkdown>
             </div>
 
-            {q.kind === 'mcq' ? (
-              <div className="mt-3 space-y-3">
-                {q.data.options.map((opt, j) => {
-                  const selected = mcqAnswers[idx];
-                  const isSelected = selected === j;
-                  const show = revealed[idx];
-                  const isCorrect = show && j === q.data.answerIndex;
-                  const isIncorrect = show && isSelected && j !== q.data.answerIndex;
-                  const cls = `rounded-md border p-3 text-left transition-all text-sm ${
-                    isCorrect
-                      ? 'border-green-500 bg-green-900/30'
-                      : isIncorrect
-                        ? 'border-red-500 bg-red-900/30'
-                        : isSelected
-                          ? 'border-blue-500 bg-blue-900/20'
-                          : 'border-neutral-700 hover:bg-neutral-800'
-                  }`;
-                  return (
-                    <button
-                      key={j}
-                      className={cls}
-                      onClick={() => setMcqAnswers((m) => ({ ...m, [idx]: j }))}
-                    >
-                      <span className="chat-md">
-                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                          {opt}
-                        </ReactMarkdown>
-                      </span>
-                    </button>
-                  );
-                })}
-                <div className="pt-2">
-                  {!revealed[idx] ? (
-                    <button
-                      onClick={() => checkMcq(idx)}
-                      className="rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black"
-                    >
-                      Check Answer
-                    </button>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => retryMcq(idx)}
-                          className="rounded-md border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-700"
-                        >
-                          Try Again
-                        </button>
-                      </div>
-                      {q.data.explanation && (
-                        <div className="chat-md mt-1 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {q.data.explanation}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
+            {q.kind === 'short' && (
               <div className="mt-3 space-y-3">
                 <textarea
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 p-3 text-sm"
@@ -328,14 +321,10 @@ export default function ReviseClient({
 
       <div className="card p-6">
         <h3 className="text-xl font-semibold">Session Summary</h3>
-        <div className="mt-2 grid grid-cols-1 gap-3 text-sm text-neutral-300 md:grid-cols-3">
+        <div className="mt-2 grid grid-cols-1 gap-3 text-sm text-neutral-300 md:grid-cols-2">
           <div>
             <div className="text-neutral-400">Attempted</div>
             <div className="text-lg font-semibold">{summary.attempted}</div>
-          </div>
-          <div>
-            <div className="text-neutral-400">MCQ Correct</div>
-            <div className="text-lg font-semibold">{summary.mcqCorrect}/{summary.mcqTotal}</div>
           </div>
           <div>
             <div className="text-neutral-400">Short Answer Avg</div>
