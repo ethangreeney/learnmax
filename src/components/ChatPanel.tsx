@@ -141,6 +141,7 @@ export default function ChatPanel({
   const expandBtnRef = useRef<HTMLButtonElement>(null);
   const preservedScrollRef = useRef<number>(0);
   const [portalEl, setPortalEl] = useState<Element | null>(null);
+  const [isHistoryLoaded, setIsHistoryLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     setPortalEl(typeof document !== 'undefined' ? document.body : null);
@@ -155,16 +156,24 @@ export default function ChatPanel({
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
-    if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (scrollContainer && !loadingHistory) {
+      // Only auto-scroll to bottom if we're not loading history
+      // and if we haven't preserved a scroll position
+      if (preservedScrollRef.current === 0) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
     }
-  }, [history]);
+  }, [history, loadingHistory]);
 
   // Load persisted chat history scoped to lecture
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!lectureId || demoMode) return;
+      if (!lectureId || demoMode) {
+        // For demo mode or no lectureId, consider history as loaded immediately
+        setIsHistoryLoaded(true);
+        return;
+      }
       setLoadingHistory(true);
       setHistoryError(null);
       try {
@@ -189,6 +198,14 @@ export default function ChatPanel({
                 "I'm your AI Tutor. Ask me anything about the content on the left!",
             },
           ]);
+        // Mark history as loaded and restore preserved scroll position
+        setIsHistoryLoaded(true);
+        setTimeout(() => {
+          const scrollContainer = scrollContainerRef.current;
+          if (scrollContainer && preservedScrollRef.current > 0) {
+            scrollContainer.scrollTop = preservedScrollRef.current;
+          }
+        }, 0);
       } catch (e: any) {
         if (!cancelled) setHistoryError(e?.message || 'Failed to load chat');
       } finally {
@@ -312,8 +329,15 @@ export default function ChatPanel({
     // Restore scroll after render
     setTimeout(() => {
       try {
-        if (scrollContainerRef.current)
-          scrollContainerRef.current.scrollTop = preservedScrollRef.current;
+        if (scrollContainerRef.current) {
+          // Only restore scroll position if we have a preserved position and history is loaded
+          if (preservedScrollRef.current > 0 && isHistoryLoaded) {
+            scrollContainerRef.current.scrollTop = preservedScrollRef.current;
+          } else {
+            // Scroll to bottom for new messages or initial state
+            scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+          }
+        }
       } catch {}
       // Perform FLIP animation after modal is laid out
       try {
@@ -345,8 +369,9 @@ export default function ChatPanel({
     // Restore scroll after returning to inline layout
     setTimeout(() => {
       try {
-        if (scrollContainerRef.current)
+        if (scrollContainerRef.current && preservedScrollRef.current > 0) {
           scrollContainerRef.current.scrollTop = preservedScrollRef.current;
+        }
       } catch {}
     }, 0);
   };
@@ -378,6 +403,8 @@ export default function ChatPanel({
 
     const userMessage: Message = { sender: 'user', text: input };
     setHistory((prev) => [...prev, userMessage]);
+    // Reset preserved scroll position when sending new message so it scrolls to bottom
+    preservedScrollRef.current = 0;
     setInput('');
     // reset height after clearing
     setTimeout(autosize, 0);
@@ -464,6 +491,8 @@ export default function ChatPanel({
                 };
                 return copy;
               });
+              // Reset preserved scroll position for completed AI responses so it stays at bottom
+              preservedScrollRef.current = 0;
             } else if (payload?.type === 'error') {
               throw new Error(payload.error || 'stream error');
             }
@@ -485,6 +514,8 @@ export default function ChatPanel({
           text: sanitizeMd(res.response),
         };
         setHistory((prev) => [...prev, aiMessage]);
+        // Reset preserved scroll position for AI responses so it scrolls to bottom
+        preservedScrollRef.current = 0;
       }
     } catch (error) {
       const errorMessage: Message = {
@@ -492,6 +523,8 @@ export default function ChatPanel({
         text: 'Sorry, I ran into an error. Please try again.',
       };
       setHistory((prev) => [...prev, errorMessage]);
+      // Reset preserved scroll position for error messages so it scrolls to bottom
+      preservedScrollRef.current = 0;
       // If streaming failed once, fallback next time
       setSupportsStreaming(false);
     } finally {
@@ -532,6 +565,9 @@ export default function ChatPanel({
             "I'm your AI Tutor. Ask me anything about the content on the left!",
         },
       ]);
+      // Reset preserved scroll position when clearing chat
+      preservedScrollRef.current = 0;
+      setIsHistoryLoaded(true);
     } catch {}
   };
 
