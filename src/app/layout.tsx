@@ -54,9 +54,6 @@ export default async function RootLayout({
             </div>
           </header>
           <main className="py-10">{children}</main>
-          <footer className="py-12 text-center text-sm text-neutral-500">
-            Built with Next.js, Tailwind CSS, and Google Gemini.
-          </footer>
         </AuthProvider>
         <ContentGate />
         {/* Prefetch common routes globally for snappier navigation */}
