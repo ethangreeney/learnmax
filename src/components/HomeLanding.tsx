@@ -64,7 +64,7 @@ export default function HomeLanding() {
     <div className="container-narrow relative">
       <HeroBackground />
       <PrefetchRoutes />
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-center text-center py-12">
+      <div className="mx-auto flex min-h-[calc(100vh-200px)] max-w-6xl flex-col items-center justify-center text-center">
         <div className="w-full">
           <h1 className="bg-gradient-to-b from-white via-neutral-200 to-neutral-400 bg-clip-text pb-2 text-4xl font-semibold leading-[1.06] tracking-tight text-transparent md:text-6xl lg:text-7xl">
             The science of learning, accelerated by AI.
