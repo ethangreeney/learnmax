@@ -581,18 +581,8 @@ export default function LearnView({
     const animStartRef = useRef<number>(0);
     const animFromRef = useRef<number>(from);
     const animToRef = useRef<number>(to);
-    const prefersReducedRef = useRef<boolean>(false);
 
     const DURATION_MS = 700;
-
-    const isReducedMotion = (): boolean => {
-      try {
-        if (typeof window === 'undefined' || !window.matchMedia) return false;
-        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      } catch {
-        return false;
-      }
-    };
 
     const stopAnim = () => {
       if (animFrameRef.current !== null) {
@@ -628,14 +618,6 @@ export default function LearnView({
 
     useEffect(() => {
       // Initial kick-off
-      prefersReducedRef.current = isReducedMotion();
-      if (prefersReducedRef.current) {
-        stopAnim();
-        setDisplayed(to);
-        setGlow(true);
-        setTimeout(() => setGlow(false), 800);
-        return;
-      }
       setDisplayed(from);
       animFromRef.current = from;
       animToRef.current = to;
@@ -649,10 +631,6 @@ export default function LearnView({
 
     // When target updates while showing, smoothly retarget without restarting from scratch
     useEffect(() => {
-      if (prefersReducedRef.current) {
-        setDisplayed(to);
-        return;
-      }
       const now = performance.now ? performance.now() : Date.now();
       // Compute instantaneous displayed value as new from-base
       if (animFrameRef.current !== null) {

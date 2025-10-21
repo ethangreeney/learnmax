@@ -13,7 +13,7 @@ import useFocusTrap from '@/hooks/useFocusTrap';
  * - Listens for window events to animate increases
  *   - 'elo:delta' with detail: { delta: number }
  *   - 'elo:maybeRefresh' to refetch and animate if increased
- * - Respects prefers-reduced-motion and announces increases for screen readers
+ * - Announces increases for screen readers
  */
 type EloCounterProps = { initialElo?: number };
 
@@ -37,20 +37,9 @@ export default function EloCounter({ initialElo }: EloCounterProps) {
   const animStartRef = useRef<number>(0);
   const animFromRef = useRef<number>(0);
   const animToRef = useRef<number>(0);
-  const prefersReducedRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(false);
 
   const DURATION_MS = 700; // ~0.5–1s
-
-  const isReducedMotion = (): boolean => {
-    try {
-      if (typeof window === 'undefined' || !window.matchMedia) return false;
-      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-      return mq.matches;
-    } catch {
-      return false;
-    }
-  };
 
   const stopAnim = () => {
     if (animFrameRef.current !== null) {
@@ -62,19 +51,6 @@ export default function EloCounter({ initialElo }: EloCounterProps) {
   const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
   const startAnimationTo = (nextTarget: number, announce: boolean) => {
-    // Respect reduced motion: jump to value and announce
-    prefersReducedRef.current = isReducedMotion();
-    if (prefersReducedRef.current) {
-      stopAnim();
-      setDisplayedElo(nextTarget);
-      setTargetElo(nextTarget);
-      if (announce) setSrMsg(`ELO increased to ${nextTarget}`);
-      // Subtle glow without motion
-      setGlow(true);
-      setTimeout(() => setGlow(false), 800);
-      return;
-    }
-
     const now = performance.now ? performance.now() : Date.now();
     const currentDisplayed = (() => {
       // If an animation is in progress, compute the instantaneous displayed value as base
@@ -177,30 +153,11 @@ export default function EloCounter({ initialElo }: EloCounterProps) {
     window.addEventListener('elo:delta', onDelta as EventListener);
     window.addEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
 
-    // Track prefers-reduced-motion changes
-    let mq: MediaQueryList | null = null;
-    try {
-      if (typeof window !== 'undefined' && window.matchMedia) {
-        mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-        const onChange = () => {
-          prefersReducedRef.current = mq!.matches;
-        };
-        if (mq.addEventListener) mq.addEventListener('change', onChange);
-        else if ((mq as any).addListener) (mq as any).addListener(onChange);
-      }
-    } catch {}
-
     return () => {
       isMountedRef.current = false;
       stopAnim();
       window.removeEventListener('elo:delta', onDelta as EventListener);
       window.removeEventListener('elo:maybeRefresh', onMaybeRefresh as EventListener);
-      try {
-        if (mq) {
-          if (mq.removeEventListener) mq.removeEventListener('change', () => {});
-          else if ((mq as any).removeListener) (mq as any).removeListener(() => {});
-        }
-      } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

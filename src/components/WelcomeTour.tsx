@@ -58,14 +58,6 @@ async function postTelemetry(event: string, props: Record<string, any>) {
 }
 
 export default function WelcomeTour({ steps, storageKey, autoShow = true, context, restartSignal = 0 }: WelcomeTourProps) {
-  const prefersReducedMotion = useMemo(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    } catch {
-      return true;
-    }
-  }, []);
 
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
@@ -184,10 +176,10 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     } catch {}
     try {
       if (opts?.scrollIntoView) {
-        el.scrollIntoView({ block: 'center', inline: 'center', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
       }
     } catch {}
-  }, [index, open, steps, prefersReducedMotion]);
+  }, [index, open, steps]);
 
   useLayoutEffect(() => {
     computeTarget({ scrollIntoView: true });
@@ -400,25 +392,25 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
   }
 
   const ringStyle: React.CSSProperties | undefined = targetRect
-    ? {
-        position: 'fixed',
-        left: targetRect.x,
-        top: targetRect.y,
-        width: targetRect.w,
-        height: targetRect.h,
-        borderRadius: 8,
-        boxShadow: '0 0 0 2px rgba(255,255,255,0.7), 0 0 0 12px rgba(255,255,255,0.15)',
-        pointerEvents: 'none',
-        transition: prefersReducedMotion ? 'none' : 'all 160ms ease',
-      }
-    : undefined;
+  ? {
+      position: 'fixed',
+      left: targetRect.x,
+      top: targetRect.y,
+      width: targetRect.w,
+      height: targetRect.h,
+      borderRadius: 8,
+      boxShadow: '0 0 0 2px rgba(255,255,255,0.7), 0 0 0 12px rgba(255,255,255,0.15)',
+      pointerEvents: 'none',
+      transition: 'width 80ms ease, height 80ms ease, box-shadow 80ms ease',
+    }
+  : undefined;
 
   const overlay = (
     <div className="fixed inset-0 z-[9999]" aria-live="polite" aria-relevant="all">
       {/* Dim overlay - non-blocking */}
       <div
         className="fixed inset-0 bg-black/40"
-        style={{ pointerEvents: 'none', transition: prefersReducedMotion ? 'none' : 'opacity 160ms ease' }}
+        style={{ pointerEvents: 'none', transition: 'opacity 160ms ease' }}
       />
 
       {/* Highlight ring around target */}

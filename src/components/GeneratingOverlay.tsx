@@ -92,21 +92,13 @@ export default function GeneratingOverlay({
       >
         {!hasError ? (
           <div className="flex flex-col items-center text-center">
-            {/* Animation: CSS orbit. Reduced motion switches to subtle progress bar. */}
+            {/* Animation: CSS orbit */}
             <div className="relative h-24 w-24" aria-hidden="true">
-              <div className="motion-safe:block motion-reduce:hidden">
-                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-[rgb(var(--accent))] to-cyan-400/70 opacity-20" />
-                <div className="absolute inset-0 rounded-full border border-[rgba(255,255,255,0.12)]" />
-                <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_24px_rgba(0,0,0,0.5)]" />
-                <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 animate-[orbit_2.2s_linear_infinite]" />
-                <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/90 animate-[orbit_3.2s_linear_infinite]" />
-              </div>
-              {/* Reduced motion: progress bar */}
-              <div className="motion-safe:hidden motion-reduce:block">
-                <div className="mt-9 h-2 w-24 overflow-hidden rounded-full bg-neutral-800">
-                  <div className="h-2 w-1/3 animate-[bar_1.2s_ease_infinite] rounded-full bg-[rgb(var(--accent))]" />
-                </div>
-              </div>
+              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-[rgb(var(--accent))] to-cyan-400/70 opacity-20" />
+              <div className="absolute inset-0 rounded-full border border-[rgba(255,255,255,0.12)]" />
+              <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_24px_rgba(0,0,0,0.5)]" />
+              <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 animate-[orbit_2.2s_linear_infinite]" />
+              <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/90 animate-[orbit_3.2s_linear_infinite]" />
             </div>
 
             <div className="mt-5 text-base font-medium">

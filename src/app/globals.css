@@ -465,11 +465,6 @@ body[data-page='home'] .nav-elo { display: none !important; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .rank-shimmer {
-    animation: none !important;
-  }
-}
 
 /* Slight contrast helpers for gradient-clipped text on dark backgrounds */
 /* rank-contrast removed per request */
