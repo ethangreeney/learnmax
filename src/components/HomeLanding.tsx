@@ -228,32 +228,23 @@ export default function HomeLanding() {
     header?.addEventListener('focusin', revealHeader);
     updateHeader();
 
-    const reduceMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
     const revealTargets = Array.from(
       document.querySelectorAll<HTMLElement>('[data-home-reveal]')
     );
-    let revealObserver: IntersectionObserver | undefined;
-
-    if (reduceMotion) {
-      revealTargets.forEach((target) => target.classList.add(styles.visible));
-    } else {
-      revealObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) return;
-            entry.target.classList.add(styles.visible);
-            revealObserver?.unobserve(entry.target);
-          });
-        },
-        { threshold: 0.14, rootMargin: '0px 0px -6% 0px' }
-      );
-      revealTargets.forEach((target) => revealObserver?.observe(target));
-    }
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add(styles.visible);
+          revealObserver.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.14, rootMargin: '0px 0px -6% 0px' }
+    );
+    revealTargets.forEach((target) => revealObserver.observe(target));
 
     return () => {
-      revealObserver?.disconnect();
+      revealObserver.disconnect();
       headerResizeObserver?.disconnect();
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('pointermove', handlePointerMove);

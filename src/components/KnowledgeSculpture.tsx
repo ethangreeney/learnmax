@@ -15,6 +15,24 @@ type CardSpec = {
   tone: TextureTone;
 };
 
+type AnimatedCard = {
+  object: THREE.Group;
+  basePosition: THREE.Vector3;
+  baseRotation: THREE.Euler;
+  introOffset: THREE.Vector3;
+  introRotation: THREE.Euler;
+  delay: number;
+  phase: number;
+};
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function easeOutCubic(value: number) {
+  return 1 - Math.pow(1 - clamp01(value), 3);
+}
+
 function drawRoundedRect(
   context: CanvasRenderingContext2D,
   x: number,
@@ -60,12 +78,17 @@ function wrapText(
   });
 }
 
-function createCardTexture(spec: CardSpec, anisotropy: number) {
+function createCardTexture(
+  spec: CardSpec,
+  anisotropy: number,
+  resolutionScale: number
+) {
   const canvas = document.createElement('canvas');
-  canvas.width = 960;
-  canvas.height = 1200;
+  canvas.width = Math.round(960 * resolutionScale);
+  canvas.height = Math.round(1200 * resolutionScale);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas rendering is unavailable');
+  context.scale(resolutionScale, resolutionScale);
 
   const palette = {
     paper: {
@@ -172,10 +195,11 @@ function createCardTexture(spec: CardSpec, anisotropy: number) {
 function createStudyCard(
   spec: CardSpec,
   anisotropy: number,
+  resolutionScale: number,
   width = 3.05,
   height = 3.82
 ) {
-  const texture = createCardTexture(spec, anisotropy);
+  const texture = createCardTexture(spec, anisotropy, resolutionScale);
   const card = new THREE.Group();
   const base = new THREE.Mesh(
     new THREE.BoxGeometry(width, height, 0.1, 1, 1, 1),
@@ -202,12 +226,13 @@ function createStudyCard(
   return { card, texture };
 }
 
-function createMasteryTicket(anisotropy: number) {
+function createMasteryTicket(anisotropy: number, resolutionScale: number) {
   const canvas = document.createElement('canvas');
-  canvas.width = 720;
-  canvas.height = 400;
+  canvas.width = Math.round(720 * resolutionScale);
+  canvas.height = Math.round(400 * resolutionScale);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas rendering is unavailable');
+  context.scale(resolutionScale, resolutionScale);
 
   context.fillStyle = '#caff46';
   drawRoundedRect(context, 7, 7, 706, 386, 30);
@@ -260,10 +285,6 @@ export default function KnowledgeSculpture() {
     const canvas = canvasRef.current;
     if (!frame || !canvas) return;
 
-    const reduceMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -285,14 +306,17 @@ export default function KnowledgeSculpture() {
     const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 40);
     camera.position.set(0, 0.05, 9.5);
 
-    const anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    const desktopDensity = 1.5;
+    const mobileDensity = 1.25;
+    const desiredTextureScale =
+      window.innerWidth <= 700 ? mobileDensity : desktopDensity;
+    const textureScale = Math.max(
+      1,
+      Math.min(desiredTextureScale, renderer.capabilities.maxTextureSize / 1200)
+    );
+    const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     const textureResources: THREE.Texture[] = [];
-    const cardData: Array<{
-      object: THREE.Group;
-      basePosition: THREE.Vector3;
-      baseRotation: THREE.Euler;
-      phase: number;
-    }> = [];
+    const cardData: AnimatedCard[] = [];
     const recallEngine = new THREE.Group();
 
     const source = createStudyCard(
@@ -304,7 +328,8 @@ export default function KnowledgeSculpture() {
         footer: 'Your reading, kept in context',
         tone: 'paper',
       },
-      anisotropy
+      anisotropy,
+      textureScale
     );
     source.card.position.set(-1.22, 0.35, -0.92);
     source.card.rotation.set(-0.06, 0.34, -0.15);
@@ -314,6 +339,9 @@ export default function KnowledgeSculpture() {
       object: source.card,
       basePosition: source.card.position.clone(),
       baseRotation: source.card.rotation.clone(),
+      introOffset: new THREE.Vector3(-0.52, 0.2, -0.72),
+      introRotation: new THREE.Euler(-0.035, 0.12, -0.05),
+      delay: 0,
       phase: 0,
     });
 
@@ -326,7 +354,8 @@ export default function KnowledgeSculpture() {
         footer: 'Connected to the exact section',
         tone: 'sage',
       },
-      anisotropy
+      anisotropy,
+      textureScale
     );
     explanation.card.position.set(0, 0.05, -0.38);
     explanation.card.rotation.set(0.02, 0.04, 0.055);
@@ -336,6 +365,9 @@ export default function KnowledgeSculpture() {
       object: explanation.card,
       basePosition: explanation.card.position.clone(),
       baseRotation: explanation.card.rotation.clone(),
+      introOffset: new THREE.Vector3(-0.04, 0.32, -0.66),
+      introRotation: new THREE.Euler(-0.04, 0.02, -0.035),
+      delay: 120,
       phase: 1.7,
     });
 
@@ -348,7 +380,8 @@ export default function KnowledgeSculpture() {
         footer: 'Answer from memory',
         tone: 'dark',
       },
-      anisotropy
+      anisotropy,
+      textureScale
     );
     recall.card.position.set(1.22, -0.22, 0.26);
     recall.card.rotation.set(0.08, -0.26, 0.13);
@@ -358,12 +391,17 @@ export default function KnowledgeSculpture() {
       object: recall.card,
       basePosition: recall.card.position.clone(),
       baseRotation: recall.card.rotation.clone(),
+      introOffset: new THREE.Vector3(0.54, 0.18, -0.5),
+      introRotation: new THREE.Euler(0.015, -0.1, 0.045),
+      delay: 250,
       phase: 3.2,
     });
 
-    const mastery = createMasteryTicket(anisotropy);
+    const mastery = createMasteryTicket(anisotropy, textureScale);
     mastery.ticket.position.set(1.68, 1.7, 0.8);
     mastery.ticket.rotation.set(-0.04, -0.18, 0.08);
+    const masteryBasePosition = mastery.ticket.position.clone();
+    const masteryBaseRotation = mastery.ticket.rotation.clone();
     recallEngine.add(mastery.ticket);
     textureResources.push(mastery.texture);
 
@@ -426,49 +464,110 @@ export default function KnowledgeSculpture() {
     let lastFrame = 0;
     let visible = true;
     let disposed = false;
+    const introStart = performance.now() + 70;
+    const introDuration = 1040;
+    const introEnd = introStart + 1720;
+
+    const entranceProgress = (time: number, delay: number) =>
+      easeOutCubic((time - introStart - delay) / introDuration);
+
+    const updateScene = (time: number) => {
+      pointer.lerp(pointerTarget, 0.055);
+      const engineEntrance = entranceProgress(time, 0);
+      recallEngine.rotation.x = -0.04 + pointer.y * 0.055;
+      recallEngine.rotation.y = -0.05 + pointer.x * 0.1;
+      recallEngine.position.y =
+        (1 - engineEntrance) * 0.08 + Math.sin(time * 0.00045) * 0.035;
+      recallEngine.scale.setScalar(0.985 + engineEntrance * 0.015);
+
+      cardData.forEach(
+        (
+          {
+            object,
+            basePosition,
+            baseRotation,
+            introOffset,
+            introRotation,
+            delay,
+            phase,
+          },
+          index
+        ) => {
+          const entrance = entranceProgress(time, delay);
+          const remaining = 1 - entrance;
+          const floatY = Math.sin(time * 0.00062 + phase) * 0.04;
+          const floatRotation = Math.sin(time * 0.00035 + phase) * 0.008;
+
+          object.position.set(
+            basePosition.x +
+              introOffset.x * remaining +
+              pointer.x * (index - 1) * 0.055 * entrance,
+            basePosition.y + introOffset.y * remaining + floatY * entrance,
+            basePosition.z + introOffset.z * remaining
+          );
+          object.rotation.set(
+            baseRotation.x + introRotation.x * remaining,
+            baseRotation.y + introRotation.y * remaining,
+            baseRotation.z +
+              introRotation.z * remaining +
+              floatRotation * entrance
+          );
+          object.scale.setScalar(0.955 + entrance * 0.045);
+        }
+      );
+
+      const masteryEntrance = entranceProgress(time, 440);
+      const masteryRemaining = 1 - masteryEntrance;
+      mastery.ticket.position.set(
+        masteryBasePosition.x + 0.3 * masteryRemaining,
+        masteryBasePosition.y +
+          0.42 * masteryRemaining +
+          Math.sin(time * 0.00072 + 0.8) * 0.055 * masteryEntrance,
+        masteryBasePosition.z - 0.35 * masteryRemaining
+      );
+      mastery.ticket.rotation.set(
+        masteryBaseRotation.x - 0.025 * masteryRemaining,
+        masteryBaseRotation.y - 0.045 * masteryRemaining,
+        masteryBaseRotation.z +
+          0.065 * masteryRemaining +
+          Math.sin(time * 0.0004 + 2.2) * 0.018 * masteryEntrance
+      );
+      mastery.ticket.scale.setScalar(0.94 + masteryEntrance * 0.06);
+
+      marker.position.copy(journeyCurve.getPointAt((time * 0.000035) % 1));
+    };
 
     const render = (time = 0) => {
       frameId = 0;
       if (disposed || !visible) return;
-      if (!reduceMotion && time - lastFrame < 25) {
+      const introIsActive = time < introEnd;
+      if (!introIsActive && time - lastFrame < 25) {
         frameId = window.requestAnimationFrame(render);
         return;
       }
       lastFrame = time;
 
-      if (!reduceMotion) {
-        pointer.lerp(pointerTarget, 0.055);
-        recallEngine.rotation.x = -0.04 + pointer.y * 0.055;
-        recallEngine.rotation.y = -0.05 + pointer.x * 0.1;
-        recallEngine.position.y = Math.sin(time * 0.00045) * 0.035;
-
-        cardData.forEach(
-          ({ object, basePosition, baseRotation, phase }, index) => {
-            object.position.y =
-              basePosition.y + Math.sin(time * 0.00062 + phase) * 0.04;
-            object.rotation.z =
-              baseRotation.z + Math.sin(time * 0.00035 + phase) * 0.008;
-            object.position.x =
-              basePosition.x + pointer.x * (index - 1) * 0.055;
-          }
-        );
-        mastery.ticket.position.y =
-          1.7 + Math.sin(time * 0.00072 + 0.8) * 0.055;
-        mastery.ticket.rotation.z =
-          0.08 + Math.sin(time * 0.0004 + 2.2) * 0.018;
-        marker.position.copy(journeyCurve.getPointAt((time * 0.000035) % 1));
-      } else {
-        marker.position.copy(journeyCurve.getPointAt(0.83));
-      }
+      updateScene(time);
 
       renderer.render(scene, camera);
-      if (!reduceMotion) frameId = window.requestAnimationFrame(render);
+      frameId = window.requestAnimationFrame(render);
     };
 
     const resize = () => {
       const { width, height } = canvas.getBoundingClientRect();
       if (!width || !height) return;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      const pixelRatioLimit = width <= 720 ? 1.5 : 2;
+      const pixelBudgetLimit = Math.max(
+        1,
+        Math.sqrt(4_200_000 / (width * height))
+      );
+      renderer.setPixelRatio(
+        Math.min(
+          window.devicePixelRatio || 1,
+          pixelRatioLimit,
+          pixelBudgetLimit
+        )
+      );
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -476,7 +575,6 @@ export default function KnowledgeSculpture() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      if (reduceMotion) return;
       const bounds = frame.getBoundingClientRect();
       pointerTarget.set(
         ((event.clientX - bounds.left) / bounds.width - 0.5) * 2,
@@ -493,7 +591,7 @@ export default function KnowledgeSculpture() {
     const visibilityObserver = new IntersectionObserver(
       ([entry]) => {
         visible = entry.isIntersecting && !document.hidden;
-        if (visible && !reduceMotion && !frameId) {
+        if (visible && !frameId) {
           frameId = window.requestAnimationFrame(render);
         }
       },
@@ -503,16 +601,17 @@ export default function KnowledgeSculpture() {
 
     const onVisibilityChange = () => {
       visible = !document.hidden && frame.getBoundingClientRect().bottom > 0;
-      if (visible && !reduceMotion && !frameId) {
+      if (visible && !frameId) {
         frameId = window.requestAnimationFrame(render);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
+    updateScene(performance.now());
     resize();
     renderer.render(scene, camera);
     setIsReady(true);
-    if (!reduceMotion) frameId = window.requestAnimationFrame(render);
+    frameId = window.requestAnimationFrame(render);
 
     return () => {
       disposed = true;
@@ -541,7 +640,7 @@ export default function KnowledgeSculpture() {
   return (
     <div
       ref={frameRef}
-      className={styles.frame}
+      className={`${styles.frame} ${isReady ? styles.frameReady : ''}`}
       role="img"
       aria-label="Source material moving through explain and recall stages into a scored mastery result"
     >

@@ -41,7 +41,7 @@
   opacity: 0;
   outline: none;
   cursor: crosshair;
-  transition: opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1) 80ms;
   touch-action: pan-y;
 }
 
@@ -54,12 +54,20 @@
   inset: 10% 6%;
   display: grid;
   place-items: center;
+  opacity: 0;
   perspective: 900px;
-  transition: opacity 260ms ease;
+  animation: fallback-reveal 300ms ease 800ms forwards;
 }
 
 .fallbackHidden {
+  animation: none;
   opacity: 0;
+}
+
+@keyframes fallback-reveal {
+  to {
+    opacity: 1;
+  }
 }
 
 .fallback span {
@@ -106,7 +114,12 @@
   font-weight: 650;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+  opacity: 0;
   pointer-events: none;
+  transform: translateY(0.4rem);
+  transition:
+    opacity 460ms ease,
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .annotation i {
@@ -121,9 +134,21 @@
   left: 0;
 }
 
+.frameReady .annotationStart {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 760ms;
+}
+
 .annotationEnd {
   right: 0;
   bottom: 15%;
+}
+
+.frameReady .annotationEnd {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 1040ms;
 }
 
 .interactionHint {
@@ -135,6 +160,17 @@
   font-size: 0.64rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(0.35rem);
+  transition:
+    opacity 420ms ease,
+    transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.frameReady .interactionHint {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 1280ms;
 }
 
 @media (max-width: 1120px) {
@@ -196,17 +232,6 @@
   .annotationEnd {
     right: 1%;
     bottom: 5%;
-  }
-
-  .interactionHint {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas,
-  .fallback {
-    transition: none;
   }
 
   .interactionHint {

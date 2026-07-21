@@ -1001,19 +1001,3 @@
     align-self: end;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .heroCopy,
-  .page [data-home-reveal] {
-    opacity: 1;
-    transform: none;
-    animation: none;
-    transition: none;
-  }
-
-  .primaryAction,
-  .primaryAction svg,
-  .closingAction {
-    transition: none;
-  }
-}
