@@ -66,7 +66,7 @@ export default async function LearnWorkspacePage() {
       <header className="workspace-enter relative max-w-4xl pt-2 motion-safe:animate-[learnmax-workspace-enter_500ms_cubic-bezier(0.22,1,0.36,1)_both]">
         <div className="mb-5 flex items-center gap-3">
           <span className="h-px w-8 bg-emerald-400/80" aria-hidden="true" />
-          <p className="text-xs font-semibold tracking-[0.18em] text-emerald-400 uppercase">
+          <p className="text-xs font-semibold tracking-[0.08em] text-emerald-400 uppercase">
             Study workspace
           </p>
         </div>
@@ -86,7 +86,7 @@ export default async function LearnWorkspacePage() {
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-mono text-[11px] tracking-[0.16em] text-neutral-500 uppercase">
+            <p className="text-[11px] font-medium tracking-[0.08em] text-neutral-500 uppercase">
               01 / New lesson
             </p>
             <h2
@@ -125,7 +125,7 @@ export default async function LearnWorkspacePage() {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-900 text-neutral-300 transition-[border-color,color,transform] duration-300 group-hover:-translate-y-0.5 group-hover:border-emerald-500/30 group-hover:text-emerald-300 motion-reduce:transform-none motion-reduce:transition-none">
                   <Icon className="h-4 w-4" aria-hidden="true" />
                 </span>
-                <span className="font-mono text-[11px] text-neutral-600">
+                <span className="text-[11px] font-medium text-neutral-600 tabular-nums">
                   0{index + 1}
                 </span>
               </div>
@@ -149,7 +149,7 @@ export default async function LearnWorkspacePage() {
       >
         <div className="flex flex-col items-start gap-3 border-b border-neutral-800 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <p className="font-mono text-[11px] tracking-[0.16em] text-neutral-500 uppercase">
+            <p className="text-[11px] font-medium tracking-[0.08em] text-neutral-500 uppercase">
               02 / Your library
             </p>
             <h2

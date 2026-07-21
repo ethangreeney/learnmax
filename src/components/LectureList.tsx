@@ -5,7 +5,6 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
-  BookOpenCheck,
   Check,
   CheckCircle2,
   Clock3,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 import YourLessonActions from '@/components/YourLessonActions';
 import DeleteLectureButton from '@/components/DeleteLectureButton';
+import { LessonOutlineGlyph } from '@/components/icons/LearningGlyphs';
 
 export type ClientLecture = {
   id: string;
@@ -269,7 +269,7 @@ export default function LectureList({
     return (
       <div className="card flex flex-col items-center px-6 py-10 text-center sm:py-12">
         <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
-          <BookOpenCheck className="h-5 w-5" aria-hidden="true" />
+          <LessonOutlineGlyph className="h-5 w-5" />
         </span>
         <h3 className="mt-4 text-lg font-semibold">
           Your first lesson starts here
@@ -467,10 +467,7 @@ export default function LectureList({
                         {needsSetup ? (
                           <AlertCircle className="h-4 w-4" aria-hidden="true" />
                         ) : (
-                          <BookOpenCheck
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
+                          <LessonOutlineGlyph className="h-4 w-4" />
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -667,6 +664,7 @@ export default function LectureList({
 
                       <div
                         className="flex flex-wrap items-center gap-2 sm:justify-end"
+                        role="group"
                         aria-label={`Manage ${displayTitle}`}
                       >
                         <button
@@ -680,11 +678,15 @@ export default function LectureList({
                           Rename
                         </button>
                         <div className="[&>div>button]:h-9 [&>div>button]:w-9 [&>div>button]:p-0">
-                          <YourLessonActions lectureId={lecture.id} />
+                          <YourLessonActions
+                            lectureId={lecture.id}
+                            label={`More actions for ${displayTitle}`}
+                          />
                         </div>
-                        <div className="[&>button]:h-9 [&>button]:w-9 [&>button]:gap-0 [&>button]:p-0 [&>button]:text-[0px]">
+                        <div>
                           <DeleteLectureButton
                             lectureId={lecture.id}
+                            label={`Delete ${displayTitle}`}
                             confirmMessage={`Delete “${displayTitle}”? This lesson and its progress will be permanently removed.`}
                             onDeleting={() =>
                               setDeletingIds((previous) =>

@@ -317,7 +317,7 @@ export default function ReviseClient({
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <span className="h-px w-7 bg-emerald-400/80" aria-hidden="true" />
-            <div className="text-xs font-semibold tracking-[0.16em] text-[rgb(var(--accent))] uppercase">
+            <div className="text-xs font-semibold tracking-[0.06em] text-[rgb(var(--accent))] uppercase">
               Revision practice
             </div>
           </div>
@@ -379,7 +379,7 @@ export default function ReviseClient({
           <div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <div className="min-w-0">
-                <div className="text-xs tracking-[0.12em] text-neutral-500 uppercase">
+                <div className="text-xs font-medium tracking-[0.06em] text-neutral-500 uppercase">
                   Current topic
                 </div>
                 <div className="mt-1 truncate font-medium text-neutral-200">
@@ -565,7 +565,7 @@ export default function ReviseClient({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="mb-3 flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-[0.14em] text-neutral-500 uppercase">
+                    <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-semibold tracking-[0.08em] text-neutral-500 uppercase">
                       <span>Question {String(index + 1).padStart(2, '0')}</span>
                       <span className="text-neutral-700" aria-hidden="true">
                         /
@@ -710,7 +710,7 @@ export default function ReviseClient({
                             className="absolute inset-y-3 left-0 w-px bg-emerald-400/45"
                             aria-hidden="true"
                           />
-                          <div className="mb-2 text-xs font-semibold tracking-[0.12em] text-neutral-500 uppercase">
+                          <div className="mb-2 text-xs font-semibold tracking-[0.06em] text-neutral-500 uppercase">
                             What to improve
                           </div>
                           <ReactMarkdown

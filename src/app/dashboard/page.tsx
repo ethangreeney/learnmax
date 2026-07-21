@@ -46,18 +46,21 @@ function StatCard({
     <div className="group/stat rounded-xl border border-neutral-800/80 bg-neutral-950/45 p-4 transition-[border-color,background-color,transform] duration-300 hover:-translate-y-0.5 hover:border-neutral-700 hover:bg-neutral-900/70 motion-reduce:transform-none motion-reduce:transition-none">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium tracking-[0.14em] text-neutral-500 uppercase">
+          <p className="text-xs font-semibold tracking-[0.08em] text-neutral-500 uppercase">
             {label}
           </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight text-white">
+          <p className="mt-2 text-2xl font-semibold tracking-tight text-white tabular-nums">
             {value}
           </p>
         </div>
         <div
-          className={`rounded-lg p-2 transition-transform duration-300 group-hover/stat:scale-105 motion-reduce:transform-none motion-reduce:transition-none ${iconBackground}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-lg transition-transform duration-300 group-hover/stat:scale-105 motion-reduce:transform-none motion-reduce:transition-none ${iconBackground}`}
           aria-hidden="true"
         >
-          <Icon className={`h-4 w-4 ${iconClass}`} />
+          <Icon
+            className={`block h-[17px] w-[17px] ${iconClass}`}
+            strokeWidth={1.8}
+          />
         </div>
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-500">{context}</p>
@@ -227,7 +230,7 @@ export default async function Dashboard() {
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <span className="h-px w-7 bg-emerald-400/80" aria-hidden="true" />
-              <p className="text-xs font-semibold tracking-[0.18em] text-emerald-400 uppercase">
+              <p className="text-xs font-semibold tracking-[0.06em] text-emerald-400 uppercase">
                 Welcome back, {firstName}
               </p>
             </div>
@@ -282,7 +285,7 @@ export default async function Dashboard() {
           <div className="group/brief rounded-2xl border border-neutral-800/80 bg-neutral-950/70 p-5 shadow-2xl shadow-black/20 backdrop-blur-sm transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-neutral-700 motion-reduce:transform-none motion-reduce:transition-none">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="font-mono text-[10px] tracking-[0.18em] text-neutral-500 uppercase">
+                <p className="text-[10px] font-semibold tracking-[0.08em] text-neutral-500 uppercase">
                   {nextLecture ? 'Up next' : 'Your profile'}
                 </p>
                 <p className="mt-2 line-clamp-2 text-base leading-6 font-semibold text-neutral-100">
@@ -526,7 +529,7 @@ export default async function Dashboard() {
           </div>
 
           <div className="mt-5 rounded-xl border border-neutral-800/80 bg-neutral-950/45 p-4">
-            <p className="text-xs font-medium tracking-[0.14em] text-neutral-500 uppercase">
+            <p className="text-xs font-semibold tracking-[0.08em] text-neutral-500 uppercase">
               Next milestone
             </p>
             <p className="mt-2 font-medium text-neutral-100">

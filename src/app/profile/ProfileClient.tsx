@@ -385,7 +385,7 @@ export default function ProfileClient({
 
       <div className="grid lg:grid-cols-[14rem_minmax(0,1fr)]">
         <aside className="border-b border-neutral-800/80 bg-neutral-950/30 p-5 sm:p-6 lg:border-r lg:border-b-0">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-neutral-500 uppercase">
+          <p className="text-[10px] font-semibold tracking-[0.08em] text-neutral-500 uppercase">
             Profile image
           </p>
           <div className="mt-4 flex items-center gap-4 lg:flex-col lg:items-start">

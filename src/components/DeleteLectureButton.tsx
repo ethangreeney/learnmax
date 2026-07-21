@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { DeleteGlyph } from '@/components/icons/LearningGlyphs';
 
 export default function DeleteLectureButton({
   lectureId,
@@ -11,6 +12,7 @@ export default function DeleteLectureButton({
   onDeleteError,
   onDeleteSuccess,
   redirectTo,
+  label = 'Delete lesson',
   confirmMessage = 'Delete this lecture? This cannot be undone.',
 }: {
   lectureId: string;
@@ -19,6 +21,7 @@ export default function DeleteLectureButton({
   onDeleteError?: (message: string) => void; // called on failure
   onDeleteSuccess?: () => void; // called on success
   redirectTo?: string; // optional path to navigate to on success
+  label?: string;
   confirmMessage?: string; // custom confirm text
 }) {
   const router = useRouter();
@@ -90,7 +93,10 @@ export default function DeleteLectureButton({
             void fetch('/api/telemetry', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'lecture.delete.success.404', lectureId }),
+              body: JSON.stringify({
+                type: 'lecture.delete.success.404',
+                lectureId,
+              }),
             });
           } catch {}
           if (redirectTo) {
@@ -101,7 +107,9 @@ export default function DeleteLectureButton({
           return;
         }
         const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || 'Couldn\'t delete the lecture. Try again.');
+        throw new Error(
+          data?.error || "Couldn't delete the lecture. Try again."
+        );
       }
       // success
       onDeleted?.();
@@ -119,13 +127,18 @@ export default function DeleteLectureButton({
         startTransition(() => router.refresh());
       }
     } catch (e) {
-      const message = (e as Error)?.message || "Couldn't delete the lecture. Try again.";
+      const message =
+        (e as Error)?.message || "Couldn't delete the lecture. Try again.";
       onDeleteError?.(message);
       try {
         void fetch('/api/telemetry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'lecture.delete.failure', lectureId, error: message }),
+          body: JSON.stringify({
+            type: 'lecture.delete.failure',
+            lectureId,
+            error: message,
+          }),
         });
       } catch {}
       if (!onDeleteError) {
@@ -145,19 +158,19 @@ export default function DeleteLectureButton({
       type="button"
       onClick={onDelete}
       disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-md border border-red-700/50 bg-red-900/30 px-3 py-1.5 text-sm text-red-100 hover:bg-red-800/40 disabled:opacity-60"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-red-700/50 bg-red-950/35 text-red-200 transition-[border-color,background-color,color,transform] duration-200 hover:-translate-y-0.5 hover:border-red-600/70 hover:bg-red-900/45 hover:text-red-100 active:translate-y-0 disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none motion-reduce:transition-none"
       aria-disabled={disabled}
-      title="Delete lecture"
+      title={label}
+      aria-label={label}
       aria-busy={disabled}
     >
       {disabled ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="block h-4 w-4 animate-spin" aria-hidden="true" />
       ) : (
-        <Trash2 className="h-4 w-4" />
+        <DeleteGlyph className="block h-[18px] w-[18px]" />
       )}
-      {disabled ? 'Deleting…' : 'Delete'}
       <span className="sr-only" aria-live="polite">
-        {disabled ? 'Deleting…' : ''}
+        {disabled ? 'Deleting lecture…' : ''}
       </span>
     </button>
   );

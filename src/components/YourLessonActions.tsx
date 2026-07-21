@@ -16,9 +16,11 @@ import { useShareLesson } from '@/lib/client/use-share-lesson';
 export default function YourLessonActions({
   lectureId,
   initialDiscoverable = false,
+  label = 'Lesson actions',
 }: {
   lectureId: string;
   initialDiscoverable?: boolean;
+  label?: string;
 }) {
   const { state, setState, createOrUpdate, revoke } = useShareLesson(lectureId);
   const [open, setOpen] = useState(false);
@@ -150,7 +152,8 @@ export default function YourLessonActions({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={`menu-${lectureId}`}
-        title="Actions"
+        aria-label={label}
+        title={label}
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center justify-center rounded-md border border-neutral-700 bg-neutral-800 p-1.5 text-neutral-200 hover:bg-neutral-700"
       >
@@ -161,7 +164,7 @@ export default function YourLessonActions({
           ref={menuRef}
           id={`menu-${lectureId}`}
           role="menu"
-          aria-label="Lesson actions"
+          aria-label={label}
           className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-neutral-700 bg-neutral-900 p-1 text-sm text-neutral-200 shadow-lg"
         >
           <button

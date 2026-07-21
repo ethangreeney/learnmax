@@ -1,0 +1,215 @@
+.frame {
+  position: relative;
+  width: 100%;
+  min-height: clamp(34rem, 67vh, 47rem);
+  overflow: visible;
+  isolation: isolate;
+}
+
+.frame::before {
+  position: absolute;
+  top: 13%;
+  right: 9%;
+  z-index: -1;
+  width: 63%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(202, 255, 70, 0.13);
+  border-radius: 50%;
+  content: '';
+  transform: rotate(-12deg) skewX(-8deg);
+}
+
+.frame::after {
+  position: absolute;
+  right: 17%;
+  bottom: 12%;
+  z-index: -1;
+  width: 45%;
+  height: 12%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.44);
+  content: '';
+  filter: blur(30px);
+  transform: rotate(-5deg);
+}
+
+.canvas {
+  position: absolute;
+  inset: -3% -8%;
+  width: 116%;
+  height: 106%;
+  opacity: 0;
+  outline: none;
+  cursor: crosshair;
+  transition: opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: pan-y;
+}
+
+.canvasReady {
+  opacity: 1;
+}
+
+.fallback {
+  position: absolute;
+  inset: 10% 6%;
+  display: grid;
+  place-items: center;
+  perspective: 900px;
+  transition: opacity 260ms ease;
+}
+
+.fallbackHidden {
+  opacity: 0;
+}
+
+.fallback span {
+  position: absolute;
+  display: flex;
+  width: min(44%, 17rem);
+  aspect-ratio: 0.8;
+  align-items: flex-start;
+  padding: 1.3rem;
+  border: 1px solid rgba(10, 20, 13, 0.18);
+  border-radius: 0.4rem;
+  box-shadow: 0 24px 45px -35px rgba(0, 0, 0, 0.8);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fallbackSource {
+  background: #f4f3eb;
+  color: #147348;
+  transform: translate3d(-28%, 1%, -3rem) rotate(-9deg);
+}
+
+.fallbackExplain {
+  background: #dce7d8;
+  color: #147348;
+  transform: translate3d(0, -2%, -1.5rem) rotate(2deg);
+}
+
+.fallbackRecall {
+  background: #101a13;
+  color: #caff46;
+  transform: translate3d(28%, 2%, 0) rotate(8deg);
+}
+
+.annotation {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: rgba(246, 245, 238, 0.48);
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.annotation i {
+  display: block;
+  width: 3rem;
+  height: 1px;
+  background: rgba(202, 255, 70, 0.36);
+}
+
+.annotationStart {
+  top: 13%;
+  left: 0;
+}
+
+.annotationEnd {
+  right: 0;
+  bottom: 15%;
+}
+
+.interactionHint {
+  position: absolute;
+  right: 1%;
+  bottom: 3%;
+  margin: 0;
+  color: rgba(246, 245, 238, 0.28);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1120px) {
+  .frame {
+    min-height: clamp(31rem, 64vh, 40rem);
+  }
+
+  .canvas {
+    inset: 0 -12%;
+    width: 124%;
+    height: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .frame {
+    min-height: 32rem;
+  }
+
+  .canvas {
+    inset: -5% -8%;
+    width: 116%;
+    height: 110%;
+  }
+
+  .annotationStart {
+    left: 3%;
+  }
+
+  .annotationEnd {
+    right: 3%;
+  }
+}
+
+@media (max-width: 640px) {
+  .frame {
+    min-height: 26rem;
+  }
+
+  .canvas {
+    inset: -2% -16%;
+    width: 132%;
+    height: 104%;
+  }
+
+  .annotation {
+    font-size: 0.58rem;
+  }
+
+  .annotation i {
+    width: 1.7rem;
+  }
+
+  .annotationStart {
+    top: 4%;
+    left: 1%;
+  }
+
+  .annotationEnd {
+    right: 1%;
+    bottom: 5%;
+  }
+
+  .interactionHint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas,
+  .fallback {
+    transition: none;
+  }
+
+  .interactionHint {
+    display: none;
+  }
+}

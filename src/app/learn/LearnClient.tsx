@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
-  FileText,
   Paperclip,
-  ShieldCheck,
   UploadCloud,
   X,
 } from 'lucide-react';
+import { SourceLinesGlyph } from '@/components/icons/LearningGlyphs';
 import {
   uploadPdfToBlob,
   createLectureFromContentAndBlobUrls,
@@ -96,8 +95,8 @@ export default function LearnClient() {
 
       <div className="flex flex-col gap-3 border-b border-neutral-800/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-3">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-2 motion-reduce:transform-none motion-reduce:transition-none">
-            <FileText className="h-4 w-4" aria-hidden="true" />
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/8 text-emerald-300 transition-[border-color,color] duration-300 group-hover:border-emerald-400/35 group-hover:text-emerald-200 motion-reduce:transition-none">
+            <SourceLinesGlyph className="h-[18px] w-[18px]" />
           </span>
           <div>
             <h3 className="text-sm font-semibold text-neutral-100">
@@ -108,13 +107,10 @@ export default function LearnClient() {
             </p>
           </div>
         </div>
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-900/70 px-2.5 py-1 text-[11px] font-medium text-neutral-400">
-          <ShieldCheck
-            className="h-3.5 w-3.5 text-emerald-400"
-            aria-hidden="true"
-          />
-          Private to your account
-        </span>
+        <p className="flex items-center gap-2 text-xs leading-5 text-neutral-400">
+          <span className="h-4 w-px bg-emerald-400/55" aria-hidden="true" />
+          Private until you share this lesson.
+        </p>
       </div>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_17rem]">
@@ -149,7 +145,7 @@ export default function LearnClient() {
         </div>
 
         <div className="flex flex-col p-4 sm:p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-neutral-500 uppercase">
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-neutral-500 uppercase">
             <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
             Attach readings
           </div>

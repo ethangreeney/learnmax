@@ -27,6 +27,15 @@ export default function NavigationLinks({
 }) {
   const pathname = usePathname() || '';
 
+  if (pathname === '/welcome' || pathname === '/') {
+    return (
+      <nav aria-label="Landing page navigation" className="landing-primary-nav">
+        <a href="#study-loop">Method</a>
+        <Link href="/example">Sample lesson</Link>
+      </nav>
+    );
+  }
+
   return (
     <nav aria-label="Primary navigation" className="primary-nav">
       {links.map((link) => {
