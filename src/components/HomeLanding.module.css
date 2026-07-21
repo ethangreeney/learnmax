@@ -12,22 +12,11 @@
 
 .hero {
   position: relative;
-  min-height: calc(100svh - 4.25rem);
+  min-height: 100svh;
   overflow: hidden;
   background: var(--home-olive);
   color: #f6f5ee;
   isolation: isolate;
-}
-
-.hero::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: -1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.1);
-  content: '';
 }
 
 .contours {
@@ -64,9 +53,16 @@
   position: relative;
   display: grid;
   width: min(100%, 100rem);
-  min-height: calc(100svh - 4.25rem);
+  min-height: 100svh;
   margin: 0 auto;
-  padding: clamp(2.75rem, 6vh, 5.5rem) clamp(1.5rem, 4vw, 4.5rem) 2rem;
+  padding: max(
+      clamp(5.75rem, 10vh, 7.5rem),
+      calc(
+        var(--landing-header-height, 3.8125rem) + 1rem +
+          env(safe-area-inset-top)
+      )
+    )
+    clamp(1.5rem, 4vw, 4.5rem) 2rem;
   grid-template-columns: minmax(0, 0.9fr) minmax(32rem, 1.1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   column-gap: clamp(1rem, 3vw, 4rem);
@@ -880,7 +876,7 @@
 
 @media (max-width: 640px) {
   .heroGrid {
-    padding: 2.4rem 1.1rem 1.5rem;
+    padding: 5.25rem 1.1rem 1.5rem;
   }
 
   .headline {

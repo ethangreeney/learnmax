@@ -154,6 +154,80 @@ export default function HomeLanding() {
     const previousPage = document.body.getAttribute('data-page');
     document.body.setAttribute('data-page', 'home');
 
+    const header = document.querySelector<HTMLElement>('.app-header');
+    let previousScrollY = Math.max(window.scrollY, 0);
+    let scrollDirection: 'up' | 'down' | null = null;
+    let directionalTravel = 0;
+    let headerFrame = 0;
+    const root = document.documentElement;
+
+    const syncHeaderHeight = () => {
+      if (!header) return;
+      root.style.setProperty(
+        '--landing-header-height',
+        `${header.getBoundingClientRect().height}px`
+      );
+    };
+
+    const headerResizeObserver = header
+      ? new ResizeObserver(syncHeaderHeight)
+      : undefined;
+    if (header) headerResizeObserver?.observe(header);
+    syncHeaderHeight();
+
+    const revealHeader = () => {
+      header?.classList.remove('landing-header-hidden');
+    };
+
+    const updateHeader = () => {
+      const currentScrollY = Math.max(window.scrollY, 0);
+      const delta = currentScrollY - previousScrollY;
+      const nextDirection = delta > 0 ? 'down' : delta < 0 ? 'up' : null;
+
+      if (nextDirection) {
+        if (nextDirection === scrollDirection) {
+          directionalTravel += Math.abs(delta);
+        } else {
+          scrollDirection = nextDirection;
+          directionalTravel = Math.abs(delta);
+        }
+      }
+
+      header?.classList.toggle('landing-header-scrolled', currentScrollY > 16);
+
+      if (
+        currentScrollY <= 24 ||
+        (scrollDirection === 'up' && directionalTravel >= 8)
+      ) {
+        revealHeader();
+      } else if (
+        currentScrollY > 96 &&
+        scrollDirection === 'down' &&
+        directionalTravel >= 12
+      ) {
+        header?.classList.add('landing-header-hidden');
+      }
+
+      previousScrollY = currentScrollY;
+      headerFrame = 0;
+    };
+
+    const handleScroll = () => {
+      if (headerFrame) return;
+      headerFrame = window.requestAnimationFrame(updateHeader);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.clientY <= 24) revealHeader();
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('pointermove', handlePointerMove, {
+      passive: true,
+    });
+    header?.addEventListener('focusin', revealHeader);
+    updateHeader();
+
     const reduceMotion = window.matchMedia(
       '(prefers-reduced-motion: reduce)'
     ).matches;
@@ -180,13 +254,23 @@ export default function HomeLanding() {
 
     return () => {
       revealObserver?.disconnect();
+      headerResizeObserver?.disconnect();
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('pointermove', handlePointerMove);
+      header?.removeEventListener('focusin', revealHeader);
+      header?.classList.remove(
+        'landing-header-hidden',
+        'landing-header-scrolled'
+      );
+      if (headerFrame) window.cancelAnimationFrame(headerFrame);
+      root.style.removeProperty('--landing-header-height');
       if (previousPage) document.body.setAttribute('data-page', previousPage);
       else document.body.removeAttribute('data-page');
     };
   }, []);
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-landing-page>
       <PrefetchRoutes />
 
       <section className={styles.hero} aria-labelledby="welcome-heading">

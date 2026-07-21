@@ -600,7 +600,7 @@ body[data-page='complete'] footer {
   display: none !important;
 }
 
-body[data-page='home'] {
+body:is([data-page='home'], :has([data-landing-page])) {
   background: #0c1710;
   overflow: auto !important;
   overscroll-behavior: auto;
@@ -611,67 +611,89 @@ body[data-page='demo-example'] main {
   padding-top: 0.2rem;
 }
 
-body[data-page='home'] main {
+body:is([data-page='home'], :has([data-landing-page])) main {
   padding: 0;
 }
 
-body[data-page='home'] .nav-elo {
+body:is([data-page='home'], :has([data-landing-page])) .nav-elo {
   display: none !important;
 }
 
-body[data-page='home'] .app-header {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(8, 13, 9, 0.9);
+body:is([data-page='home'], :has([data-landing-page])) .app-header {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-color: transparent;
+  background: transparent;
   box-shadow: none;
+  animation: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: translateY(0);
+  transition:
+    transform 420ms var(--ease-out),
+    border-color 220ms var(--ease-standard),
+    background-color 220ms var(--ease-standard),
+    backdrop-filter 220ms var(--ease-standard);
+  will-change: transform;
 }
 
-body[data-page='home'] .app-header::after {
+body:is([data-page='home'], :has([data-landing-page]))
+  .app-header.landing-header-scrolled {
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(7, 13, 9, 0.78);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+body:is([data-page='home'], :has([data-landing-page]))
+  .app-header.landing-header-hidden {
+  transform: translateY(calc(-100% - 1px));
+}
+
+body:is([data-page='home'], :has([data-landing-page]))
+  .app-header:focus-within {
+  transform: translateY(0);
+}
+
+body:is([data-page='home'], :has([data-landing-page])) .app-header::after {
   display: none;
 }
 
-body[data-page='home'] .brand-glyph {
+body:is([data-page='home'], :has([data-landing-page])) .brand-glyph {
   border-color: rgba(202, 255, 70, 0.7);
   background: #caff46;
   box-shadow: none;
 }
 
-body[data-page='home'] .landing-primary-nav {
-  display: flex;
-  align-items: center;
-  gap: 1.8rem;
+body:is([data-page='home'], :has([data-landing-page])) .landing-primary-nav {
+  display: none;
 }
 
-body[data-page='home'] .landing-primary-nav a {
-  position: relative;
-  color: rgba(246, 245, 238, 0.62);
-  font-size: 0.78rem;
-  font-weight: 600;
-  transition: color 180ms ease;
+body:is([data-page='home'], :has([data-landing-page])) .app-account {
+  margin-left: auto;
 }
 
-body[data-page='home'] .landing-primary-nav a::after {
-  position: absolute;
-  right: 0;
-  bottom: -0.35rem;
-  left: 0;
-  height: 1px;
-  background: #caff46;
-  content: '';
-  transform: scaleX(0);
-  transform-origin: right;
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+body:is([data-page='home'], :has([data-landing-page])) .account-link {
+  padding: 0.2rem;
+  border-color: transparent;
+  background: transparent;
 }
 
-body[data-page='home'] .landing-primary-nav a:hover {
-  color: white;
+body:is([data-page='home'], :has([data-landing-page])) .account-link:hover,
+body:is([data-page='home'], :has([data-landing-page]))
+  .account-link[aria-current='page'] {
+  border-color: rgba(202, 255, 70, 0.26);
+  background: rgba(202, 255, 70, 0.08);
 }
 
-body[data-page='home'] .landing-primary-nav a:hover::after {
-  transform: scaleX(1);
-  transform-origin: left;
+body:is([data-page='home'], :has([data-landing-page])) .account-name,
+body:is([data-page='home'], :has([data-landing-page])) .account-signout {
+  display: none;
 }
 
-body[data-page='home'] .header-signin {
+body:is([data-page='home'], :has([data-landing-page])) .header-signin {
   border-radius: 0.35rem;
   background: #caff46;
   color: #0a100c;
@@ -881,6 +903,10 @@ body[data-page='home'] .header-signin {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  body:is([data-page='home'], :has([data-landing-page])) .app-header {
+    transition: none;
+  }
+
   *,
   *::before,
   *::after {
