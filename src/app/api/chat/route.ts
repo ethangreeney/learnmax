@@ -124,13 +124,35 @@ export async function POST(req: NextRequest) {
         );
       }
       const sourceParts = [`# ${ownedLecture.title}`];
+      const sectionBodyParts: string[] = [];
       for (const section of ownedLecture.subtopics) {
         if (section.title) sourceParts.push(`## ${section.title}`);
-        if (section.overview) sourceParts.push(section.overview);
-        if (section.explanation) sourceParts.push(section.explanation);
+        if (section.overview?.trim()) {
+          sourceParts.push(section.overview.trim());
+          sectionBodyParts.push(section.overview.trim());
+        }
+        if (section.explanation?.trim()) {
+          sourceParts.push(section.explanation.trim());
+          sectionBodyParts.push(section.explanation.trim());
+        }
       }
+      const structuredSectionSource = sourceParts.join('\n\n').trim();
+      const sectionBody = sectionBodyParts.join('\n\n').trim();
+      const originalSource = ownedLecture.originalContent.trim();
+      const hasCompleteSectionContext =
+        ownedLecture.subtopics.length > 0 &&
+        ownedLecture.subtopics.every((section) =>
+          Boolean(section.explanation?.trim())
+        ) &&
+        sectionBody.length >= 120;
+
+      // A generated section can exist before its explanation is complete. In
+      // that state the heading alone is not useful grounding, so tutor from the
+      // original lesson rather than presenting a title-only source to the model.
       documentContent = (
-        sourceParts.join('\n\n').trim() || ownedLecture.originalContent
+        hasCompleteSectionContext
+          ? structuredSectionSource
+          : originalSource || structuredSectionSource
       ).slice(0, 24_000);
       canPersist = true;
     }

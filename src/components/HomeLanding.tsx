@@ -29,7 +29,7 @@ const PillarCard = ({
 
 function HeroBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10">
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       <div className="hero-spotlight absolute top-[-30%] left-1/2 h-[120vmax] w-[120vmax] -translate-x-1/2" />
       <div className="hero-grid absolute inset-0" />
       <div className="absolute top-[15%] left-[10%] h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />

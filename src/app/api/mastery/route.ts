@@ -90,24 +90,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Increment Elo ONLY if a new mastery record is created.
+    // Increment Elo only when this request creates the mastery record. Using
+    // skipDuplicates keeps retries safe without aborting the PostgreSQL
+    // transaction on the unique (userId, subtopicId) constraint.
     const { created } = await prisma.$transaction(async (tx) => {
-      try {
-        await tx.userMastery.create({ data: { userId, subtopicId } });
-        if (eloDelta && Number.isFinite(eloDelta) && eloDelta !== 0) {
-          await tx.user.update({
-            where: { id: userId },
-            data: { elo: { increment: eloDelta } },
-          });
-        }
-        return { created: true };
-      } catch (e: any) {
-        // Unique constraint violation => already mastered; do not increment Elo
-        if (e && typeof e === 'object' && (e as any).code === 'P2002') {
-          return { created: false };
-        }
-        throw e;
+      const inserted = await tx.userMastery.createMany({
+        data: [{ userId, subtopicId }],
+        skipDuplicates: true,
+      });
+      if (inserted.count === 0) return { created: false };
+
+      if (eloDelta && Number.isFinite(eloDelta) && eloDelta !== 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { elo: { increment: eloDelta } },
+        });
       }
+      return { created: true };
     }, INTERACTIVE_TX_OPTIONS);
 
     // Keep streak behavior unchanged

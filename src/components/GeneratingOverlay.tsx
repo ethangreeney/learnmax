@@ -32,15 +32,14 @@ export default function GeneratingOverlay({
   hideCancel = false,
 }: GeneratingOverlayProps) {
   const defaultMessages = useMemo(
-    () =>
-      [
-        'Analyzing content…',
-        'Finding key concepts…',
-        'Drafting sections…',
-        'Grounding in your document…',
-        'Refining explanations…',
-        'Finalizing questions…',
-      ],
+    () => [
+      'Analyzing content…',
+      'Finding key concepts…',
+      'Drafting sections…',
+      'Grounding in your document…',
+      'Refining explanations…',
+      'Finalizing questions…',
+    ],
     []
   );
   const msgs = messages && messages.length > 0 ? messages : defaultMessages;
@@ -60,9 +59,12 @@ export default function GeneratingOverlay({
       setIndex(0);
       return;
     }
-    timerRef.current = window.setInterval(() => {
-      setIndex((i) => (i + 1) % msgs.length);
-    }, Math.max(800, messageIntervalMs));
+    timerRef.current = window.setInterval(
+      () => {
+        setIndex((i) => (i + 1) % msgs.length);
+      },
+      Math.max(800, messageIntervalMs)
+    );
     // 10s reassurance message and tip
     longWaitRef.current = window.setTimeout(() => setLongWait(true), 10000);
     return () => {
@@ -82,7 +84,7 @@ export default function GeneratingOverlay({
   const backdropClass = `absolute inset-0 ${visible ? 'opacity-100' : 'opacity-0'} bg-black/60 transition-opacity duration-200`;
 
   return (
-    <div className={containerClass} aria-hidden={!visible}>
+    <div className={containerClass} aria-hidden={!visible} inert={!visible}>
       <div className={backdropClass} />
       <div
         className={panelClass}
@@ -96,14 +98,12 @@ export default function GeneratingOverlay({
             <div className="relative h-24 w-24" aria-hidden="true">
               <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-[rgb(var(--accent))] to-cyan-400/70 opacity-20" />
               <div className="absolute inset-0 rounded-full border border-[rgba(255,255,255,0.12)]" />
-              <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_24px_rgba(0,0,0,0.5)]" />
-              <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 animate-[orbit_2.2s_linear_infinite]" />
-              <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/90 animate-[orbit_3.2s_linear_infinite]" />
+              <div className="absolute top-1/2 left-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_24px_rgba(0,0,0,0.5)]" />
+              <div className="absolute top-1/2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 animate-[orbit_2.2s_linear_infinite] rounded-full bg-white/90" />
+              <div className="absolute top-1/2 left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 animate-[orbit_3.2s_linear_infinite] rounded-full bg-cyan-300/90" />
             </div>
 
-            <div className="mt-5 text-base font-medium">
-              {msgs[index]}
-            </div>
+            <div className="mt-5 text-base font-medium">{msgs[index]}</div>
             {longWait && (
               <div className="mt-2 text-xs text-neutral-400">
                 This can take up to a minute.
@@ -136,7 +136,8 @@ export default function GeneratingOverlay({
               <span className="text-base font-semibold">Generation failed</span>
             </div>
             <p className="mt-2 text-sm text-neutral-300">
-              {errorMessage || 'Something went wrong while generating your lesson.'}
+              {errorMessage ||
+                'Something went wrong while generating your lesson.'}
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               {onRetry && (
@@ -162,12 +163,22 @@ export default function GeneratingOverlay({
         {/* CSS keyframes for orbit + progress */}
         <style jsx>{`
           @keyframes orbit {
-            0% { transform: translate(-50%, -50%) rotate(0deg) translateX(40px) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg) translateX(40px) rotate(-360deg); }
+            0% {
+              transform: translate(-50%, -50%) rotate(0deg) translateX(40px)
+                rotate(0deg);
+            }
+            100% {
+              transform: translate(-50%, -50%) rotate(360deg) translateX(40px)
+                rotate(-360deg);
+            }
           }
           @keyframes bar {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(300%); }
+            0% {
+              transform: translateX(-100%);
+            }
+            100% {
+              transform: translateX(300%);
+            }
           }
         `}</style>
       </div>
@@ -186,5 +197,3 @@ export default function GeneratingOverlay({
     </div>
   );
 }
-
-

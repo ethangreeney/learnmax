@@ -113,11 +113,16 @@ type ChatPanelProps = {
   inputPlaceholder?: string;
 };
 
-async function postJSON<T>(url: string, body: any): Promise<T> {
+async function postJSON<T>(
+  url: string,
+  body: any,
+  signal?: AbortSignal
+): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -160,6 +165,16 @@ export default function ChatPanel({
   const preservedScrollRef = useRef<number>(0);
   const [portalEl, setPortalEl] = useState<Element | null>(null);
   const [isHistoryLoaded, setIsHistoryLoaded] = useState<boolean>(false);
+  const scopeKey = `${demoMode ? 'demo' : 'lesson'}:${lectureId || ''}:${subtopicId || ''}`;
+  const scopeKeyRef = useRef(scopeKey);
+  const historyAbortRef = useRef<AbortController | null>(null);
+  const historyRequestIdRef = useRef(0);
+  const sendAbortRef = useRef<AbortController | null>(null);
+  const sendRequestIdRef = useRef(0);
+
+  // Update during render so an old async callback cannot win the race before
+  // the section-change effect has had a chance to abort its network request.
+  scopeKeyRef.current = scopeKey;
 
   useEffect(() => {
     setPortalEl(typeof document !== 'undefined' ? document.body : null);
@@ -183,36 +198,56 @@ export default function ChatPanel({
     }
   }, [history, loadingHistory]);
 
-  // Load persisted chat history scoped to lecture
+  // Load persisted chat history scoped to the selected lesson section.
   useEffect(() => {
-    let cancelled = false;
+    const requestScope = scopeKey;
+    const requestId = ++historyRequestIdRef.current;
+    const controller = new AbortController();
+    historyAbortRef.current?.abort();
+    historyAbortRef.current = controller;
+
+    // A response that started in the previous section must never update the
+    // newly selected section. Abort the stream and invalidate all callbacks.
+    sendAbortRef.current?.abort();
+    sendAbortRef.current = null;
+    sendRequestIdRef.current += 1;
+
+    const isCurrentRequest = () =>
+      !controller.signal.aborted &&
+      scopeKeyRef.current === requestScope &&
+      historyRequestIdRef.current === requestId;
+
+    setHistory([
+      {
+        sender: 'ai',
+        text: intro || defaultIntro,
+      },
+    ]);
+    setInput('');
+    setFailedQuestion(null);
+    setIsLoading(false);
+    setHistoryError(null);
+    preservedScrollRef.current = 0;
+
     (async () => {
       if (!lectureId || demoMode) {
-        // For demo mode or no lectureId, consider history as loaded immediately
+        setLoadingHistory(false);
         setIsHistoryLoaded(true);
         return;
       }
-      setHistory([
-        {
-          sender: 'ai',
-          text: intro || defaultIntro,
-        },
-      ]);
-      setInput('');
-      setFailedQuestion(null);
-      preservedScrollRef.current = 0;
       setIsHistoryLoaded(false);
       setLoadingHistory(true);
-      setHistoryError(null);
       try {
         const params = new URLSearchParams({ lectureId });
         if (subtopicId) params.set('subtopicId', subtopicId);
-        const res = await fetch(`/api/chat/history?${params.toString()}`);
+        const res = await fetch(`/api/chat/history?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           messages?: Array<{ role: string; text: string }>;
         };
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         const msgs = Array.isArray(data?.messages)
           ? data.messages
               .filter((m) => m && (m.role === 'user' || m.role === 'ai'))
@@ -229,25 +264,34 @@ export default function ChatPanel({
         // Mark history as loaded and restore preserved scroll position
         setIsHistoryLoaded(true);
         setTimeout(() => {
+          if (!isCurrentRequest()) return;
           const scrollContainer = scrollContainerRef.current;
           if (scrollContainer && preservedScrollRef.current > 0) {
             scrollContainer.scrollTop = preservedScrollRef.current;
           }
         }, 0);
       } catch (e: any) {
-        if (!cancelled) setHistoryError(e?.message || 'Failed to load chat');
+        if (isCurrentRequest() && e?.name !== 'AbortError') {
+          setHistoryError(e?.message || 'Failed to load chat');
+        }
       } finally {
-        if (!cancelled) {
+        if (isCurrentRequest()) {
           setLoadingHistory(false);
           setIsHistoryLoaded(true);
         }
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
+      sendAbortRef.current?.abort();
+      sendAbortRef.current = null;
+      sendRequestIdRef.current += 1;
+      if (historyAbortRef.current === controller) {
+        historyAbortRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lectureId, subtopicId, demoMode]);
+  }, [scopeKey, intro]);
 
   const track = useCallback(
     (event: 'tutor_expand_opened' | 'tutor_expand_closed') => {
@@ -433,7 +477,13 @@ export default function ChatPanel({
 
   const handleSendMessage = async (questionOverride?: string) => {
     const question = String(questionOverride ?? input).trim();
-    if (!question || isLoading || !documentContent) {
+    if (
+      !question ||
+      isLoading ||
+      loadingHistory ||
+      !documentContent ||
+      scopeKeyRef.current !== scopeKey
+    ) {
       if (!documentContent) {
         setHistory((prev) => [
           ...prev,
@@ -446,8 +496,19 @@ export default function ChatPanel({
       return;
     }
 
+    const requestScope = scopeKey;
+    const requestId = ++sendRequestIdRef.current;
+    const controller = new AbortController();
+    sendAbortRef.current?.abort();
+    sendAbortRef.current = controller;
+    const isCurrentRequest = () =>
+      !controller.signal.aborted &&
+      scopeKeyRef.current === requestScope &&
+      sendRequestIdRef.current === requestId &&
+      sendAbortRef.current === controller;
+
     const userMessage: Message = { sender: 'user', text: question };
-    setHistory((prev) => [...prev, userMessage]);
+    setHistory((prev) => (isCurrentRequest() ? [...prev, userMessage] : prev));
     // Reset preserved scroll position when sending new message so it scrolls to bottom
     preservedScrollRef.current = 0;
     setInput('');
@@ -463,6 +524,7 @@ export default function ChatPanel({
         const res = await fetch('/api/chat?' + qs.toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             userQuestion: userMessage.text,
             documentContent,
@@ -472,11 +534,16 @@ export default function ChatPanel({
           }),
         });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        if (!isCurrentRequest()) {
+          await res.body?.cancel().catch(() => undefined);
+          return;
+        }
 
         // Add an empty AI message we will append to
         let aiIndex = -1;
         addedStreamingResponse = true;
         setHistory((prev) => {
+          if (!isCurrentRequest()) return prev;
           aiIndex = prev.length;
           return [...prev, { sender: 'ai', text: '' }];
         });
@@ -494,6 +561,10 @@ export default function ChatPanel({
         if (!reader) throw new Error('No stream reader');
         while (true) {
           const { done, value } = await reader.read();
+          if (!isCurrentRequest()) {
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           let idx: number;
@@ -515,6 +586,7 @@ export default function ChatPanel({
               const delta = payload.delta;
               if (delta.trim()) receivedStreamText = true;
               setHistory((prev) => {
+                if (!isCurrentRequest()) return prev;
                 const copy = prev.slice();
                 const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
                 const current = copy[i];
@@ -528,6 +600,7 @@ export default function ChatPanel({
             } else if (payload?.type === 'done') {
               // sanitize the aggregated message at completion
               setHistory((prev) => {
+                if (!isCurrentRequest()) return prev;
                 const copy = prev.slice();
                 const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
                 copy[i] = {
@@ -549,27 +622,36 @@ export default function ChatPanel({
         const res = await postJSON<{
           response: string;
           debug?: { model?: string; ms?: number };
-        }>('/api/chat', {
-          userQuestion: userMessage.text,
-          documentContent,
-          demoMode: Boolean(demoMode),
-          lectureId,
-          subtopicId,
-        });
+        }>(
+          '/api/chat',
+          {
+            userQuestion: userMessage.text,
+            documentContent,
+            demoMode: Boolean(demoMode),
+            lectureId,
+            subtopicId,
+          },
+          controller.signal
+        );
+        if (!isCurrentRequest()) return;
         const aiMessage: Message = {
           sender: 'ai',
           text: sanitizeMd(res.response),
         };
-        setHistory((prev) => [...prev, aiMessage]);
+        setHistory((prev) =>
+          isCurrentRequest() ? [...prev, aiMessage] : prev
+        );
         // Reset preserved scroll position for AI responses so it scrolls to bottom
         preservedScrollRef.current = 0;
       }
-    } catch {
+    } catch (error: any) {
+      if (!isCurrentRequest() || error?.name === 'AbortError') return;
       const errorMessage: Message = {
         sender: 'ai',
         text: "I couldn't answer that just now. Your question is safe below so you can retry.",
       };
       setHistory((prev) => {
+        if (!isCurrentRequest()) return prev;
         const next = prev.slice();
         while (
           addedStreamingResponse &&
@@ -593,13 +675,19 @@ export default function ChatPanel({
       // If streaming failed once, fallback next time
       setSupportsStreaming(false);
     } finally {
-      setIsLoading(false);
+      if (isCurrentRequest()) {
+        setIsLoading(false);
+        sendAbortRef.current = null;
+      }
     }
   };
 
   const handleClear = async () => {
+    const requestScope = scopeKey;
+    const isCurrentScope = () => scopeKeyRef.current === requestScope;
     try {
       if (!lectureId || demoMode) {
+        if (!isCurrentScope()) return;
         setHistory([
           {
             sender: 'ai',
@@ -621,6 +709,7 @@ export default function ChatPanel({
         body: JSON.stringify({ lectureId, subtopicId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!isCurrentScope()) return;
       setHistory([
         {
           sender: 'ai',
@@ -633,7 +722,9 @@ export default function ChatPanel({
       setFailedQuestion(null);
       setHistoryError(null);
     } catch {
-      setHistoryError('Could not clear this conversation. Please try again.');
+      if (isCurrentScope()) {
+        setHistoryError('Could not clear this conversation. Please try again.');
+      }
     }
   };
 
@@ -984,7 +1075,7 @@ export default function ChatPanel({
         >
           <div className={isExpandedSurface ? 'mx-auto max-w-[84ch]' : ''}>
             <div
-              className={`group/composer flex items-end gap-2 rounded-xl border border-neutral-800 bg-black/25 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_30px_rgba(0,0,0,0.12)] transition duration-200 focus-within:border-[rgba(var(--accent),0.42)] focus-within:bg-[rgba(var(--accent),0.025)] focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_0_0_3px_rgba(var(--accent),0.06)] motion-reduce:transition-none ${isLoading || !documentContent || inputDisabled ? 'opacity-60' : ''}`}
+              className={`group/composer flex items-end gap-2 rounded-xl border border-neutral-800 bg-black/25 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_30px_rgba(0,0,0,0.12)] transition duration-200 focus-within:border-[rgba(var(--accent),0.42)] focus-within:bg-[rgba(var(--accent),0.025)] focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_0_0_3px_rgba(var(--accent),0.06)] motion-reduce:transition-none ${isLoading || loadingHistory || !documentContent || inputDisabled ? 'opacity-60' : ''}`}
             >
               <textarea
                 ref={inputRef}
@@ -1007,11 +1098,14 @@ export default function ChatPanel({
                 }
                 aria-label="Ask the section tutor"
                 aria-describedby={composerHelpId}
-                className={`min-w-0 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-neutral-200 outline-none placeholder:text-neutral-600 ${isLoading || !documentContent || inputDisabled ? 'cursor-not-allowed' : ''}`}
+                className={`min-w-0 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-neutral-200 outline-none placeholder:text-neutral-600 ${isLoading || loadingHistory || !documentContent || inputDisabled ? 'cursor-not-allowed' : ''}`}
                 rows={1}
                 style={{ minHeight: 42, maxHeight: 160, overflowY: 'auto' }}
                 disabled={
-                  isLoading || !documentContent || Boolean(inputDisabled)
+                  isLoading ||
+                  loadingHistory ||
+                  !documentContent ||
+                  Boolean(inputDisabled)
                 }
               />
               <button
@@ -1019,6 +1113,7 @@ export default function ChatPanel({
                 aria-label="Ask this question"
                 disabled={
                   isLoading ||
+                  loadingHistory ||
                   !input.trim() ||
                   !documentContent ||
                   Boolean(inputDisabled)

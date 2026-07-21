@@ -1,8 +1,10 @@
 'use client';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import useBodyScrollLock from '@/hooks/useBodyScrollLock';
 import { useParams } from 'next/navigation';
+
+type CompletionState = 'verifying' | 'complete' | 'incomplete' | 'error';
 
 /** Measure real header height so we center below it */
 function useHeaderHeightVar() {
@@ -26,25 +28,87 @@ function useHeaderHeightVar() {
 export default function CompletePage() {
   useBodyScrollLock(true);
   const params = useParams() as { lectureId?: string };
+  const lectureId = String(params?.lectureId || '').trim();
+  const [completionState, setCompletionState] =
+    useState<CompletionState>('verifying');
+  const [statusMessage, setStatusMessage] = useState(
+    'Confirming your lesson progress…'
+  );
+
   useEffect(() => {
-    // Fire-and-forget: award one-time lecture completion ELO
-    const id = String(params?.lectureId || '').trim();
-    if (!id) return;
+    if (!lectureId) {
+      setCompletionState('error');
+      setStatusMessage('This lesson could not be identified.');
+      return;
+    }
+
+    setCompletionState('verifying');
+    setStatusMessage('Confirming your lesson progress…');
+    const controller = new AbortController();
+    let active = true;
     (async () => {
       try {
         const res = await fetch('/api/lectures/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lectureId: id }),
+          body: JSON.stringify({ lectureId }),
+          signal: controller.signal,
         });
-        if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          mastered?: number;
+          total?: number;
+        };
+        if (!active) return;
+
+        if (res.ok && data.ok) {
+          setCompletionState('complete');
+          setStatusMessage(
+            'Nicely done. You mastered every section in this lesson.'
+          );
           try {
             window.dispatchEvent(new Event('elo:maybeRefresh'));
           } catch {}
+          return;
         }
-      } catch {}
+
+        if (res.status === 409) {
+          setCompletionState('incomplete');
+          const progress =
+            typeof data.mastered === 'number' &&
+            typeof data.total === 'number' &&
+            data.total > 0
+              ? ` You have mastered ${data.mastered} of ${data.total} sections.`
+              : '';
+          setStatusMessage(
+            `${data.error || 'Finish the remaining sections before completing this lesson.'}${progress}`
+          );
+          return;
+        }
+
+        setCompletionState('error');
+        setStatusMessage(
+          data.error ||
+            'Your completion could not be verified. Please try again.'
+        );
+      } catch (error) {
+        if (
+          !active ||
+          (error instanceof DOMException && error.name === 'AbortError')
+        )
+          return;
+        setCompletionState('error');
+        setStatusMessage(
+          'Your completion could not be verified. Check your connection and try again.'
+        );
+      }
     })();
-  }, [params?.lectureId]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [lectureId]);
   useHeaderHeightVar();
 
   useEffect(() => {
@@ -86,33 +150,70 @@ export default function CompletePage() {
           }}
         />
         {/* Card */}
-        <div className="relative rounded-2xl border border-green-400/30 bg-neutral-900/70 p-10 text-center backdrop-blur-sm">
-          <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-full bg-green-500/20 ring-1 ring-green-500/40">
-            <span className="text-3xl leading-none text-green-400">✓</span>
+        <div
+          className={`relative rounded-2xl border bg-neutral-900/70 p-10 text-center backdrop-blur-sm ${completionState === 'complete' ? 'border-green-400/30' : 'border-neutral-700'}`}
+          aria-live="polite"
+        >
+          <div
+            className={`mx-auto mb-6 grid h-16 w-16 place-items-center rounded-full ring-1 ${completionState === 'complete' ? 'bg-green-500/20 ring-green-500/40' : 'bg-neutral-800 ring-neutral-700'}`}
+          >
+            <span
+              className={`text-3xl leading-none ${completionState === 'complete' ? 'text-green-400' : 'text-neutral-300'} ${completionState === 'verifying' ? 'motion-safe:animate-pulse' : ''}`}
+              aria-hidden="true"
+            >
+              {completionState === 'verifying'
+                ? '…'
+                : completionState === 'complete'
+                  ? '✓'
+                  : '!'}
+            </span>
           </div>
           <h1
             id="completion-title"
-            className="text-2xl font-semibold text-green-400"
+            className={`text-2xl font-semibold ${completionState === 'complete' ? 'text-green-400' : 'text-white'}`}
           >
-            Lecture Complete
+            {completionState === 'verifying'
+              ? 'Verifying progress'
+              : completionState === 'complete'
+                ? 'Lesson complete'
+                : completionState === 'incomplete'
+                  ? 'Lesson still in progress'
+                  : 'Could not verify completion'}
           </h1>
-          <p className="mt-3 text-neutral-300">
-            Nicely done. You mastered every subtopic in this lecture.
-          </p>
-          <div className="mt-8 flex justify-center gap-3">
-            <Link
-              href="/learn"
-              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
-            >
-              Learn something new
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 hover:bg-neutral-800"
-            >
-              Go to dashboard
-            </Link>
-          </div>
+          <p className="mt-3 text-neutral-300">{statusMessage}</p>
+          {completionState === 'complete' && (
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/learn"
+                className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500"
+              >
+                Learn something new
+              </Link>
+              <Link
+                href="/dashboard"
+                className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800"
+              >
+                Go to dashboard
+              </Link>
+            </div>
+          )}
+          {(completionState === 'incomplete' ||
+            completionState === 'error') && (
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link
+                href={`/learn/${encodeURIComponent(lectureId)}`}
+                className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
+              >
+                Return to lesson
+              </Link>
+              <Link
+                href="/dashboard"
+                className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800"
+              >
+                Go to dashboard
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </section>
