@@ -106,6 +106,7 @@ type Message = {
 type ChatPanelProps = {
   documentContent: string;
   lectureId?: string; // for persistence scope
+  subtopicId?: string; // keeps persisted conversations scoped to one section
   intro?: string;
   demoMode?: boolean;
   inputDisabled?: boolean;
@@ -128,6 +129,7 @@ async function postJSON<T>(url: string, body: any): Promise<T> {
 export default function ChatPanel({
   documentContent,
   lectureId,
+  subtopicId,
   intro,
   demoMode,
   inputDisabled,
@@ -190,12 +192,22 @@ export default function ChatPanel({
         setIsHistoryLoaded(true);
         return;
       }
+      setHistory([
+        {
+          sender: 'ai',
+          text: intro || defaultIntro,
+        },
+      ]);
+      setInput('');
+      setFailedQuestion(null);
+      preservedScrollRef.current = 0;
+      setIsHistoryLoaded(false);
       setLoadingHistory(true);
       setHistoryError(null);
       try {
-        const res = await fetch(
-          `/api/chat/history?lectureId=${encodeURIComponent(lectureId)}`
-        );
+        const params = new URLSearchParams({ lectureId });
+        if (subtopicId) params.set('subtopicId', subtopicId);
+        const res = await fetch(`/api/chat/history?${params.toString()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           messages?: Array<{ role: string; text: string }>;
@@ -235,7 +247,7 @@ export default function ChatPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lectureId, demoMode]);
+  }, [lectureId, subtopicId, demoMode]);
 
   const track = useCallback(
     (event: 'tutor_expand_opened' | 'tutor_expand_closed') => {
@@ -456,6 +468,7 @@ export default function ChatPanel({
             documentContent,
             demoMode: Boolean(demoMode),
             lectureId,
+            subtopicId,
           }),
         });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -541,6 +554,7 @@ export default function ChatPanel({
           documentContent,
           demoMode: Boolean(demoMode),
           lectureId,
+          subtopicId,
         });
         const aiMessage: Message = {
           sender: 'ai',
@@ -598,13 +612,13 @@ export default function ChatPanel({
       }
       const ok =
         typeof window !== 'undefined'
-          ? window.confirm('Clear chat history for this lesson?')
+          ? window.confirm('Clear tutor history for this section?')
           : true;
       if (!ok) return;
       const res = await fetch('/api/chat/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lectureId }),
+        body: JSON.stringify({ lectureId, subtopicId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setHistory([
@@ -653,12 +667,14 @@ export default function ChatPanel({
 
     return (
       <>
-        <header className="relative flex items-center justify-between gap-3 overflow-hidden border-b border-neutral-800/80 px-4 py-3.5 sm:px-5">
+        <header
+          className={`relative flex items-center justify-between gap-3 overflow-hidden border-b border-neutral-800/80 py-3.5 ${isExpandedSurface ? 'px-4 sm:px-5' : 'px-3.5'}`}
+        >
           <div
             className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.7)] to-transparent opacity-60"
             aria-hidden="true"
           />
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.09)] text-[rgb(var(--accent))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
               <BookOpen
                 className="h-4 w-4"
@@ -680,7 +696,9 @@ export default function ChatPanel({
                 >
                   Section tutor
                 </h3>
-                <span className="hidden items-center gap-1.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--accent),0.07)] px-2 py-0.5 text-[10px] font-medium text-[rgb(var(--accent))] sm:inline-flex">
+                <span
+                  className={`${isExpandedSurface ? 'hidden sm:inline-flex' : 'hidden'} items-center gap-1.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--accent),0.07)] px-2 py-0.5 text-[10px] font-medium text-[rgb(var(--accent))]`}
+                >
                   <span
                     className="h-1 w-1 rounded-full bg-[rgb(var(--accent))] motion-safe:animate-pulse"
                     aria-hidden="true"
@@ -693,7 +711,7 @@ export default function ChatPanel({
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             <button
               onClick={handleClear}
               aria-label="Clear tutor conversation"
@@ -706,7 +724,9 @@ export default function ChatPanel({
                 strokeWidth={1.8}
                 aria-hidden="true"
               />
-              <span className="hidden md:inline">Clear</span>
+              {isExpandedSurface && (
+                <span className="hidden md:inline">Clear</span>
+              )}
             </button>
             {!isExpandedSurface && (
               <button
@@ -722,7 +742,6 @@ export default function ChatPanel({
                   strokeWidth={1.8}
                   aria-hidden="true"
                 />
-                <span className="hidden sm:inline">Focus</span>
               </button>
             )}
             {isExpandedSurface && (

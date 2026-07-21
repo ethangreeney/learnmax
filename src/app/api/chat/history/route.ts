@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     const userId = session.user.id;
     const url = new URL(req.url);
     const lectureId = String(url.searchParams.get('lectureId') || '').trim();
+    const subtopicId = String(url.searchParams.get('subtopicId') || '').trim();
     if (!lectureId) {
       return NextResponse.json(
         { error: 'lectureId is required' },
@@ -22,10 +23,15 @@ export async function GET(req: NextRequest) {
 
     // Ownership check
     const owned = await prisma.lecture.findFirst({
-      where: { id: lectureId, userId },
+      where: {
+        id: lectureId,
+        userId,
+        ...(subtopicId ? { subtopics: { some: { id: subtopicId } } } : {}),
+      },
       select: { id: true },
     });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!owned)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     const lastReset = await prisma.tutorReset.findFirst({
       where: { userId, lectureId },
@@ -38,6 +44,9 @@ export async function GET(req: NextRequest) {
         userId,
         lectureId,
         role: { in: ['user', 'ai'] },
+        ...(subtopicId
+          ? { refs: { path: ['subtopicId'], equals: subtopicId } }
+          : {}),
         ...(lastReset ? { createdAt: { gt: lastReset.createdAt } } : {}),
       },
       select: { role: true, text: true, refs: true, createdAt: true },
@@ -51,5 +60,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
-

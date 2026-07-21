@@ -492,6 +492,12 @@ export async function POST(req: NextRequest) {
     const subtopic = subtopicIn || 'Overview';
     const lectureTitle = titleIn;
 
+    if (!lectureIdIn && docIn.trim().length < 50) {
+      return NextResponse.json(
+        { error: 'Document content is required for the public demo.' },
+        { status: userId ? 400 : 401 }
+      );
+    }
     if ((lectureIdIn || subtopicIdIn) && !userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

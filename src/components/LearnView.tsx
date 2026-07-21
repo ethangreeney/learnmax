@@ -1448,9 +1448,9 @@ export default function LearnView({
             <div className="text-xs font-medium tracking-[0.16em] text-neutral-500 uppercase">
               Lesson
             </div>
-            <h2 className="mt-1 text-lg leading-snug font-semibold break-words">
+            <h1 className="mt-1 text-lg leading-snug font-semibold break-words">
               {title}
-            </h2>
+            </h1>
           </div>
           {hasAnySubtopics && (
             <button
@@ -1655,9 +1655,9 @@ export default function LearnView({
               </div>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-3xl font-bold tracking-tight">
+                  <h2 className="text-3xl font-bold tracking-tight">
                     {currentSubtopic.title}
-                  </h3>
+                  </h2>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-300">
                     <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1">
                       {formatImportanceLabel(currentSubtopic.importance)}{' '}
@@ -1898,6 +1898,7 @@ export default function LearnView({
                 : currentSubtopicDoc || initial.originalContent || ''
             }
             lectureId={initial.id}
+            subtopicId={currentSubtopic?.id}
             intro={chatIntro}
             demoMode={demo}
           />

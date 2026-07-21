@@ -26,13 +26,17 @@ export async function POST(req: NextRequest) {
       documentContent?: string;
       demoMode?: boolean;
       lectureId?: string;
+      subtopicId?: string;
     };
     const userQuestion = String(body.userQuestion || '').trim();
-    const documentContent = String(body.documentContent || '')
+    let documentContent = String(body.documentContent || '')
       .trim()
       .slice(0, 24_000);
     const demoMode = Boolean(body.demoMode);
     const lectureId = String(body.lectureId || '')
+      .trim()
+      .slice(0, 80);
+    const subtopicId = String(body.subtopicId || '')
       .trim()
       .slice(0, 80);
 
@@ -65,19 +69,24 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (!demoMode && !lectureId) {
+      return NextResponse.json(
+        { error: 'A lesson is required for tutor questions.' },
+        { status: 400 }
+      );
+    }
+    if (demoMode && documentContent.length < 50) {
+      return NextResponse.json(
+        { error: 'Lesson content is required for the demo tutor.' },
+        { status: 400 }
+      );
+    }
     if (userQuestion.length > 2_000) {
       return NextResponse.json(
         { error: 'Keep tutor questions under 2,000 characters.' },
         { status: 413 }
       );
     }
-
-    const systemMsg = buildTutorSystemPrompt();
-    const userMsg = buildTutorPrompt(
-      userQuestion,
-      documentContent || '',
-      Boolean(demoMode)
-    );
 
     const t0 = Date.now();
     const METRICS =
@@ -91,7 +100,16 @@ export async function POST(req: NextRequest) {
     if (userId && lectureId && !demoMode) {
       const ownedLecture = await prisma.lecture.findFirst({
         where: { id: lectureId, userId },
-        select: { id: true },
+        select: {
+          id: true,
+          title: true,
+          originalContent: true,
+          subtopics: {
+            ...(subtopicId ? { where: { id: subtopicId } } : {}),
+            orderBy: { order: 'asc' },
+            select: { title: true, overview: true, explanation: true },
+          },
+        },
       });
       if (!ownedLecture) {
         return NextResponse.json(
@@ -99,8 +117,30 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+      if (subtopicId && ownedLecture.subtopics.length === 0) {
+        return NextResponse.json(
+          { error: 'Section not found.' },
+          { status: 404 }
+        );
+      }
+      const sourceParts = [`# ${ownedLecture.title}`];
+      for (const section of ownedLecture.subtopics) {
+        if (section.title) sourceParts.push(`## ${section.title}`);
+        if (section.overview) sourceParts.push(section.overview);
+        if (section.explanation) sourceParts.push(section.explanation);
+      }
+      documentContent = (
+        sourceParts.join('\n\n').trim() || ownedLecture.originalContent
+      ).slice(0, 24_000);
       canPersist = true;
     }
+
+    const systemMsg = buildTutorSystemPrompt();
+    const userMsg = buildTutorPrompt(
+      userQuestion,
+      documentContent,
+      Boolean(demoMode)
+    );
 
     // Persist user message before generating
     if (canPersist) {
@@ -111,6 +151,7 @@ export async function POST(req: NextRequest) {
             lectureId: String(lectureId),
             role: 'user',
             text: userQuestion,
+            refs: subtopicId ? { subtopicId } : undefined,
           },
         });
       } catch {}
@@ -172,6 +213,7 @@ export async function POST(req: NextRequest) {
                     lectureId: String(lectureId),
                     role: 'ai',
                     text: full,
+                    refs: subtopicId ? { subtopicId } : undefined,
                   },
                 });
               } catch {}
@@ -251,6 +293,7 @@ export async function POST(req: NextRequest) {
             lectureId: String(lectureId),
             role: 'ai',
             text: aiTextResponse,
+            refs: subtopicId ? { subtopicId } : undefined,
           },
         });
       } catch {}

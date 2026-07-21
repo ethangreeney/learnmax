@@ -10,19 +10,39 @@ export async function POST(req: NextRequest) {
     if (!isSessionWithUser(session))
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const userId = session.user.id;
-    const { lectureId } = (await req.json().catch(() => ({}))) as {
+    const { lectureId, subtopicId } = (await req.json().catch(() => ({}))) as {
       lectureId?: string;
+      subtopicId?: string;
     };
     const lid = String(lectureId || '').trim();
-    if (!lid) return NextResponse.json({ error: 'lectureId required' }, { status: 400 });
+    const sid = String(subtopicId || '').trim();
+    if (!lid)
+      return NextResponse.json(
+        { error: 'lectureId required' },
+        { status: 400 }
+      );
     const owned = await prisma.lecture.findFirst({
-      where: { id: lid, userId },
+      where: {
+        id: lid,
+        userId,
+        ...(sid ? { subtopics: { some: { id: sid } } } : {}),
+      },
       select: { id: true },
     });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    await prisma.tutorReset.create({ data: { userId, lectureId: lid } });
-    // Optionally prune in-memory state by deleting messages; keep audit by default.
-    // We'll keep history and rely on reset timestamp filtering.
+    if (!owned)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (sid) {
+      await prisma.tutorMessage.deleteMany({
+        where: {
+          userId,
+          lectureId: lid,
+          role: { in: ['user', 'ai'] },
+          refs: { path: ['subtopicId'], equals: sid },
+        },
+      });
+    } else {
+      await prisma.tutorReset.create({ data: { userId, lectureId: lid } });
+    }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(
@@ -31,5 +51,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-
