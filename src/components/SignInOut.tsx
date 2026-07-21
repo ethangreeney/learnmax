@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMeStore } from '@/lib/client/me-store';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -14,6 +14,7 @@ export default function SignInOut() {
   const meName = useMeStore((s) => s.name);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const routeKey = `${pathname || ''}|${searchParams?.toString() || ''}`;
 
   // Place hooks before any conditional returns to preserve hook order
@@ -29,13 +30,20 @@ export default function SignInOut() {
   }, [session, setMe]);
 
   if (status === 'loading') {
-    return <span className="text-sm text-neutral-400">Loading...</span>;
+    return (
+      <div
+        className="h-8 w-24 animate-pulse rounded-md bg-neutral-800/70"
+        role="status"
+        aria-label="Loading account"
+      />
+    );
   }
 
   if (!session) {
     // If we're already on the login page (either /login or any subpath like /login/...),
     // hide the Sign In link so it doesn't appear while the user is already on the sign-in UI.
-    const isLoginPage = pathname === '/login' || (pathname && pathname.startsWith('/login/'));
+    const isLoginPage =
+      pathname === '/login' || (pathname && pathname.startsWith('/login/'));
     if (isLoginPage) {
       return null;
     }
@@ -101,10 +109,19 @@ export default function SignInOut() {
         )}
       </Link>
       <button
-        onClick={() => signOut()}
-        className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm"
+        type="button"
+        onClick={async () => {
+          setIsSigningOut(true);
+          try {
+            await signOut({ callbackUrl: '/welcome' });
+          } finally {
+            setIsSigningOut(false);
+          }
+        }}
+        disabled={isSigningOut}
+        className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900 hover:text-white disabled:cursor-wait disabled:opacity-60"
       >
-        Sign Out
+        {isSigningOut ? 'Signing out…' : 'Sign out'}
       </button>
     </div>
   );

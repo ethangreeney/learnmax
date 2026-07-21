@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { put } from '@vercel/blob';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export const maxDuration = 60;
 export const runtime = 'nodejs';
@@ -11,13 +12,30 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireSession();
     const userId = (session.user as any)?.id as string;
-    const body = await req.json().catch(() => ({} as any));
+    const limit = rateLimit(
+      rateLimitKey(req, 'avatar-crop', userId),
+      12,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many avatar requests. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
+    const body = await req.json().catch(() => ({}) as any);
     const sourceUrl = String(body?.sourceUrl || '');
     const area = body?.area as CropArea | undefined;
-    const outputSize = Math.max(64, Math.min(1024, Number(body?.outputSize || 512)));
+    const outputSize = Math.max(
+      64,
+      Math.min(1024, Number(body?.outputSize || 512))
+    );
 
     if (!sourceUrl || !area) {
-      return NextResponse.json({ error: 'Missing sourceUrl or area' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing sourceUrl or area' },
+        { status: 400 }
+      );
     }
     let parsed: URL;
     try {
@@ -25,13 +43,21 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Invalid sourceUrl' }, { status: 400 });
     }
-    const hostOk = /\.public\.blob\.vercel-storage\.com$/i.test(parsed.hostname);
+    const hostOk =
+      parsed.protocol === 'https:' &&
+      /\.public\.blob\.vercel-storage\.com$/i.test(parsed.hostname);
     if (!hostOk) {
-      return NextResponse.json({ error: 'Source must be a Vercel Blob public URL' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Source must be a Vercel Blob public URL' },
+        { status: 400 }
+      );
     }
     // Path must include avatars/ and the current user id to prevent tampering
-    if (!parsed.pathname.includes('/avatars/') || !parsed.pathname.includes(userId)) {
-      return NextResponse.json({ error: 'Invalid source path' }, { status: 403 });
+    if (!parsed.pathname.includes(`/avatars/${userId}.`)) {
+      return NextResponse.json(
+        { error: 'Invalid source path' },
+        { status: 403 }
+      );
     }
 
     // Dynamically import sharp so Next.js can include it in the server bundle
@@ -41,7 +67,10 @@ export async function POST(req: NextRequest) {
       sharp = (mod as any).default || (mod as any);
     } catch {
       return NextResponse.json(
-        { error: 'GIF cropping not available on this deployment (sharp not installed)' },
+        {
+          error:
+            'GIF cropping not available on this deployment (sharp not installed)',
+        },
         { status: 501 }
       );
     }
@@ -54,12 +83,29 @@ export async function POST(req: NextRequest) {
     // Fetch source with a timeout to avoid hanging the cropper UI
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 30_000);
-    const res = await fetch(sourceUrl, { signal: controller.signal }).finally(() => clearTimeout(t));
-    if (!res.ok) return NextResponse.json({ error: 'Failed to fetch source' }, { status: 400 });
+    const res = await fetch(sourceUrl, { signal: controller.signal }).finally(
+      () => clearTimeout(t)
+    );
+    if (!res.ok)
+      return NextResponse.json(
+        { error: 'Failed to fetch source' },
+        { status: 400 }
+      );
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > 12 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'Avatar source is too large.' },
+        { status: 413 }
+      );
+    }
 
-    const meta = await sharp(buf, { animated: true }).metadata().catch(() => ({} as any));
-    const frameDelay = Array.isArray((meta as any).delay) && (meta as any).delay.length ? (meta as any).delay : undefined;
+    const meta = await sharp(buf, { animated: true })
+      .metadata()
+      .catch(() => ({}) as any);
+    const frameDelay =
+      Array.isArray((meta as any).delay) && (meta as any).delay.length
+        ? (meta as any).delay
+        : undefined;
     let out: Buffer;
     let ext: 'gif' | 'webp' = 'webp';
 
@@ -67,21 +113,33 @@ export async function POST(req: NextRequest) {
       // Prefer animated WebP for better performance and size; preserve frame delays
       out = await sharp(buf, { animated: true })
         .extract({ left, top, width, height })
-        .resize(outputSize, outputSize, { fit: 'cover', fastShrinkOnLoad: true })
-        .toFormat('webp', { quality: 85, effort: 3, loop: 0, delay: frameDelay as any })
+        .resize(outputSize, outputSize, {
+          fit: 'cover',
+          fastShrinkOnLoad: true,
+        })
+        .toFormat('webp', {
+          quality: 85,
+          effort: 3,
+          loop: 0,
+          delay: frameDelay as any,
+        })
         .toBuffer();
       ext = 'webp';
-    } catch (e) {
+    } catch {
       // Fallback to GIF; lower effort and preserve delays to avoid 1fps playback
       out = await sharp(buf, { animated: true })
         .extract({ left, top, width, height })
-        .resize(outputSize, outputSize, { fit: 'cover', fastShrinkOnLoad: true })
+        .resize(outputSize, outputSize, {
+          fit: 'cover',
+          fastShrinkOnLoad: true,
+        })
         .toFormat('gif', { effort: 2, loop: 0, delay: frameDelay as any })
         .toBuffer();
       ext = 'gif';
     }
 
-    const filename = ext === 'gif' ? `avatars/${userId}.gif` : `avatars/${userId}.webp`;
+    const filename =
+      ext === 'gif' ? `avatars/${userId}.gif` : `avatars/${userId}.webp`;
     const result = await put(filename, out, {
       access: 'public',
       allowOverwrite: true,
@@ -99,5 +157,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-

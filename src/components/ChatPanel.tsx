@@ -2,7 +2,16 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Send, Loader2, User, Bot, Maximize2, X } from 'lucide-react';
+import {
+  Send,
+  Loader2,
+  User,
+  Bot,
+  Maximize2,
+  X,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -16,7 +25,9 @@ function sanitizeMd(md: string): string {
   let t = md.trim();
 
   // Clean up any legacy leaked mask placeholders
-  t = t.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '').replace(/<<MD_MASK_\d+>>/g, '');
+  t = t
+    .replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '')
+    .replace(/<<MD_MASK_\d+>>/g, '');
   const exactFence = t.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
   if (exactFence) t = exactFence[1].trim();
   else {
@@ -118,18 +129,19 @@ export default function ChatPanel({
   inputDisabled,
   inputPlaceholder,
 }: ChatPanelProps) {
+  const defaultIntro =
+    "I'm grounded in this lesson. Ask me to explain, compare, or test any idea.";
   const [history, setHistory] = useState<Message[]>([
     {
       sender: 'ai',
-      text:
-        intro ||
-        "I'm your AI Tutor. Ask me anything about the content on the left!",
+      text: intro || defaultIntro,
     },
   ]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [animating, setAnimating] = useState(false);
@@ -177,7 +189,9 @@ export default function ChatPanel({
       setLoadingHistory(true);
       setHistoryError(null);
       try {
-        const res = await fetch(`/api/chat/history?lectureId=${encodeURIComponent(lectureId)}`);
+        const res = await fetch(
+          `/api/chat/history?lectureId=${encodeURIComponent(lectureId)}`
+        );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           messages?: Array<{ role: string; text: string }>;
@@ -193,9 +207,7 @@ export default function ChatPanel({
           setHistory([
             {
               sender: 'ai',
-              text:
-                intro ||
-                "I'm your AI Tutor. Ask me anything about the content on the left!",
+              text: intro || defaultIntro,
             },
           ]);
         // Mark history as loaded and restore preserved scroll position
@@ -209,7 +221,10 @@ export default function ChatPanel({
       } catch (e: any) {
         if (!cancelled) setHistoryError(e?.message || 'Failed to load chat');
       } finally {
-        if (!cancelled) setLoadingHistory(false);
+        if (!cancelled) {
+          setLoadingHistory(false);
+          setIsHistoryLoaded(true);
+        }
       }
     })();
     return () => {
@@ -217,19 +232,6 @@ export default function ChatPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lectureId, demoMode]);
-
-  // Handle Esc to close
-  useEffect(() => {
-    if (!expanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeExpanded();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [expanded]);
 
   const track = useCallback(
     (event: 'tutor_expand_opened' | 'tutor_expand_closed') => {
@@ -335,7 +337,8 @@ export default function ChatPanel({
             scrollContainerRef.current.scrollTop = preservedScrollRef.current;
           } else {
             // Scroll to bottom for new messages or initial state
-            scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+            scrollContainerRef.current.scrollTop =
+              scrollContainerRef.current.scrollHeight;
           }
         }
       } catch {}
@@ -376,6 +379,21 @@ export default function ChatPanel({
     }, 0);
   };
 
+  // Escape always returns focus to the inline trigger through closeExpanded.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeExpanded();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+    // closeExpanded intentionally reflects the current render while the dialog is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
   const autosize = () => {
     const el = inputRef.current;
     if (!el) return;
@@ -387,8 +405,9 @@ export default function ChatPanel({
     autosize();
   }, []);
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || isLoading || !documentContent) {
+  const handleSendMessage = async (questionOverride?: string) => {
+    const question = String(questionOverride ?? input).trim();
+    if (!question || isLoading || !documentContent) {
       if (!documentContent) {
         setHistory((prev) => [
           ...prev,
@@ -401,21 +420,18 @@ export default function ChatPanel({
       return;
     }
 
-    const userMessage: Message = { sender: 'user', text: input };
+    const userMessage: Message = { sender: 'user', text: question };
     setHistory((prev) => [...prev, userMessage]);
     // Reset preserved scroll position when sending new message so it scrolls to bottom
     preservedScrollRef.current = 0;
     setInput('');
+    setFailedQuestion(null);
     // reset height after clearing
     setTimeout(autosize, 0);
     setIsLoading(true);
+    let addedStreamingResponse = false;
 
     try {
-      let model: string | undefined;
-      try {
-        model = localStorage.getItem('ai:model') || undefined;
-      } catch {}
-
       if (supportsStreaming) {
         const qs = new URLSearchParams({ stream: '1' });
         const res = await fetch('/api/chat?' + qs.toString(), {
@@ -424,7 +440,6 @@ export default function ChatPanel({
           body: JSON.stringify({
             userQuestion: userMessage.text,
             documentContent,
-            model,
             demoMode: Boolean(demoMode),
             lectureId,
           }),
@@ -433,6 +448,7 @@ export default function ChatPanel({
 
         // Add an empty AI message we will append to
         let aiIndex = -1;
+        addedStreamingResponse = true;
         setHistory((prev) => {
           aiIndex = prev.length;
           return [...prev, { sender: 'ai', text: '' }];
@@ -441,6 +457,7 @@ export default function ChatPanel({
         const reader = (res.body as ReadableStream<Uint8Array>)?.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let receivedStreamText = false;
         const yieldFrame = () =>
           new Promise<void>((r) => {
             if (typeof requestAnimationFrame !== 'undefined')
@@ -469,6 +486,7 @@ export default function ChatPanel({
               typeof payload.delta === 'string'
             ) {
               const delta = payload.delta;
+              if (delta.trim()) receivedStreamText = true;
               setHistory((prev) => {
                 const copy = prev.slice();
                 const i = aiIndex >= 0 ? aiIndex : copy.length - 1;
@@ -498,6 +516,8 @@ export default function ChatPanel({
             }
           }
         }
+        if (!receivedStreamText)
+          throw new Error('The tutor returned no answer');
       } else {
         const res = await postJSON<{
           response: string;
@@ -505,7 +525,6 @@ export default function ChatPanel({
         }>('/api/chat', {
           userQuestion: userMessage.text,
           documentContent,
-          model,
           demoMode: Boolean(demoMode),
           lectureId,
         });
@@ -517,12 +536,30 @@ export default function ChatPanel({
         // Reset preserved scroll position for AI responses so it scrolls to bottom
         preservedScrollRef.current = 0;
       }
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         sender: 'ai',
-        text: 'Sorry, I ran into an error. Please try again.',
+        text: "I couldn't answer that just now. Your question is safe below so you can retry.",
       };
-      setHistory((prev) => [...prev, errorMessage]);
+      setHistory((prev) => {
+        const next = prev.slice();
+        while (
+          addedStreamingResponse &&
+          next.length > 0 &&
+          next[next.length - 1]?.sender === 'ai'
+        ) {
+          next.pop();
+        }
+        while (
+          next.length > 0 &&
+          next[next.length - 1]?.sender === 'ai' &&
+          !next[next.length - 1]?.text.trim()
+        ) {
+          next.pop();
+        }
+        return [...next, errorMessage];
+      });
+      setFailedQuestion(userMessage.text);
       // Reset preserved scroll position for error messages so it scrolls to bottom
       preservedScrollRef.current = 0;
       // If streaming failed once, fallback next time
@@ -532,24 +569,23 @@ export default function ChatPanel({
     }
   };
 
-  const titleId = 'ai-tutor-title';
-
   const handleClear = async () => {
     try {
       if (!lectureId || demoMode) {
         setHistory([
           {
             sender: 'ai',
-            text:
-              intro ||
-              "I'm your AI Tutor. Ask me anything about the content on the left!",
+            text: intro || defaultIntro,
           },
         ]);
+        setFailedQuestion(null);
+        setHistoryError(null);
         return;
       }
-      const ok = typeof window !== 'undefined'
-        ? window.confirm('Clear chat history for this lesson?')
-        : true;
+      const ok =
+        typeof window !== 'undefined'
+          ? window.confirm('Clear chat history for this lesson?')
+          : true;
       if (!ok) return;
       const res = await fetch('/api/chat/reset', {
         method: 'POST',
@@ -560,163 +596,272 @@ export default function ChatPanel({
       setHistory([
         {
           sender: 'ai',
-          text:
-            intro ||
-            "I'm your AI Tutor. Ask me anything about the content on the left!",
+          text: intro || defaultIntro,
         },
       ]);
       // Reset preserved scroll position when clearing chat
       preservedScrollRef.current = 0;
       setIsHistoryLoaded(true);
-    } catch {}
+      setFailedQuestion(null);
+      setHistoryError(null);
+    } catch {
+      setHistoryError('Could not clear this conversation. Please try again.');
+    }
   };
 
-  const panelContent = (
-    <>
-      <header className="flex items-center justify-between border-b border-neutral-800/80 p-4">
-        <h3 id={titleId} className="text-lg font-semibold">
-          AI Tutor
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleClear}
-            aria-label="Clear chat"
-            className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
-          >
-            Clear
-          </button>
-          {!expanded && (
-            <button
-              ref={expandBtnRef}
-              onClick={openExpanded}
-              aria-expanded={expanded}
-              aria-label="Expand AI Tutor"
-              className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
-            >
-              <Maximize2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Expand</span>
-            </button>
-          )}
-          {expanded && (
-            <button
-              onClick={closeExpanded}
-              aria-label="Close"
-              className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
-            >
-              <X className="h-4 w-4" />
-              <span className="hidden sm:inline">Close</span>
-            </button>
-          )}
-        </div>
-      </header>
+  const starterPrompts = [
+    'Explain this section simply',
+    'Give me a concrete example',
+    'Quiz me with one question',
+  ];
 
-      <div
-        ref={scrollContainerRef}
-        className={`${expanded ? 'flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6' : 'flex-1 space-y-4 overflow-y-auto p-4'}`}
-      >
-        {loadingHistory && (
-          <div className="text-xs text-neutral-400">Loading conversation…</div>
-        )}
-        {!loadingHistory && historyError && (
-          <div className="text-xs text-yellow-400">Could not load previous messages.</div>
-        )}
-        {history.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : ''}`}
-          >
-            {msg.sender === 'ai' && (
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
-                <Bot className="h-5 w-5" />
-              </div>
+  const renderPanelContent = (surface: 'inline' | 'expanded') => {
+    const isExpandedSurface = surface === 'expanded';
+    const surfaceTitleId = `ai-tutor-title-${surface}`;
+    const canClear =
+      history.some((message) => message.sender === 'user') && !isLoading;
+
+    return (
+      <>
+        <header className="flex items-center justify-between border-b border-neutral-800/80 p-4">
+          <div className="min-w-0">
+            <h3 id={surfaceTitleId} className="text-lg font-semibold">
+              AI Tutor
+            </h3>
+            <div className="flex items-center gap-1.5 text-[11px] text-neutral-400">
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-emerald-400"
+                aria-hidden="true"
+              />
+              Grounded in this section
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleClear}
+              aria-label="Clear chat"
+              disabled={!canClear}
+              className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Clear
+            </button>
+            {!isExpandedSurface && (
+              <button
+                ref={expandBtnRef}
+                onClick={openExpanded}
+                aria-expanded={expanded}
+                aria-label="Expand AI Tutor"
+                className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
+              >
+                <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Expand</span>
+              </button>
             )}
+            {isExpandedSurface && (
+              <button
+                onClick={closeExpanded}
+                aria-label="Close"
+                className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2 py-1 text-sm hover:bg-neutral-800"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Close</span>
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div
+          ref={scrollContainerRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+          aria-label="AI Tutor conversation"
+          className={`${isExpandedSurface ? 'flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6' : 'flex-1 space-y-4 overflow-y-auto p-4'}`}
+        >
+          {loadingHistory && (
             <div
-              className={`${
-                expanded
-                  ? msg.sender === 'ai'
-                    ? 'w-full max-w-[80ch] rounded-lg bg-neutral-800 px-4 py-3'
-                    : 'max-w-[60ch] rounded-lg bg-[rgb(var(--accent))] px-3 py-2 text-black'
-                  : 'max-w-xs rounded-lg px-3 py-2 md:max-w-md ' +
-                    (msg.sender === 'user'
-                      ? 'bg-[rgb(var(--accent))] text-black'
-                      : 'bg-neutral-800')
-              }`}
+              className="flex items-center gap-2 text-xs text-neutral-400"
+              role="status"
             >
-              {msg.sender === 'ai' ? (
-                <div
-                  className={`markdown chat-md ${expanded ? 'text-base sm:text-[0.95rem]' : 'text-sm'}`}
-                >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                  >
-                    {msg.text}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-              )}
+              <Loader2
+                className="h-3.5 w-3.5 animate-spin"
+                aria-hidden="true"
+              />
+              Loading conversation…
             </div>
-            {msg.sender === 'user' && (
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
-                <User className="h-5 w-5" />
+          )}
+          {!loadingHistory && historyError && (
+            <div
+              className="rounded-md border border-amber-800/60 bg-amber-950/30 p-3 text-xs text-amber-200"
+              role="alert"
+            >
+              {historyError.startsWith('Could not clear')
+                ? historyError
+                : 'Previous messages could not be loaded. You can still start a new conversation.'}
+            </div>
+          )}
+          {history.map((msg, index) => {
+            if (msg.sender === 'ai' && !msg.text.trim()) return null;
+            return (
+              <div
+                key={index}
+                className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : ''}`}
+              >
+                {msg.sender === 'ai' && (
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
+                    <Bot className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                )}
+                <div
+                  className={`min-w-0 break-words ${
+                    isExpandedSurface
+                      ? msg.sender === 'ai'
+                        ? 'w-full max-w-[80ch] rounded-lg bg-neutral-800 px-4 py-3'
+                        : 'max-w-[60ch] rounded-lg bg-[rgb(var(--accent))] px-3 py-2 text-black'
+                      : 'max-w-xs rounded-lg px-3 py-2 md:max-w-md ' +
+                        (msg.sender === 'user'
+                          ? 'bg-[rgb(var(--accent))] text-black'
+                          : 'bg-neutral-800')
+                  }`}
+                >
+                  {msg.sender === 'ai' ? (
+                    <div
+                      className={`markdown chat-md ${isExpandedSurface ? 'text-base sm:text-[0.95rem]' : 'text-sm'}`}
+                    >
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="text-sm break-words whitespace-pre-wrap">
+                      {msg.text}
+                    </p>
+                  )}
+                </div>
+                {msg.sender === 'user' && (
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
+                    <User className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!loadingHistory &&
+            history.length === 1 &&
+            history[0]?.sender === 'ai' &&
+            !isLoading &&
+            documentContent && (
+              <div className="space-y-2 pt-1" aria-label="Suggested questions">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-neutral-400">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  Try asking
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {starterPrompts.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => void handleSendMessage(suggestion)}
+                      className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800 hover:text-white"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-          </div>
-        ))}
-        {isLoading && (
-          <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
-              <Bot className="h-5 w-5" />
+          {isLoading && (
+            <div
+              className="flex items-start gap-3"
+              role="status"
+              aria-label="AI Tutor is thinking"
+            >
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-700">
+                <Bot className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="flex max-w-xs items-center gap-2 rounded-lg bg-neutral-800 px-4 py-2 text-xs text-neutral-400 md:max-w-md">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Thinking…
+              </div>
             </div>
-            <div className="flex max-w-xs items-center rounded-lg bg-neutral-800 px-4 py-2 md:max-w-md">
-              <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <footer
-        className={`${expanded ? 'border-t border-neutral-800 bg-transparent px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6' : 'border-t border-neutral-800 p-4'}`}
-      >
-        <div className="flex items-center gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onInput={autosize}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder={(inputDisabled && inputPlaceholder) ? inputPlaceholder : (inputPlaceholder || 'Ask about the content...')}
-            className={`input flex-1 resize-none border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.12)] py-2 pl-4 ring-1 ring-transparent placeholder:text-neutral-400 focus:ring-[rgb(var(--accent))] ${expanded ? 'mx-auto max-w-[80ch]' : ''} ${(isLoading || !documentContent || inputDisabled) ? 'opacity-60 cursor-not-allowed' : ''}`}
-            rows={1}
-            style={{ minHeight: 44, maxHeight: 160, overflowY: 'auto' }}
-            disabled={isLoading || !documentContent || Boolean(inputDisabled)}
-          />
-          <button
-            onClick={handleSendMessage}
-            disabled={isLoading || !input.trim() || !documentContent || Boolean(inputDisabled)}
-            className="flex h-[44px] w-[44px] items-center justify-center rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50 md:h-[48px] md:w-[48px]"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          )}
+          {failedQuestion && !isLoading && (
+            <button
+              type="button"
+              onClick={() => void handleSendMessage(failedQuestion)}
+              className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              Retry last question
+            </button>
+          )}
         </div>
-      </footer>
-    </>
-  );
+
+        <footer
+          className={`${isExpandedSurface ? 'border-t border-neutral-800 bg-transparent px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6' : 'border-t border-neutral-800 p-4'}`}
+        >
+          <div className="flex items-center gap-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onInput={autosize}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendMessage();
+                }
+              }}
+              placeholder={
+                inputDisabled && inputPlaceholder
+                  ? inputPlaceholder
+                  : inputPlaceholder ||
+                    (!documentContent
+                      ? 'Tutor will be ready when this section finishes loading'
+                      : 'Ask about this section…')
+              }
+              aria-label="Ask the AI Tutor"
+              title="Press Enter to send. Press Shift and Enter for a new line."
+              className={`input flex-1 resize-none border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.12)] py-2 pl-4 ring-1 ring-transparent placeholder:text-neutral-400 focus:ring-[rgb(var(--accent))] ${isExpandedSurface ? 'mx-auto max-w-[80ch]' : ''} ${isLoading || !documentContent || inputDisabled ? 'cursor-not-allowed opacity-60' : ''}`}
+              rows={1}
+              style={{ minHeight: 44, maxHeight: 160, overflowY: 'auto' }}
+              disabled={isLoading || !documentContent || Boolean(inputDisabled)}
+            />
+            <button
+              onClick={() => void handleSendMessage()}
+              aria-label="Send message"
+              disabled={
+                isLoading ||
+                !input.trim() ||
+                !documentContent ||
+                Boolean(inputDisabled)
+              }
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-md bg-[rgb(var(--accent))] text-black disabled:opacity-50 md:h-[48px] md:w-[48px]"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Send className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </footer>
+      </>
+    );
+  };
 
   return (
     <>
       {/* Inline panel (placeholder during expanded) */}
       <div
         className={`card flex h-full flex-col ${expanded ? 'invisible' : ''}`}
-        aria-labelledby={titleId}
+        aria-labelledby="ai-tutor-title-inline"
+        aria-hidden={expanded ? true : undefined}
       >
-        {panelContent}
+        {renderPanelContent('inline')}
       </div>
 
       {/* Overlay modal through portal to avoid layout shift; also animate */}
@@ -736,7 +881,7 @@ export default function ChatPanel({
               ref={modalRef}
               role="dialog"
               aria-modal="true"
-              aria-labelledby={titleId}
+              aria-labelledby="ai-tutor-title-expanded"
               className={`relative mx-4 w-full origin-top-right ${
                 // On small screens, full-screen modal; desktop centered with max size
                 'sm:mx-6'
@@ -746,7 +891,7 @@ export default function ChatPanel({
               <div
                 className={`flex h-[min(92vh,calc(100vh-4rem))] flex-col rounded-xl border border-neutral-800 bg-[rgba(10,10,10,0.92)] shadow-2xl sm:mx-auto sm:h-[min(90vh,calc(100vh-6rem))]`}
               >
-                {panelContent}
+                {renderPanelContent('expanded')}
               </div>
             </div>
           </div>,

@@ -24,6 +24,11 @@ export default function FollowButton({
     })();
   }, [initial, targetUserId]);
 
+  function redirectToSignIn() {
+    const next = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+  }
+
   async function toggle() {
     setLoading(true);
     try {
@@ -33,6 +38,7 @@ export default function FollowButton({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetUserId }),
         });
+        if (res.status === 401) return redirectToSignIn();
         if (!res.ok) throw new Error('Failed to unfollow');
         setIsFollowing(false);
       } else {
@@ -41,10 +47,11 @@ export default function FollowButton({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetUserId }),
         });
+        if (res.status === 401) return redirectToSignIn();
         if (!res.ok) throw new Error('Failed to follow');
         setIsFollowing(true);
       }
-    } catch (e) {
+    } catch {
       // no-op; could show toast
     } finally {
       setLoading(false);

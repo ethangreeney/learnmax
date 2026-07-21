@@ -1,9 +1,9 @@
-import { requireAdmin } from '@/lib/admin';
+import { requireAdminPage } from '@/lib/admin';
 import TokensClient from './ui/TokensClient';
 import { Suspense } from 'react';
 
 export default async function AdminTokensPage() {
-  await requireAdmin();
+  await requireAdminPage();
   return (
     <div className="container-narrow space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Token Usage</h1>
@@ -15,5 +15,3 @@ export default async function AdminTokensPage() {
     </div>
   );
 }
-
-

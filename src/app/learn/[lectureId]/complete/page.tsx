@@ -57,7 +57,8 @@ export default function CompletePage() {
   }, []);
 
   return (
-    <main
+    <section
+      aria-labelledby="completion-title"
       className="flex items-center justify-center px-4"
       style={{ minHeight: 'calc(100svh - var(--header-h, 64px))' }}
     >
@@ -89,7 +90,10 @@ export default function CompletePage() {
           <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-full bg-green-500/20 ring-1 ring-green-500/40">
             <span className="text-3xl leading-none text-green-400">✓</span>
           </div>
-          <h1 className="text-2xl font-semibold text-green-400">
+          <h1
+            id="completion-title"
+            className="text-2xl font-semibold text-green-400"
+          >
             Lecture Complete
           </h1>
           <p className="mt-3 text-neutral-300">
@@ -111,6 +115,6 @@ export default function CompletePage() {
           </div>
         </div>
       </div>
-    </main>
+    </section>
   );
 }

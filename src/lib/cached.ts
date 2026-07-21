@@ -216,6 +216,8 @@ export type LeaderboardItem = {
 };
 
 export async function getLeaderboardCached(period: LeaderboardPeriod, scope: LeaderboardScope = 'global', viewerId?: string | null) {
+  if (scope === 'following' && !viewerId) return [];
+
   const fn = unstable_cache(
     async () => {
       const ranks = await getRanksSafe();

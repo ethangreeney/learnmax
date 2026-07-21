@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { getRankGradient } from '@/lib/ranks';
 import type { LeaderboardItem } from '@/lib/cached';
+import { formatDateUTC } from '@/lib/text/format-date';
 
 type LeaderboardRowProps = {
   user: LeaderboardItem;
@@ -54,7 +55,7 @@ export default function LeaderboardRow({ user, index, isViewer }: LeaderboardRow
             <div className="text-sm text-neutral-500">
               {user.username ? `@${user.username}` : 'Profile'}
               <span className="opacity-50"> · </span>
-              <span>last active {user.lastActiveISO ? new Date(user.lastActiveISO).toLocaleDateString() : '—'}</span>
+              <span>last active {user.lastActiveISO ? formatDateUTC(user.lastActiveISO) : '—'}</span>
             </div>
           </div>
         </div>
@@ -79,5 +80,4 @@ export default function LeaderboardRow({ user, index, isViewer }: LeaderboardRow
     </div>
   );
 }
-
 

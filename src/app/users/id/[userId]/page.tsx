@@ -34,32 +34,59 @@ export default async function PublicProfileById({
   const session = await getServerSession(authOptions);
   const viewerId = (session?.user as any)?.id as string | undefined;
   const isSelf = viewerId === user.id;
-  const [medianRows, ranks, followerCount, followingCount, higherCount, lastAttempt, stats, fallbackRows] = await Promise.all([
-    prisma.$queryRaw<{ median: number | null }[]>`SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY "score") AS median FROM "ShortAnswerGrade" WHERE "userId" = ${user.id}`.catch(() => [{ median: null }] as any),
-    getRanksSafe(),
-    prisma.follow.count({ where: { followingId: user.id } }),
-    prisma.follow.count({ where: { followerId: user.id } }),
-    prisma.user.count({ where: { elo: { gt: user.elo } } }),
-    prisma.quizAttempt.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
-    getUserStatsCached(user.id),
-    prisma.tutorMessage.findMany({ where: { userId: user.id, role: 'short-q' }, select: { refs: true }, orderBy: { createdAt: 'desc' }, take: 200 }).catch(() => [] as any[]),
-  ]);
-  const medianFromGrade = Array.isArray(medianRows) && medianRows[0] && typeof (medianRows[0] as any).median === 'number' ? ((medianRows[0] as any).median as number) : null;
+  const [medianRows, ranks, higherCount, lastAttempt, stats, fallbackRows] =
+    await Promise.all([
+      prisma.$queryRaw<
+        { median: number | null }[]
+      >`SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY "score") AS median FROM "ShortAnswerGrade" WHERE "userId" = ${user.id}`.catch(
+        () => [{ median: null }] as any
+      ),
+      getRanksSafe(),
+      prisma.user.count({ where: { elo: { gt: user.elo } } }),
+      prisma.quizAttempt.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+      getUserStatsCached(user.id),
+      prisma.tutorMessage
+        .findMany({
+          where: { userId: user.id, role: 'short-q' },
+          select: { refs: true },
+          orderBy: { createdAt: 'desc' },
+          take: 200,
+        })
+        .catch(() => [] as any[]),
+    ]);
+  const medianFromGrade =
+    Array.isArray(medianRows) &&
+    medianRows[0] &&
+    typeof (medianRows[0] as any).median === 'number'
+      ? ((medianRows[0] as any).median as number)
+      : null;
   const fallbackScores = Array.isArray(fallbackRows)
-    ? (fallbackRows as any[])
+    ? ((fallbackRows as any[])
         .map((r) => {
           const s = Number((r as any)?.refs?.score);
           return Number.isFinite(s) ? s : null;
         })
-        .filter((n) => n != null) as number[]
+        .filter((n) => n != null) as number[])
     : [];
   fallbackScores.sort((a, b) => a - b);
-  const medianFromTutor = fallbackScores.length ? fallbackScores[Math.ceil(fallbackScores.length / 2) - 1] : null;
+  const medianFromTutor = fallbackScores.length
+    ? fallbackScores[Math.ceil(fallbackScores.length / 2) - 1]
+    : null;
   const medianShort = medianFromGrade ?? medianFromTutor;
   const lastActiveAt = user.lastStudiedAt || lastAttempt?.createdAt || null;
-  const lifetimeLectures = (stats as any)?.lifetime?.lecturesCreated ?? (stats as any)?.lectureCount ?? 0;
+  const lifetimeLectures =
+    (stats as any)?.lifetime?.lecturesCreated ??
+    (stats as any)?.lectureCount ??
+    0;
   const highestElo = user.elo;
-  const lifetimeMastered = (stats as any)?.lifetime?.subtopicsMastered ?? (stats as any)?.masteredCount ?? user._count.masteredSubtopics;
+  const lifetimeMastered =
+    (stats as any)?.lifetime?.subtopicsMastered ??
+    (stats as any)?.masteredCount ??
+    user._count.masteredSubtopics;
 
   // Rank data and progress
   const rank = pickRankForElo(ranks, user.elo);
@@ -68,23 +95,31 @@ export default async function PublicProfileById({
   const currentIndex = (() => {
     let idx = 0;
     for (let i = 0; i < sorted.length; i++) {
-      if (user.elo >= sorted[i].minElo) idx = i; else break;
+      if (user.elo >= sorted[i].minElo) idx = i;
+      else break;
     }
     return idx;
   })();
   const currentRank = sorted[currentIndex] ?? null;
   const nextRank = sorted[currentIndex + 1] ?? null;
   const toNext = nextRank ? Math.max(0, nextRank.minElo - user.elo) : null;
-  const denom = nextRank ? Math.max(1, nextRank.minElo - (currentRank?.minElo ?? 0)) : 1;
-  const progressPct = nextRank ? Math.max(0, Math.min(100, ((user.elo - (currentRank?.minElo ?? 0)) / denom) * 100)) : 100;
+  const denom = nextRank
+    ? Math.max(1, nextRank.minElo - (currentRank?.minElo ?? 0))
+    : 1;
+  const progressPct = nextRank
+    ? Math.max(
+        0,
+        Math.min(100, ((user.elo - (currentRank?.minElo ?? 0)) / denom) * 100)
+      )
+    : 100;
   const leaderboardRank = higherCount + 1;
 
   return (
     <div className="container-narrow space-y-8">
       <section className="card relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-20 -top-20 h-56 w-56 rounded-full hero-spotlight" />
-          <div className="absolute inset-0 opacity-[0.35] hero-grid" />
+          <div className="hero-spotlight absolute -top-20 -left-20 h-56 w-56 rounded-full" />
+          <div className="hero-grid absolute inset-0 opacity-[0.35]" />
           <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
         </div>
         <div className="relative z-10 p-6 md:p-7">
@@ -96,7 +131,12 @@ export default async function PublicProfileById({
                   <div className="relative h-full w-full overflow-hidden rounded-full bg-neutral-950 ring-2 ring-neutral-800">
                     {user.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={user.image} alt="avatar" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      <img
+                        src={user.image}
+                        alt="avatar"
+                        className="h-full w-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-neutral-500" />
                     )}
@@ -105,13 +145,19 @@ export default async function PublicProfileById({
               </div>
               <div className="min-w-0 pt-1">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{user.name || user.username || 'Learner'}</h1>
+                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+                    {user.name || user.username || 'Learner'}
+                  </h1>
                   {user.username && (
-                    <span className="rounded-full bg-neutral-900/70 px-2.5 py-0.5 text-xs text-neutral-300 ring-1 ring-neutral-800">@{user.username}</span>
+                    <span className="rounded-full bg-neutral-900/70 px-2.5 py-0.5 text-xs text-neutral-300 ring-1 ring-neutral-800">
+                      @{user.username}
+                    </span>
                   )}
                 </div>
                 {lastActiveAt && (
-                  <div className="mt-1 text-xs text-neutral-500">Last active {new Date(lastActiveAt).toLocaleDateString()}</div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    Last active {new Date(lastActiveAt).toLocaleDateString()}
+                  </div>
                 )}
                 {!isSelf && (
                   <div className="mt-3">
@@ -122,12 +168,22 @@ export default async function PublicProfileById({
                 <div className="mt-3 flex flex-wrap items-center gap-2 md:hidden">
                   <div className="flex shrink-0 flex-col items-center gap-2 px-1">
                     {rank?.iconUrl ? (
-                      <Image src={rank.iconUrl} alt={rank.name} width={72} height={72} className="relative top-[6px] h-[72px] w-[72px] object-contain" />
+                      <Image
+                        src={rank.iconUrl}
+                        alt={rank.name}
+                        width={72}
+                        height={72}
+                        className="relative top-[6px] h-[72px] w-[72px] object-contain"
+                      />
                     ) : null}
-                    <div className={`relative top-[4px] bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold leading-tight text-transparent rank-shimmer`}>
+                    <div
+                      className={`relative top-[4px] bg-gradient-to-r ${rankColor} rank-shimmer bg-clip-text text-sm leading-tight font-semibold text-transparent`}
+                    >
                       {rank?.name || 'Unranked'}
                     </div>
-                    <div className="text-xs leading-tight text-neutral-400">Elo {user.elo}</div>
+                    <div className="text-xs leading-tight text-neutral-400">
+                      Elo {user.elo}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -138,39 +194,58 @@ export default async function PublicProfileById({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] text-neutral-400">
                     <span>{currentRank ? currentRank.name : 'Unranked'}</span>
-                    <span className="text-neutral-500">{nextRank ? nextRank.name : 'Max'}</span>
+                    <span className="text-neutral-500">
+                      {nextRank ? nextRank.name : 'Max'}
+                    </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-900">
-                    <div className={`h-full bg-gradient-to-r ${rankColor}`} style={{ width: `${progressPct}%`, transition: 'width 700ms cubic-bezier(0.22,1,0.36,1)' }} />
+                    <div
+                      className={`h-full bg-gradient-to-r ${rankColor}`}
+                      style={{
+                        width: `${progressPct}%`,
+                        transition: 'width 700ms cubic-bezier(0.22,1,0.36,1)',
+                      }}
+                    />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-neutral-500">
                     <span>{currentRank?.minElo ?? 0}</span>
                     <span>{nextRank?.minElo ?? user.elo}</span>
                   </div>
                   {toNext != null && (
-                    <div className="text-[11px] text-neutral-400">{toNext} pts to next rank</div>
+                    <div className="text-[11px] text-neutral-400">
+                      {toNext} pts to next rank
+                    </div>
                   )}
                 </div>
               </div>
               <div className="flex shrink-0 flex-col items-center gap-2 px-1">
                 {rank?.iconUrl ? (
-                  <Image src={rank.iconUrl} alt={rank.name} width={72} height={72} className="relative top-[6px] h-[72px] w-[72px] object-contain" />
+                  <Image
+                    src={rank.iconUrl}
+                    alt={rank.name}
+                    width={72}
+                    height={72}
+                    className="relative top-[6px] h-[72px] w-[72px] object-contain"
+                  />
                 ) : null}
-                <div className={`relative top-[4px] bg-gradient-to-r ${rankColor} bg-clip-text text-sm font-semibold leading-tight text-transparent rank-shimmer`}>
+                <div
+                  className={`relative top-[4px] bg-gradient-to-r ${rankColor} rank-shimmer bg-clip-text text-sm leading-tight font-semibold text-transparent`}
+                >
                   {rank?.name || 'Unranked'}
                 </div>
-                <div className="text-xs leading-tight text-neutral-400">Elo {user.elo}</div>
+                <div className="text-xs leading-tight text-neutral-400">
+                  Elo {user.elo}
+                </div>
               </div>
             </div>
           </div>
-
         </div>
       </section>
 
       {user.bio && (
         <section className="card p-6">
           <h2 className="mb-2 text-xl font-semibold">Bio</h2>
-          <p className="text-neutral-300 whitespace-pre-wrap">{user.bio}</p>
+          <p className="whitespace-pre-wrap text-neutral-300">{user.bio}</p>
         </section>
       )}
 
@@ -180,15 +255,21 @@ export default async function PublicProfileById({
           <div className="text-2xl font-semibold">{lifetimeMastered}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Median Short‑answer Grade</div>
-          <div className="text-2xl font-semibold">{medianShort != null ? `${medianShort}/10` : '—'}</div>
+          <div className="text-sm text-neutral-400">
+            Median Short‑answer Grade
+          </div>
+          <div className="text-2xl font-semibold">
+            {medianShort != null ? `${medianShort}/10` : '—'}
+          </div>
         </div>
         <div className="card p-4">
           <div className="text-sm text-neutral-400">Streak</div>
           <div className="text-2xl font-semibold">{user.streak}</div>
         </div>
         <div className="card p-4">
-          <div className="text-sm text-neutral-400">Lectures Created (Lifetime)</div>
+          <div className="text-sm text-neutral-400">
+            Lectures Created (Lifetime)
+          </div>
           <div className="text-2xl font-semibold">{lifetimeLectures}</div>
         </div>
         <div className="card p-4">
@@ -200,8 +281,6 @@ export default async function PublicProfileById({
           <div className="text-2xl font-semibold">#{leaderboardRank}</div>
         </div>
       </section>
-
-
 
       <div className="text-sm text-neutral-500">
         <Link href="/leaderboard" className="hover:underline">

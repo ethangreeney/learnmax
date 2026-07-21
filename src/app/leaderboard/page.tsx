@@ -1,7 +1,6 @@
 // Avoid next/image here to reduce remote domain issues in anon sessions
 import RankGuide from '@/components/RankGuide';
-import { getLeaderboardCached, type LeaderboardItem } from '@/lib/cached';
-import { getRankGradient } from '@/lib/ranks';
+import { getLeaderboardCached } from '@/lib/cached';
 import Podium from './Podium';
 import LeaderboardRow from '@/components/LeaderboardRow';
 import JumpToMe from './JumpToMe';
@@ -64,7 +63,16 @@ export default async function LeaderboardPage({ searchParams }: { searchParams?:
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-6 text-sm text-neutral-400">
-          No users yet{scope === 'following' ? '. Try Global scope to discover people.' : '.'}
+          {scope === 'following' && !viewerId ? (
+            <>
+              <a href="/login?next=%2Fleaderboard%3Fscope%3Dfollowing" className="font-medium text-neutral-200 underline underline-offset-4 hover:text-white">
+                Sign in
+              </a>{' '}
+              to see the people you follow.
+            </>
+          ) : (
+            <>No users yet{scope === 'following' ? '. Try Global scope to discover people.' : '.'}</>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 divide-y divide-neutral-800">

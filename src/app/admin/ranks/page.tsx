@@ -1,11 +1,11 @@
-import { requireAdmin } from '@/lib/admin';
+import { requireAdminPage } from '@/lib/admin';
 import { getRanksSafe } from '@/lib/ranks';
 import RankManagerClient from './Client';
 
 async function getRanks() {
   // Query DB directly to avoid server-fetching relative URLs
   const ranks = await getRanksSafe();
-  return (ranks as any[]) as Array<{
+  return ranks as any[] as Array<{
     slug: string;
     name: string;
     minElo: number;
@@ -14,7 +14,7 @@ async function getRanks() {
 }
 
 export default async function AdminRanksPage() {
-  await requireAdmin();
+  await requireAdminPage();
   const ranks = await getRanks();
   return (
     <div className="container-narrow space-y-6">

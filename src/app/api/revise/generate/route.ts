@@ -3,14 +3,12 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
-import { normalizeModelMarkdown, stripDependentPhrasing } from '@/lib/text/normalize-markdown';
-
-type MCQ = {
-  prompt: string;
-  options: string[];
-  answerIndex: number;
-  explanation: string;
-};
+import {
+  normalizeModelMarkdown,
+  stripDependentPhrasing,
+} from '@/lib/text/normalize-markdown';
+import { SOURCE_HANDLING_RULES, wrapSource } from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 type ShortQ = {
   prompt: string;
@@ -25,13 +23,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
-    const body = (await req.json().catch(() => ({}))) as { lectureId?: string; size?: number; subtopicId?: string };
+    const limit = rateLimit(
+      rateLimitKey(req, 'revision-set', userId),
+      20,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many revision requests. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
+    const body = (await req.json().catch(() => ({}))) as {
+      lectureId?: string;
+      size?: number;
+      subtopicId?: string;
+    };
     const lectureId = String(body?.lectureId || '').trim();
     const subtopicId = String(body?.subtopicId || '').trim();
     // Force exactly two short-answer questions for revision flow
     const size = 2;
     if (!lectureId) {
-      return NextResponse.json({ error: 'lectureId required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'lectureId required' },
+        { status: 400 }
+      );
     }
     const lecture = await prisma.lecture.findFirst({
       where: { id: lectureId, userId },
@@ -63,7 +79,10 @@ export async function POST(req: NextRequest) {
         if (overview) parts.push(overview);
         if (explanation) parts.push(explanation);
         const scoped = parts.join('\n\n').trim();
-        lessonMd = (scoped && scoped.length >= 50) ? scoped : (lecture.originalContent || '');
+        lessonMd =
+          scoped && scoped.length >= 50
+            ? scoped
+            : lecture.originalContent || '';
       }
     }
     if (!lessonMd) {
@@ -81,7 +100,10 @@ export async function POST(req: NextRequest) {
       lessonMd = composite.length >= 50 ? composite : lecture.originalContent;
     }
     if (!lessonMd || lessonMd.trim().length < 50) {
-      return NextResponse.json({ error: 'Lecture content is too short for revise' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Lecture content is too short for revise' },
+        { status: 400 }
+      );
     }
 
     // Generate short-answer prompts + model answers via AI (exactly two)
@@ -91,6 +113,7 @@ export async function POST(req: NextRequest) {
       // Use ai.ts generateJSON with a strict rubric
       const { generateJSON } = await import('@/lib/ai');
       const prompt = `Using ONLY the LESSON below, create ${shortCount} short-answer questions with model answers.
+${SOURCE_HANDLING_RULES}
 Return only JSON:
 { "questions": [ { "prompt": "string", "modelAnswer": "string" } ] }
 Rules:
@@ -98,23 +121,25 @@ Rules:
 - The question text must be self-contained and must not include phrases like "Based on the lesson/content", "According to the text", or similar dependent wording.
 - Model answers must be concise (2–6 sentences) and complete.
 - Do not include any content not grounded in the lesson.
----
-LESSON:
-${lessonMd.slice(0, 6000)}
----`;
-      try {
-        const json: any = await generateJSON(
-          prompt,
-          process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
+${wrapSource(lessonMd.slice(0, 6000), 'LESSON')}`;
+      const json: any = await generateJSON(prompt);
+      const arr = Array.isArray(json?.questions) ? json.questions : [];
+      for (const q of arr) {
+        const p = stripDependentPhrasing(
+          normalizeModelMarkdown(String(q?.prompt || '').trim())
         );
-        const arr = Array.isArray(json?.questions) ? json.questions : [];
-        for (const q of arr) {
-          const p = stripDependentPhrasing(normalizeModelMarkdown(String(q?.prompt || '').trim()));
-          const a = stripDependentPhrasing(normalizeModelMarkdown(String(q?.modelAnswer || '').trim()));
-          if (p && a) shortQs.push({ prompt: p, modelAnswer: a });
-          if (shortQs.length >= shortCount) break;
-        }
-      } catch { }
+        const a = stripDependentPhrasing(
+          normalizeModelMarkdown(String(q?.modelAnswer || '').trim())
+        );
+        if (p && a) shortQs.push({ prompt: p, modelAnswer: a });
+        if (shortQs.length >= shortCount) break;
+      }
+      if (shortQs.length !== shortCount) {
+        return NextResponse.json(
+          { error: 'Could not generate a complete revision set.' },
+          { status: 502 }
+        );
+      }
     }
 
     // Compose and shuffle (short answers only)
@@ -128,8 +153,9 @@ ${lessonMd.slice(0, 6000)}
 
     return NextResponse.json({ questions: mixed });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
-
-

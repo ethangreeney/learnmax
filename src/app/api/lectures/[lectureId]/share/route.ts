@@ -4,17 +4,14 @@ import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import prisma from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
- 
+
 import { generateOpaqueToken } from '@/lib/shared/token';
 
 export const runtime = 'nodejs';
 
 type Params = { lectureId: string };
 
-export async function POST(
-  req: NextRequest,
-  ctx: { params: Promise<Params> }
-) {
+export async function POST(req: NextRequest, ctx: { params: Promise<Params> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!isSessionWithUser(session)) {
@@ -31,7 +28,8 @@ export async function POST(
       where: { id: lectureId, userId },
       select: { id: true, shareToken: true },
     });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!owned)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     let token = owned.shareToken || null;
     if (!token || body?.regenerate) {
@@ -54,30 +52,47 @@ export async function POST(
       },
     });
 
-    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try {
+      revalidateTag(`user-lectures:${userId}`);
+    } catch {}
 
     // Prefer a configured public base URL, otherwise use the actual request host.
     // Avoid using VERCEL_URL for public links to ensure we stick to the custom domain.
     const h = req.headers;
     const forwardedProto = h.get('x-forwarded-proto') || 'https';
     const forwardedHost = h.get('x-forwarded-host') || h.get('host') || '';
-    const requestOrigin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : req.nextUrl.origin;
+    const requestOrigin = forwardedHost
+      ? `${forwardedProto}://${forwardedHost}`
+      : req.nextUrl.origin;
     const base = process.env.NEXT_PUBLIC_BASE_URL || '';
     const origin = base
-      ? (base.startsWith('http') ? base : `https://${base}`)
+      ? base.startsWith('http')
+        ? base
+        : `https://${base}`
       : requestOrigin;
     const shareUrl = `${origin}/lectures/share/${updated.shareToken}`;
     try {
       void fetch('/api/telemetry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'lecture.share.created', lectureId, discoverable }),
+        body: JSON.stringify({
+          type: 'lecture.share.created',
+          lectureId,
+          discoverable,
+        }),
       }).catch(() => {});
     } catch {}
 
-    return NextResponse.json({ shareUrl, token: updated.shareToken, discoverable: updated.isDiscoverable });
+    return NextResponse.json({
+      shareUrl,
+      token: updated.shareToken,
+      discoverable: updated.isDiscoverable,
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
 
@@ -92,14 +107,20 @@ export async function DELETE(
     }
     const { lectureId } = await ctx.params;
     const userId = session.user.id;
-    const owned = await prisma.lecture.findFirst({ where: { id: lectureId, userId }, select: { id: true } });
-    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const updated = await prisma.lecture.update({
+    const owned = await prisma.lecture.findFirst({
+      where: { id: lectureId, userId },
+      select: { id: true },
+    });
+    if (!owned)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    await prisma.lecture.update({
       where: { id: lectureId },
       data: { shareRevokedAt: new Date(), shareToken: null },
       select: { id: true },
     });
-    try { revalidateTag(`user-lectures:${userId}`); } catch {}
+    try {
+      revalidateTag(`user-lectures:${userId}`);
+    } catch {}
     try {
       void fetch('/api/telemetry', {
         method: 'POST',
@@ -109,8 +130,9 @@ export async function DELETE(
     } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
-
-

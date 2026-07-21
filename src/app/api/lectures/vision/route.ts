@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GoogleAIFileManager } from '@google/generative-ai/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
+import { generateJSONFromPdf, PRIMARY_MODEL } from '@/lib/ai';
 import { isSessionWithUser } from '@/lib/session-utils';
+import { buildPdfBreakdownPrompt } from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -16,6 +17,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
+    const limit = rateLimit(
+      rateLimitKey(req, 'pdf-vision', userId),
+      8,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many PDF requests. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
 
     const contentType = req.headers.get('content-type') || '';
     if (!contentType.includes('multipart/form-data')) {
@@ -24,6 +36,7 @@ export async function POST(req: NextRequest) {
         { status: 415 }
       );
     }
+
     const form = await req.formData();
     const file = form.get('file');
     if (!file || !(file instanceof File)) {
@@ -35,98 +48,45 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey)
+    if (file.size > 20 * 1024 * 1024) {
       return NextResponse.json(
-        { error: 'GOOGLE_API_KEY not set' },
-        { status: 500 }
-      );
-    const client = new GoogleGenerativeAI(apiKey);
-    const files = new GoogleAIFileManager(apiKey);
-
-    // Upload PDF to Gemini File API
-    const arrayBuffer = await file.arrayBuffer();
-    const uploaded = await files.uploadFile(Buffer.from(arrayBuffer), {
-      mimeType: 'application/pdf',
-      displayName: file.name,
-    });
-
-    // Poll until ACTIVE
-    let fileRec = uploaded.file as any;
-    const tStart = Date.now();
-    while (fileRec.state !== 'ACTIVE') {
-      if (Date.now() - tStart > 45000) {
-        return NextResponse.json(
-          { error: 'Timed out waiting for file processing' },
-          { status: 504 }
-        );
-      }
-      await new Promise((r) => setTimeout(r, 1200));
-      fileRec = await files.getFile(fileRec.name);
-    }
-
-    // Ask Gemini to analyze full PDF (text + images). Ignore client-selected model.
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    const model = client.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0,
-      },
-    });
-
-    const prompt = [
-      'Analyze this PDF end-to-end (text and images).',
-      'Return ONLY valid JSON in this exact shape (no extra prose):',
-      '{ "topic": string, "subtopics": [ { "title": string, "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string } ] }',
-      'Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.',
-    ].join('\n');
-
-    const res = await model.generateContent([
-      {
-        fileData: {
-          fileUri: (fileRec as any).uri,
-          mimeType: 'application/pdf',
-        },
-      },
-      { text: prompt },
-    ]);
-    const text = res.response.text?.() || '';
-    let json: any = {};
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return NextResponse.json(
-        { error: 'Invalid JSON from model', raw: text },
-        { status: 502 }
+        { error: 'PDF is too large. The maximum file size is 20 MB.' },
+        { status: 413 }
       );
     }
 
-    // Persist minimal lecture from JSON
+    const prompt = buildPdfBreakdownPrompt();
+
+    const pdf = Buffer.from(await file.arrayBuffer());
+    const json = await generateJSONFromPdf(pdf, file.name, prompt);
     const topic =
       typeof json?.topic === 'string' && json.topic.trim()
         ? json.topic.trim()
         : 'Generating lesson... Please Wait';
-    const subs = Array.isArray(json?.subtopics) ? json.subtopics : [];
-    const cappedSubs = subs.slice(0, 12);
+    const subtopics = Array.isArray(json?.subtopics)
+      ? json.subtopics.slice(0, 12)
+      : [];
 
     const lecture = await prisma.lecture.create({
       data: {
         title: topic,
-        originalContent: 'PDF (vision) upload',
+        originalContent: 'PDF upload',
         userId,
         lastOpenedAt: new Date(),
       },
     });
-    if (cappedSubs.length) {
+
+    if (subtopics.length) {
       await prisma.subtopic.createMany({
-        data: cappedSubs.map((s: any, idx: number) => ({
-          order: idx,
-          title: String(s?.title || `Section ${idx + 1}`),
-          importance: String(s?.importance || 'medium'),
-          difficulty: Number(s?.difficulty || 2),
-          overview: String(s?.overview || ''),
+        data: subtopics.map((subtopic: any, index: number) => ({
+          order: index,
+          title: String(subtopic?.title || `Section ${index + 1}`),
+          importance: String(subtopic?.importance || 'medium'),
+          difficulty: Math.max(
+            1,
+            Math.min(3, Number(subtopic?.difficulty) || 2)
+          ),
+          overview: String(subtopic?.overview || ''),
           lectureId: lecture.id,
         })),
       });
@@ -134,15 +94,17 @@ export async function POST(req: NextRequest) {
 
     try {
       revalidateTag(`user-lectures:${userId}`);
-    } catch {}
-    try {
       revalidateTag(`user-stats:${userId}`);
     } catch {}
-    return NextResponse.json({ lectureId: lecture.id });
-  } catch (e: any) {
-    console.error('VISION_UPLOAD_ERROR', e);
+
+    return NextResponse.json({
+      lectureId: lecture.id,
+      debug: { model: PRIMARY_MODEL },
+    });
+  } catch (error: any) {
+    console.error('VISION_UPLOAD_ERROR', error);
     return NextResponse.json(
-      { error: e?.message || 'server error' },
+      { error: error?.message || 'Server error' },
       { status: 500 }
     );
   }

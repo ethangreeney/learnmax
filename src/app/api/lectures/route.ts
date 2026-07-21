@@ -1,21 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import pdf from 'pdf-extraction';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GoogleAIFileManager } from '@google/generative-ai/server';
 import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
-import { generateJSON, generateText } from '@/lib/ai';
+import {
+  generateJSON,
+  generateJSONFromPdf,
+  generateText,
+  PRIMARY_MODEL,
+} from '@/lib/ai';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
-
-type TransactionClient = Parameters<
-  Parameters<typeof prisma.$transaction>[0]
->[0];
+import {
+  buildBreakdownPrompt,
+  buildPdfBreakdownPrompt,
+  MARKDOWN_STYLE_RULES,
+  SOURCE_HANDLING_RULES,
+  wrapSource,
+} from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 const DEFAULT_TITLE = 'Generating lesson... Please Wait';
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
+const MAX_SOURCE_CHARS = 250_000;
+
+function isAllowedBlobUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname.endsWith('.public.blob.vercel-storage.com')
+    );
+  } catch {
+    return false;
+  }
+}
 
 type BreakdownSubtopic = {
   title: string;
@@ -35,7 +56,6 @@ type QuizQuestion = {
   explanation: string;
   subtopicTitle?: string;
 };
-type QuizOut = { questions: QuizQuestion[] };
 
 // --- Helpers: shape guards & fallbacks --------------------------------------
 
@@ -75,7 +95,10 @@ async function extractPdfTextQuiet(
         const code = typeof warning === 'string' ? rest?.[1] : warning?.code;
         const message =
           typeof warning === 'string' ? warning : warning?.message || '';
-        if (code === 'DEP0005' || String(message).includes('Buffer() is deprecated')) {
+        if (
+          code === 'DEP0005' ||
+          String(message).includes('Buffer() is deprecated')
+        ) {
           return;
         }
       } catch {}
@@ -177,15 +200,6 @@ function shuffleOptionsWithAnswer(
 
 // Note: All quiz fallbacks removed. If generation fails, we leave the subtopic without questions.
 
-function sanitizeQuiz(raw: any, subtopics: BreakdownSubtopic[]): QuizOut {
-  let items: QuizQuestion[] = [];
-  if (Array.isArray(raw?.questions)) {
-    items = raw.questions.filter(isGoodQuestion);
-  }
-  // Do not auto-fill fallback questions; return empty if none
-  return { questions: items };
-}
-
 async function selectTopSubtopics(
   subtopics: BreakdownSubtopic[],
   preferredModel: string | undefined,
@@ -212,9 +226,7 @@ CANDIDATES:
 ${JSON.stringify(payload, null, 2)}
 `;
   try {
-    const qualityModel =
-      process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro';
-    const out = await generateJSON(prompt, qualityModel);
+    const out = await generateJSON(prompt);
     const indices: number[] = Array.isArray(out?.indices)
       ? out.indices
           .map((n: any) => Number(n))
@@ -313,10 +325,7 @@ async function generateSectionMarkdowns(
     return picked.join('\n\n\n');
   };
   // Run subtopics with a bounded concurrency for better latency and fewer throttles
-  const limit = Math.max(
-    1,
-    Number(process.env.AI_SECTION_CONCURRENCY || '4')
-  );
+  const limit = Math.max(1, Number(process.env.AI_SECTION_CONCURRENCY || '4'));
   let inFlight = 0;
   const queue: Array<() => Promise<void>> = [];
   const result: Record<string, string> = {};
@@ -335,38 +344,35 @@ async function generateSectionMarkdowns(
   };
 
   const tasks = subtopics.map((s) => async () => {
-    const systemMsg =
-      'You are writing ONE section of a lecture. Be concise and instructional; avoid preambles or meta commentary. Format strictly in Markdown: no raw HTML; do not wrap prose in code fences; use $...$ or $$...$$ for math (prefer inline for short expressions); use **bold** only for short key terms; use backticks only for code identifiers; keep paragraphs short and use lists when helpful.';
+    const systemMsg = [
+      'You are writing one focused section of a lesson.',
+      SOURCE_HANDLING_RULES,
+      'Teach the idea accurately and directly without a preamble or meta commentary.',
+      MARKDOWN_STYLE_RULES,
+    ].join(' ');
     const title = s.title;
     const overview = s.overview || '';
     const prompt = [
-      `You are writing ONE section of a lecture. Ground it in the document.`,
       `Lecture: "${lectureTitle}"`,
       `Subtopic: "${title}"`,
       `Overview: ${overview}`,
-      `Write 125–225 words of clean Markdown.`,
-      `Formatting:`,
-      `- Use Markdown only. Do NOT use raw HTML tags.`,
-      `- Do NOT wrap the entire answer or normal prose in code fences. Use fenced code blocks only for actual program code.`,
-      `- Use inline math $...$ for short expressions; use $$...$$ only for multi-line display math.`,
-      `- Use **bold** only for short key terms on first mention; never bold whole sentences.`,
-      `- Use backticks only for code identifiers (e.g., function names), never for math or prose.`,
-      `Use short paragraphs and bullet lists where helpful.`,
-      `Start directly with content. No preamble. No H1.`,
-      `Focus on definitions, theorems, algorithms, and examples that appear in the document; avoid generic use cases unless present.`,
-      `Value simplicity and clarity very highly. Only use jargon and complex words when necessary.`,
-      `---`,
-      `DOCUMENT EXCERPTS (relevant slices only):`,
-      selectRelevantContext(
-        title,
-        overview,
-        Math.max(1000, Number(process.env.AI_SECTION_CONTEXT_CHARS || '2400'))
+      'Write 140-220 words. Start with the core idea, explain why it works or matters, and include one compact example only when the source supports it.',
+      'Prefer plain language. Define unavoidable jargon at first use. Do not add an H1 or repeat the section title.',
+      wrapSource(
+        selectRelevantContext(
+          title,
+          overview,
+          Math.max(1000, Number(process.env.AI_SECTION_CONTEXT_CHARS || '2400'))
+        ),
+        'RELEVANT SOURCE EXCERPTS'
       ),
     ].join('\n');
     const mdRaw = await generateText(prompt, preferredModel, systemMsg);
     // Normalize to ensure clean Markdown and escape stray angle brackets
     try {
-      const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+      const { normalizeModelMarkdown } = await import(
+        '@/lib/text/normalize-markdown'
+      );
       const normalized = normalizeModelMarkdown(mdRaw);
       result[title.trim().toLowerCase()] = sanitizeDbText(normalized);
     } catch {
@@ -381,7 +387,6 @@ async function generateSectionMarkdowns(
   }
   // Wait for all to finish
   while (queue.length || inFlight) {
-     
     await new Promise((r) => setTimeout(r, 25));
   }
   return result;
@@ -396,13 +401,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
     const userId = session.user.id;
+    const limit = rateLimit(
+      rateLimitKey(req, 'lecture-creation', userId),
+      8,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many lesson requests. Please wait and try again.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(
+              Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1000))
+            ),
+          },
+        }
+      );
+    }
 
     const contentType = req.headers.get('content-type') || '';
     let text = '';
     // Keep a copy of the raw PDF bytes when available so we can extract text
     // as a reliable fallback (and to ground chat later).
     let pdfBuffer: Buffer | null = null;
-    let approxPages = 0;
 
     // Ignore client-selected model for lecture generation; use server-side defaults
     const preferredModel: string | undefined = undefined;
@@ -426,6 +448,12 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      if (file.size > MAX_PDF_BYTES) {
+        return NextResponse.json(
+          { error: 'PDF is too large. The maximum file size is 20 MB.' },
+          { status: 413 }
+        );
+      }
       // Prefer Vision first for PDFs; keep file for later
       visionCandidate = file as File;
       try {
@@ -440,14 +468,28 @@ export async function POST(req: NextRequest) {
         ? (body.blobUrls as any[])
             .map((u) => String(u || '').trim())
             .filter(Boolean)
+            .slice(0, 5)
         : single
-        ? [single]
-        : [];
+          ? [single]
+          : [];
+
+      if (content.length > 100_000) {
+        return NextResponse.json(
+          { error: 'Notes are too long. Keep them under 100,000 characters.' },
+          { status: 413 }
+        );
+      }
 
       if (blobUrls.length > 0) {
         // Fetch and extract text from each PDF. If extraction fails for a single-PDF case, try vision.
         const buffers: Buffer[] = [];
         for (const url of blobUrls) {
+          if (!isAllowedBlobUrl(url)) {
+            return NextResponse.json(
+              { error: 'Invalid PDF upload URL.' },
+              { status: 400 }
+            );
+          }
           const resp = await fetch(url);
           if (!resp.ok) {
             return NextResponse.json(
@@ -456,14 +498,19 @@ export async function POST(req: NextRequest) {
             );
           }
           const arr = Buffer.from(await resp.arrayBuffer());
+          if (arr.byteLength > MAX_PDF_BYTES) {
+            return NextResponse.json(
+              { error: 'PDF is too large. The maximum file size is 20 MB.' },
+              { status: 413 }
+            );
+          }
           buffers.push(arr);
         }
 
         const extractedPieces: string[] = [];
         for (const buf of buffers) {
           try {
-            const { text: piece, pages } = await extractPdfTextQuiet(buf);
-            approxPages += Number(pages || 0) || 0;
+            const { text: piece } = await extractPdfTextQuiet(buf);
             if (piece) extractedPieces.push(piece);
           } catch {
             // continue; we'll try vision below if single
@@ -521,10 +568,13 @@ export async function POST(req: NextRequest) {
     // Try to extract text from PDF first (preferred grounding for large PDFs)
     if (!text && pdfBuffer) {
       try {
-        const { text: extracted, pages } = await extractPdfTextQuiet(pdfBuffer);
-        approxPages = pages;
+        const { text: extracted } = await extractPdfTextQuiet(pdfBuffer);
         if (extracted) text = extracted;
       } catch {}
+    }
+
+    if (text.length > MAX_SOURCE_CHARS) {
+      text = text.slice(0, MAX_SOURCE_CHARS);
     }
 
     // EARLY RETURN for immediate navigation:
@@ -556,7 +606,7 @@ export async function POST(req: NextRequest) {
         {
           lectureId: lecture.id,
           debug: {
-            model: preferredModel || process.env.GEMINI_MODEL || 'default',
+            model: PRIMARY_MODEL,
             immediate: true,
           },
         },
@@ -567,101 +617,14 @@ export async function POST(req: NextRequest) {
     // Optional: vision path when OCR/text extraction is thin
     if (!text && visionCandidate) {
       try {
-        const apiKey = process.env.GOOGLE_API_KEY;
-        if (!apiKey) throw new Error('GOOGLE_API_KEY not set');
-        const client = new GoogleGenerativeAI(apiKey);
-        const files = new GoogleAIFileManager(apiKey);
         const buf =
           pdfBuffer || Buffer.from(await visionCandidate.arrayBuffer());
-        const uploaded = await files.uploadFile(buf, {
-          mimeType: 'application/pdf',
-          displayName: (visionCandidate as any).name || 'upload.pdf',
-        });
-        let fileRec: any = uploaded.file;
-        const tStart = Date.now();
-        while (fileRec.state !== 'ACTIVE') {
-          if (Date.now() - tStart > 45000) throw new Error('vision timeout');
-          await new Promise((r) => setTimeout(r, 1200));
-          fileRec = await files.getFile(fileRec.name);
-        }
-        const model = client.getGenerativeModel({
-          model:
-            preferredModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0,
-          },
-        });
-        const visionPrompt = [
-          'Analyze this PDF (text + images).',
-          'Return ONLY JSON with exactly this shape (no extra prose):',
-          '{ "topic": string, "subtopics": [ { "title": string, "importance": "high"|"medium"|"low", "difficulty": 1|2|3, "overview": string } ] }',
-          'Base your response strictly on the PDF content; do not invent unrelated topics.',
-        ].join('\n');
-        const res = await model.generateContent([
-          { fileData: { fileUri: fileRec.uri, mimeType: 'application/pdf' } },
-          { text: visionPrompt },
-        ]);
-    const out = res.response.text?.() || '';
-        // Be tolerant of models that wrap JSON in text/code fences
-        let parsed: any;
-        try {
-          parsed = JSON.parse(out);
-        } catch {
-          const fenced = out
-            .match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
-            ?.trim();
-          if (fenced) {
-            try {
-              parsed = JSON.parse(fenced);
-            } catch {}
-          }
-          if (!parsed) {
-            const objMatch = (() => {
-              let depth = 0,
-                start = -1,
-                inStr = false,
-                esc = false;
-              for (let i = 0; i < out.length; i++) {
-                const ch = out[i];
-                if (inStr) {
-                  if (esc) {
-                    esc = false;
-                    continue;
-                  }
-                  if (ch === '\\') {
-                    esc = true;
-                    continue;
-                  }
-                  if (ch === '"') {
-                    inStr = false;
-                  }
-                  continue;
-                }
-                if (ch === '"') {
-                  inStr = true;
-                  continue;
-                }
-                if (ch === '{') {
-                  if (depth === 0) start = i;
-                  depth++;
-                  continue;
-                }
-                if (ch === '}') {
-                  if (depth > 0 && --depth === 0 && start >= 0)
-                    return out.slice(start, i + 1);
-                }
-              }
-              return null;
-            })();
-            if (objMatch) {
-              try {
-                parsed = JSON.parse(objMatch);
-              } catch {}
-            }
-          }
-        }
-        if (!parsed) throw new Error('Invalid JSON from vision');
+        const visionPrompt = buildPdfBreakdownPrompt();
+        const parsed = await generateJSONFromPdf(
+          buf,
+          (visionCandidate as File).name || 'upload.pdf',
+          visionPrompt
+        );
         // Use parsed results as breakdown
         const bdFromVision = {
           topic: String(parsed?.topic || 'Untitled'),
@@ -677,10 +640,9 @@ export async function POST(req: NextRequest) {
         // Extract raw text (best-effort) for grounding chat/originalContent
         let extracted = '';
         try {
-          const { text: t, pages } = await extractPdfTextQuiet(
+          const { text: t } = await extractPdfTextQuiet(
             (pdfBuffer || buf) as Buffer
           );
-          approxPages = pages || approxPages;
           extracted = t;
         } catch {}
         // Merge any user-provided content with extracted text for grounding
@@ -716,16 +678,13 @@ export async function POST(req: NextRequest) {
           {
             lectureId: lecture.id,
             debug: {
-              model:
-                preferredModel ||
-                process.env.GEMINI_MODEL ||
-                'gemini-2.5-flash',
+              model: PRIMARY_MODEL,
               usedVision: true,
             },
           },
           { status: 201 }
         );
-      } catch (e) {
+      } catch {
         // If vision fails, continue to text-only path
       }
     }
@@ -758,7 +717,7 @@ export async function POST(req: NextRequest) {
         {
           lectureId: lecture.id,
           debug: {
-            model: preferredModel || process.env.GEMINI_MODEL || 'default',
+            model: PRIMARY_MODEL,
             deferred: true,
           },
         },
@@ -769,8 +728,7 @@ export async function POST(req: NextRequest) {
     // If we still have no text but we do have the PDF bytes, extract text now.
     if (!text && pdfBuffer) {
       try {
-        const { text: extracted, pages } = await extractPdfTextQuiet(pdfBuffer);
-        approxPages = pages || approxPages;
+        const { text: extracted } = await extractPdfTextQuiet(pdfBuffer);
         text = extracted;
       } catch {}
     }
@@ -802,7 +760,7 @@ export async function POST(req: NextRequest) {
         {
           lectureId: lecture.id,
           debug: {
-            model: preferredModel || process.env.GEMINI_MODEL || 'default',
+            model: PRIMARY_MODEL,
             immediate: true,
           },
         },
@@ -820,41 +778,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 1) Breakdown (robust)
-    const charLen = text.length;
-
-    const breakdownPrompt = `
-      You are an expert instructional designer. Create an exhaustive, sequential breakdown of the entire document below.
-
-      Goals:
-      - Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
-      - Preserve the original document order from start to finish.
-      - Be concise but complete: each subtopic should map to a coherent portion of the document.
-      - Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.
-
-      Return ONLY a single JSON object with exactly these keys:
-      {
-        "topic": "string",
-        "subtopics": [
-          {
-            "title": "string",
-            "importance": "high" | "medium" | "low",
-            "difficulty": 1 | 2 | 3,
-            "overview": "string"
-          }
-        ]
-      }
-
-      Document:
-      ---
-      ${text}
-    `;
+    const breakdownPrompt = buildBreakdownPrompt(text);
     const t0 = Date.now();
-    const bdRaw = await generateJSON(
-      breakdownPrompt,
-      process.env.AI_QUALITY_MODEL ||
-        process.env.OPENAI_MODEL ||
-        'gpt-5'
-    );
+    const bdRaw = await generateJSON(breakdownPrompt);
     let bd = sanitizeBreakdown(bdRaw, text);
     // Select coverage-maximizing subtopics up to cap
     const MAX_SUBTOPICS = 12;
@@ -895,11 +821,7 @@ export async function POST(req: NextRequest) {
       ${JSON.stringify({ title: firstSub?.title, overview: firstSub?.overview || '' }, null, 2)}
     `.trim();
     const mid = Date.now();
-    const modelForQuiz =
-      preferredModel ||
-      process.env.AI_QUALITY_MODEL ||
-      process.env.OPENAI_MODEL ||
-      'gpt-5';
+    const modelForQuiz = PRIMARY_MODEL;
     const qzRaw = await generateJSON(quizPromptFirst, modelForQuiz);
     const msBreakdown = mid - t0;
     const msQuiz = Date.now() - mid;
@@ -1017,7 +939,7 @@ export async function POST(req: NextRequest) {
       {
         lectureId: lecture.id,
         debug: {
-          model: preferredModel || process.env.GEMINI_MODEL || 'default',
+          model: PRIMARY_MODEL,
           msBreakdown,
           msQuiz,
         },

@@ -1,7 +1,16 @@
 // src/app/api/explain-db/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { generateText, PRIMARY_MODEL, streamTextChunks } from '@/lib/ai';
 import prisma from '@/lib/prisma';
+import { authOptions } from '@/lib/auth';
+import { isSessionWithUser } from '@/lib/session-utils';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
+import {
+  MARKDOWN_STYLE_RULES,
+  SOURCE_HANDLING_RULES,
+  wrapSource,
+} from '@/lib/ai-prompts';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -112,9 +121,7 @@ function stripMarkdownFormatting(md: string): string {
 }
 
 function toSentences(text: string): string[] {
-  const t = stripMarkdownFormatting(text)
-    .replace(/\s+/g, ' ')
-    .trim();
+  const t = stripMarkdownFormatting(text).replace(/\s+/g, ' ').trim();
   if (!t) return [];
   const parts = t
     .split(/(?<=\S[\.!?])\s+(?=[A-Z0-9("\[])/)
@@ -124,10 +131,10 @@ function toSentences(text: string): string[] {
 }
 
 function buildGist(md: string, maxSentences = 2, maxChars = 320): string {
-  const sentences = toSentences(md)
-    .filter((s) => s.split(/\s+/).length >= 5);
+  const sentences = toSentences(md).filter((s) => s.split(/\s+/).length >= 5);
   const gist = sentences.slice(0, maxSentences).join(' ');
-  const clipped = gist.length > maxChars ? gist.slice(0, maxChars - 1) + '…' : gist;
+  const clipped =
+    gist.length > maxChars ? gist.slice(0, maxChars - 1) + '…' : gist;
   return clipped;
 }
 
@@ -149,7 +156,11 @@ function jaccardSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : inter / union;
 }
 
-function dedupeAgainstPrior(currentMd: string, priorMds: string[], threshold = 0.82): string {
+function dedupeAgainstPrior(
+  currentMd: string,
+  priorMds: string[],
+  threshold = 0.82
+): string {
   // Back-compat: keep old behavior as a fallback if structure-preserving fails
   try {
     return dedupeMarkdownPreservingStructure(currentMd, priorMds, threshold);
@@ -170,7 +181,11 @@ function dedupeAgainstPrior(currentMd: string, priorMds: string[], threshold = 0
   }
 }
 
-function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[], threshold = 0.82): string {
+function dedupeMarkdownPreservingStructure(
+  currentMd: string,
+  priorMds: string[],
+  threshold = 0.82
+): string {
   if (!currentMd) return '';
   const priorSentences: string[] = [];
   for (const p of priorMds) priorSentences.push(...toSentences(p));
@@ -180,15 +195,12 @@ function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[]
   const isHeading = (l: string, next?: string): boolean => {
     if (/^\s{0,3}#{1,6}\s+/.test(l)) return true;
     const trimmed = (next || '').trim();
-    return l.trim().length > 0 && (/^=+$/.test(trimmed) || /^-+$/.test(trimmed));
+    return (
+      l.trim().length > 0 && (/^=+$/.test(trimmed) || /^-+$/.test(trimmed))
+    );
   };
   const isTableRow = (l: string): boolean => /^\s*\|.*\|\s*$/.test(l);
   const isBlank = (l: string): boolean => /^\s*$/.test(l);
-
-  const tryKeepSentence = (s: string): boolean => {
-    for (const p of priorSentences) if (jaccardSimilarity(s, p) >= threshold) return false;
-    return true;
-  };
 
   const lines = String(currentMd).split('\n');
   const outBlocks: string[] = [];
@@ -201,7 +213,10 @@ function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[]
       i++;
       while (i < lines.length) {
         block.push(lines[i]);
-        if (isFence(lines[i])) { i++; break; }
+        if (isFence(lines[i])) {
+          i++;
+          break;
+        }
         i++;
       }
       outBlocks.push(block.join('\n'));
@@ -245,7 +260,11 @@ function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[]
         if (isListItem(lines[i]) || /^\s{2,}\S/.test(lines[i])) {
           listLines.push(lines[i]);
           i++;
-        } else if (isTableRow(lines[i]) || isFence(lines[i]) || isHeading(lines[i], lines[i + 1])) {
+        } else if (
+          isTableRow(lines[i]) ||
+          isFence(lines[i]) ||
+          isHeading(lines[i], lines[i + 1])
+        ) {
           break; // end list block before other block types
         } else {
           // treat as paragraph start -> stop list
@@ -289,7 +308,14 @@ function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[]
     // Paragraphs and other text: gather until blank line
     if (!isBlank(line)) {
       const paraLines: string[] = [];
-      while (i < lines.length && !isBlank(lines[i]) && !isFence(lines[i]) && !isListItem(lines[i]) && !isTableRow(lines[i]) && !isHeading(lines[i], lines[i + 1])) {
+      while (
+        i < lines.length &&
+        !isBlank(lines[i]) &&
+        !isFence(lines[i]) &&
+        !isListItem(lines[i]) &&
+        !isTableRow(lines[i]) &&
+        !isHeading(lines[i], lines[i + 1])
+      ) {
         paraLines.push(lines[i]);
         i++;
       }
@@ -317,7 +343,14 @@ function dedupeMarkdownPreservingStructure(currentMd: string, priorMds: string[]
 
 function extractDoNotRepeatTerms(priorMds: string[], topK = 24): string[] {
   const freq = new Map<string, number>();
-  const bad = new Set(['Overview', 'Introduction', 'Summary', 'Appendix', 'Section', 'Chapter']);
+  const bad = new Set([
+    'Overview',
+    'Introduction',
+    'Summary',
+    'Appendix',
+    'Section',
+    'Chapter',
+  ]);
   const push = (w: string) => freq.set(w, (freq.get(w) || 0) + 1);
   for (const md of priorMds) {
     const text = stripMarkdownFormatting(md);
@@ -347,7 +380,11 @@ type CoveragePack = {
   recentFull: Array<{ title: string; text: string }>;
 };
 
-async function buildCoveragePack(lectureId: string, currentSubtopicId: string | null, currentTitleFallback: string): Promise<CoveragePack | null> {
+async function buildCoveragePack(
+  lectureId: string,
+  currentSubtopicId: string | null,
+  currentTitleFallback: string
+): Promise<CoveragePack | null> {
   if (!lectureId) return null;
   try {
     const subtopics = await prisma.subtopic.findMany({
@@ -361,24 +398,69 @@ async function buildCoveragePack(lectureId: string, currentSubtopicId: string | 
     if (currentSubtopicId) {
       currentIdx = subtopics.findIndex((s) => s.id === currentSubtopicId);
     }
-    const currentTitle = currentIdx >= 0 ? subtopics[currentIdx].title : (currentTitleFallback || subtopics[0].title);
+    const currentTitle =
+      currentIdx >= 0
+        ? subtopics[currentIdx].title
+        : currentTitleFallback || subtopics[0].title;
     const prior = currentIdx >= 0 ? subtopics.slice(0, currentIdx) : [];
-    const priorWithText = prior.filter((p) => (p.explanation || '').trim().length > 0);
-    const priorGists = priorWithText.map((p) => ({ title: p.title, gist: buildGist(p.explanation || '', 2, 320) })).filter((x) => x.gist);
-    const doNotRepeat = extractDoNotRepeatTerms(priorWithText.map((p) => p.explanation || ''));
-    const N = Math.max(0, parseInt(process.env.AI_DELTA_PRIOR_FULL_SECTIONS || '1', 10));
+    const priorWithText = prior.filter(
+      (p) => (p.explanation || '').trim().length > 0
+    );
+    const priorGists = priorWithText
+      .map((p) => ({
+        title: p.title,
+        gist: buildGist(p.explanation || '', 2, 320),
+      }))
+      .filter((x) => x.gist);
+    const doNotRepeat = extractDoNotRepeatTerms(
+      priorWithText.map((p) => p.explanation || '')
+    );
+    const N = Math.max(
+      0,
+      parseInt(process.env.AI_DELTA_PRIOR_FULL_SECTIONS || '1', 10)
+    );
     const recentSlice = N > 0 ? priorWithText.slice(-N) : [];
-    const MAX_RECENT_CHARS = Math.max(800, parseInt(process.env.AI_DELTA_PRIOR_FULL_CHARS || '2400', 10));
-    const recentFull = recentSlice.map((p) => ({ title: p.title, text: (p.explanation || '').length > MAX_RECENT_CHARS ? (p.explanation || '').slice(0, MAX_RECENT_CHARS) : (p.explanation || '') }));
+    const MAX_RECENT_CHARS = Math.max(
+      800,
+      parseInt(process.env.AI_DELTA_PRIOR_FULL_CHARS || '2400', 10)
+    );
+    const recentFull = recentSlice.map((p) => ({
+      title: p.title,
+      text:
+        (p.explanation || '').length > MAX_RECENT_CHARS
+          ? (p.explanation || '').slice(0, MAX_RECENT_CHARS)
+          : p.explanation || '',
+    }));
     return { outline, currentTitle, priorGists, doNotRepeat, recentFull };
   } catch {
     return null;
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const t0 = Date.now();
   try {
+    const session = await getServerSession(authOptions);
+    const userId = isSessionWithUser(session) ? session.user.id : null;
+    const limit = rateLimit(
+      rateLimitKey(req, 'explain', userId),
+      userId ? 40 : 8,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many explanation requests. Please wait and try again.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(
+              Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1000))
+            ),
+          },
+        }
+      );
+    }
+
     const body = await req.json().catch(() => ({}) as any);
     const subtopicIn =
       typeof body?.subtopic === 'string' ? body.subtopic.trim() : '';
@@ -410,6 +492,44 @@ export async function POST(req: Request) {
     const subtopic = subtopicIn || 'Overview';
     const lectureTitle = titleIn;
 
+    if ((lectureIdIn || subtopicIdIn) && !userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (subtopicIdIn && !lectureIdIn) {
+      return NextResponse.json(
+        { error: 'lectureId is required when persisting a subtopic.' },
+        { status: 400 }
+      );
+    }
+
+    let ownedLectureContent = '';
+    if (lectureIdIn && userId) {
+      const lecture = await prisma.lecture.findFirst({
+        where: { id: lectureIdIn, userId },
+        select: { originalContent: true },
+      });
+      if (!lecture) {
+        return NextResponse.json(
+          { error: 'Lecture not found.' },
+          { status: 404 }
+        );
+      }
+      ownedLectureContent = lecture.originalContent || '';
+
+      if (subtopicIdIn) {
+        const subtopicRow = await prisma.subtopic.findFirst({
+          where: { id: subtopicIdIn, lectureId: lectureIdIn },
+          select: { id: true },
+        });
+        if (!subtopicRow) {
+          return NextResponse.json(
+            { error: 'Subtopic not found.' },
+            { status: 404 }
+          );
+        }
+      }
+    }
+
     const styleHint =
       styleIn === 'simplified'
         ? 'Explain as simply as possible for a beginner.'
@@ -430,16 +550,7 @@ export async function POST(req: Request) {
     });
 
     // Resolve document content for grounding
-    let documentContent = '';
-    if (lectureIdIn) {
-      try {
-        const lecture = await prisma.lecture.findUnique({
-          where: { id: lectureIdIn },
-          select: { originalContent: true },
-        });
-        documentContent = lecture?.originalContent || '';
-      } catch {}
-    }
+    let documentContent = ownedLectureContent;
     if (!documentContent && docIn) documentContent = docIn;
     documentContent = sanitizeDbText(documentContent);
     // Clip to keep prompts manageable
@@ -450,9 +561,10 @@ export async function POST(req: Request) {
 
     const systemMsg = [
       'You are writing ONE section of an in-progress lecture.',
+      SOURCE_HANDLING_RULES,
       'Follow DELTA RULES strictly to avoid repetition and only add new information for the current section.',
       'Be concise and instructional; avoid preambles, meta commentary, and disclaimers.',
-      'Format strictly in Markdown: no raw HTML; do not wrap prose in code fences; use $...$ or $$...$$ for math (prefer inline for short expressions); use **bold** only for short key terms; use backticks only for code identifiers; keep paragraphs short and use lists when helpful.'
+      MARKDOWN_STYLE_RULES,
     ].join(' ');
     const docLen = (documentContent || '').trim().length;
     const groundingLine =
@@ -462,7 +574,11 @@ export async function POST(req: Request) {
     // Build coverage pack from DB to make generation delta-aware
     let coveragePack: CoveragePack | null = null;
     if (lectureIdIn) {
-      coveragePack = await buildCoveragePack(lectureIdIn, subtopicIdIn || null, subtopic);
+      coveragePack = await buildCoveragePack(
+        lectureIdIn,
+        subtopicIdIn || null,
+        subtopic
+      );
     }
     const packLines: string[] = [];
     if (coveragePack) {
@@ -472,10 +588,13 @@ export async function POST(req: Request) {
       packLines.push(`- Current: ${coveragePack.currentTitle}`);
       if (coveragePack.priorGists.length) {
         packLines.push('- Prior gists (already covered):');
-        for (const g of coveragePack.priorGists) packLines.push(`  • ${g.title}: ${g.gist}`);
+        for (const g of coveragePack.priorGists)
+          packLines.push(`  • ${g.title}: ${g.gist}`);
       }
       if (coveragePack.doNotRepeat.length) {
-        packLines.push(`- DO NOT REDEFINE (terms/acronyms): ${coveragePack.doNotRepeat.join(', ')}`);
+        packLines.push(
+          `- DO NOT REDEFINE (terms/acronyms): ${coveragePack.doNotRepeat.join(', ')}`
+        );
       }
       if (coveragePack.recentFull.length) {
         packLines.push('- Recent full prior text:');
@@ -516,19 +635,13 @@ export async function POST(req: Request) {
       packLines.join('\n'),
       groundingLine,
       `Write 190–390 words of clean Markdown.`,
-      `Formatting:`,
-      `- Use Markdown only. Do NOT use raw HTML tags.`,
-      `- Do NOT wrap the entire answer or normal prose in code fences. Use fenced code blocks only for actual program code.`,
-      `- Use inline math $...$ (or \\(...\\)) for short expressions; use $$...$$ (or \\[...\\]) only for multi-line display math.`,
-      `- Use **bold** only for short key terms on first mention; never bold whole sentences.`,
-      `- Use backticks only for code identifiers, never for math or prose.`,
       `Start directly with content. Do NOT mention the words "document", "context", "provided context", "this section", or any limitations.`,
       `Do NOT number subtopics. Do NOT add a standalone H1.`,
       `Use short paragraphs, bullet lists, or small inline examples when useful. Favor lists and short blocks over dense text.`,
-      `---`,
-      `DOCUMENT CONTEXT (may be truncated):`,
-      clip(documentContent, 20000),
-    ].filter(Boolean).join('\n');
+      wrapSource(clip(documentContent, 20000), 'DOCUMENT CONTEXT'),
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     // Streaming mode: return text/event-stream with incremental chunks
     const url = new URL(req.url);
@@ -556,17 +669,24 @@ export async function POST(req: Request) {
                 )
               );
             }
-            let markdown = stripPreamble(full, { title: subtopic, lectureTitle });
+            let markdown = stripPreamble(full, {
+              title: subtopic,
+              lectureTitle,
+            });
             // Normalize final combined output to enforce Markdown-only and escape stray angle brackets
             try {
-              const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+              const { normalizeModelMarkdown } = await import(
+                '@/lib/text/normalize-markdown'
+              );
               markdown = normalizeModelMarkdown(markdown);
             } catch {}
             // Optional last-mile dedupe against prior sections
             try {
               if (coveragePack && coveragePack.recentFull.length) {
                 const priors = coveragePack.recentFull.map((r) => r.text);
-                const allPrior = priors.concat((coveragePack.priorGists || []).map((g) => g.gist));
+                const allPrior = priors.concat(
+                  (coveragePack.priorGists || []).map((g) => g.gist)
+                );
                 const deduped = dedupeAgainstPrior(markdown, allPrior);
                 if (deduped && deduped.trim()) markdown = deduped;
               }
@@ -612,14 +732,18 @@ export async function POST(req: Request) {
     const raw = await generateText(prompt, preferredModel, systemMsg);
     let markdown = stripPreamble(raw, { title: subtopic, lectureTitle });
     try {
-      const { normalizeModelMarkdown } = await import('@/lib/text/normalize-markdown');
+      const { normalizeModelMarkdown } = await import(
+        '@/lib/text/normalize-markdown'
+      );
       markdown = normalizeModelMarkdown(markdown);
     } catch {}
     // Optional last-mile dedupe against prior sections
     try {
       if (coveragePack && coveragePack.recentFull.length) {
         const priors = coveragePack.recentFull.map((r) => r.text);
-        const allPrior = priors.concat((coveragePack.priorGists || []).map((g) => g.gist));
+        const allPrior = priors.concat(
+          (coveragePack.priorGists || []).map((g) => g.gist)
+        );
         const deduped = dedupeAgainstPrior(markdown, allPrior);
         if (deduped && deduped.trim()) markdown = deduped;
       }

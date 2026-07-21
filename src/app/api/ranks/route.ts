@@ -10,7 +10,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  await requireAdmin();
+  try {
+    await requireAdmin();
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || 'Forbidden' },
+      { status: error?.status || 403 }
+    );
+  }
   // Ensure Rank table exists to avoid failures on fresh databases
   try {
     await prisma.$executeRawUnsafe(`
@@ -59,6 +66,8 @@ export async function PATCH(req: Request) {
     });
   }
   const ranks = await prisma.rank.findMany({ orderBy: { minElo: 'asc' } });
-  try { revalidateTag('ranks'); } catch { }
+  try {
+    revalidateTag('ranks');
+  } catch {}
   return NextResponse.json({ ok: true, ranks });
 }

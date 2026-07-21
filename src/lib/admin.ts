@@ -1,5 +1,6 @@
 import { getServerSession, type Session } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { notFound } from 'next/navigation';
 
 export function isAdminEmail(email?: string | null): boolean {
   if (!email) return false;
@@ -19,4 +20,12 @@ export async function requireAdmin(): Promise<Session> {
     throw err;
   }
   return session as Session;
+}
+
+export async function requireAdminPage(): Promise<Session> {
+  try {
+    return await requireAdmin();
+  } catch {
+    notFound();
+  }
 }

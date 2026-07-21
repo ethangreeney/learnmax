@@ -4,6 +4,8 @@ import { requireSession } from '@/lib/auth';
 import { revalidateTag } from 'next/cache';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
+import crypto from 'crypto';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,38 +14,79 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
     const userId = session.user.id;
+    const limit = rateLimit(
+      rateLimitKey(req, 'mastery', userId),
+      60,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many mastery updates. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
 
     const parsed = (await req.json().catch(() => ({}))) as {
       subtopicId?: string;
-      eloDelta?: number;
-      firstPerfect?: boolean;
     };
-    const subtopicId = String(parsed?.subtopicId || '').trim();
-    const clientDelta =
-      typeof parsed?.eloDelta === 'number' && Number.isFinite(parsed.eloDelta)
-        ? Math.trunc(parsed.eloDelta as number)
-        : undefined;
-    const firstPerfect = Boolean(parsed?.firstPerfect);
+    const subtopicId = String(parsed?.subtopicId || '')
+      .trim()
+      .slice(0, 80);
 
     const ELO_MASTERY_FIRST = parseInt(
       process.env.ELO_MASTERY_FIRST || '20',
       10
     );
-    const ELO_MASTERY_LATER = parseInt(
-      process.env.ELO_MASTERY_LATER || '0',
-      10
-    );
-    const eloDelta =
-      clientDelta !== undefined
-        ? clientDelta
-        : firstPerfect
-          ? ELO_MASTERY_FIRST
-          : ELO_MASTERY_LATER;
+    const eloDelta = Number.isFinite(ELO_MASTERY_FIRST)
+      ? Math.max(0, Math.min(100, ELO_MASTERY_FIRST))
+      : 20;
 
     if (!subtopicId) {
       return NextResponse.json(
         { error: 'subtopicId is required.' },
         { status: 400 }
+      );
+    }
+
+    const subtopic = await prisma.subtopic.findFirst({
+      where: { id: subtopicId, lecture: { userId } },
+      select: { lectureId: true },
+    });
+    if (!subtopic) {
+      return NextResponse.json(
+        { error: 'Subtopic not found.' },
+        { status: 404 }
+      );
+    }
+
+    const savedPrompt = await prisma.shortAnswerPrompt.findUnique({
+      where: {
+        lectureId_subtopicId: {
+          lectureId: subtopic.lectureId,
+          subtopicId,
+        },
+      },
+      select: { prompt: true },
+    });
+    if (!savedPrompt?.prompt) {
+      return NextResponse.json(
+        { error: 'Complete the mastery check before continuing.' },
+        { status: 409 }
+      );
+    }
+
+    const promptHash = crypto
+      .createHash('sha256')
+      .update([subtopic.lectureId, savedPrompt.prompt].join('|'))
+      .digest('hex');
+    const grade = await prisma.shortAnswerGrade.findUnique({
+      where: { userId_promptHash: { userId, promptHash } },
+      select: { score: true },
+    });
+    if (!grade || grade.score < 8) {
+      return NextResponse.json(
+        { error: 'Score 8/10 or higher to unlock this section.' },
+        { status: 409 }
       );
     }
 
@@ -74,7 +117,11 @@ export async function POST(req: NextRequest) {
       revalidateTag(`user-stats:${userId}`);
     } catch {}
 
-    return NextResponse.json({ ok: true, eloIncremented: created, eloDelta: created ? eloDelta : 0 });
+    return NextResponse.json({
+      ok: true,
+      eloIncremented: created,
+      eloDelta: created ? eloDelta : 0,
+    });
   } catch (e: any) {
     console.error('MASTERY_API_ERROR:', e);
     return NextResponse.json(

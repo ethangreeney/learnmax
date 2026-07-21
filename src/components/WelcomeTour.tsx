@@ -1,6 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 export type TourStep = {
@@ -32,10 +38,17 @@ function readStoredState(key: string): StoredState {
     const parsed = JSON.parse(raw);
     const status = parsed?.status as StoredState['status'];
     const index = Number(parsed?.index ?? 0) || 0;
-    if (!status || !['never', 'in_progress', 'skipped', 'completed'].includes(status)) {
+    if (
+      !status ||
+      !['never', 'in_progress', 'skipped', 'completed'].includes(status)
+    ) {
       return { status: 'never', index: 0, updatedAt: Date.now() };
     }
-    return { status, index, updatedAt: Number(parsed?.updatedAt) || Date.now() };
+    return {
+      status,
+      index,
+      updatedAt: Number(parsed?.updatedAt) || Date.now(),
+    };
   } catch {
     return { status: 'never', index: 0, updatedAt: Date.now() };
   }
@@ -43,7 +56,10 @@ function readStoredState(key: string): StoredState {
 
 function writeStoredState(key: string, next: StoredState) {
   try {
-    localStorage.setItem(key, JSON.stringify({ ...next, updatedAt: Date.now() }));
+    localStorage.setItem(
+      key,
+      JSON.stringify({ ...next, updatedAt: Date.now() })
+    );
   } catch {}
 }
 
@@ -57,14 +73,30 @@ async function postTelemetry(event: string, props: Record<string, any>) {
   } catch {}
 }
 
-export default function WelcomeTour({ steps, storageKey, autoShow = true, context, restartSignal = 0 }: WelcomeTourProps) {
-
+export default function WelcomeTour({
+  steps,
+  storageKey,
+  autoShow = true,
+  context,
+  restartSignal = 0,
+}: WelcomeTourProps) {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
-  const [targetRect, setTargetRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [panelDims, setPanelDims] = useState<{ w: number; h: number } | null>(null);
+  const [targetRect, setTargetRect] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+  const [panelDims, setPanelDims] = useState<{ w: number; h: number } | null>(
+    null
+  );
   const [currentStepId, setCurrentStepId] = useState<string>('');
-  const [telemetryCtx, setTelemetryCtx] = useState<{ auth: 'anon' | 'user'; device: 'mobile' | 'tablet' | 'desktop'; locale: string }>({ auth: 'anon', device: 'desktop', locale: 'en-US' });
+  const [telemetryCtx, setTelemetryCtx] = useState<{
+    auth: 'anon' | 'user';
+    device: 'mobile' | 'tablet' | 'desktop';
+    locale: string;
+  }>({ auth: 'anon', device: 'desktop', locale: 'en-US' });
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Focus the panel on open for SR announcement; do not trap focus to keep UI non-blocking
@@ -80,7 +112,11 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
 
   const saveProgress = useCallback(
     (status: StoredState['status'], idx = index) => {
-      writeStoredState(storageKey, { status, index: idx, updatedAt: Date.now() });
+      writeStoredState(storageKey, {
+        status,
+        index: idx,
+        updatedAt: Date.now(),
+      });
     },
     [index, storageKey]
   );
@@ -88,9 +124,11 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
   // Gather telemetry context once, non-blocking
   useEffect(() => {
     try {
-      const locale = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+      const locale =
+        typeof navigator !== 'undefined' ? navigator.language : 'en-US';
       const width = typeof window !== 'undefined' ? window.innerWidth : 1200;
-      const device: 'mobile' | 'tablet' | 'desktop' = width < 768 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
+      const device: 'mobile' | 'tablet' | 'desktop' =
+        width < 768 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
       setTelemetryCtx((t) => ({ ...t, device, locale }));
     } catch {}
     // Auth state
@@ -106,80 +144,107 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
 
   const previousTargetRef = useRef<HTMLElement | null>(null);
   const previousAriaDescRef = useRef<string | null>(null);
-  const computeTarget = useCallback((opts?: { scrollIntoView?: boolean }) => {
-    if (!open) {
-      // Cleanup any previous target a11y attributes
-      try {
-        if (previousTargetRef.current) {
-          if (previousAriaDescRef.current === null) {
-            previousTargetRef.current.removeAttribute('aria-describedby');
-          } else {
-            previousTargetRef.current.setAttribute('aria-describedby', previousAriaDescRef.current);
+  const computeTarget = useCallback(
+    (opts?: { scrollIntoView?: boolean }) => {
+      if (!open) {
+        // Cleanup any previous target a11y attributes
+        try {
+          if (previousTargetRef.current) {
+            if (previousAriaDescRef.current === null) {
+              previousTargetRef.current.removeAttribute('aria-describedby');
+            } else {
+              previousTargetRef.current.setAttribute(
+                'aria-describedby',
+                previousAriaDescRef.current
+              );
+            }
+            previousTargetRef.current.removeAttribute(
+              'data-welcome-tour-target'
+            );
           }
-          previousTargetRef.current.removeAttribute('data-welcome-tour-target');
-        }
-      } catch {}
-      previousTargetRef.current = null;
-      previousAriaDescRef.current = null;
-      setTargetRect(null);
-      return;
-    }
-    const step = steps[index];
-    setCurrentStepId(step?.id || '');
-    if (!step?.selector) {
-      // cleanup previous target markers
-      try {
-        if (previousTargetRef.current) {
-          if (previousAriaDescRef.current === null) {
-            previousTargetRef.current.removeAttribute('aria-describedby');
-          } else {
-            previousTargetRef.current.setAttribute('aria-describedby', previousAriaDescRef.current);
-          }
-          previousTargetRef.current.removeAttribute('data-welcome-tour-target');
-        }
-      } catch {}
-      previousTargetRef.current = null;
-      previousAriaDescRef.current = null;
-      setTargetRect(null);
-      return;
-    }
-    const el = document.querySelector(step.selector) as HTMLElement | null;
-    if (!el) {
-      try {
-        if (previousTargetRef.current) {
-          if (previousAriaDescRef.current === null) {
-            previousTargetRef.current.removeAttribute('aria-describedby');
-          } else {
-            previousTargetRef.current.setAttribute('aria-describedby', previousAriaDescRef.current);
-          }
-          previousTargetRef.current.removeAttribute('data-welcome-tour-target');
-        }
-      } catch {}
-      previousTargetRef.current = null;
-      previousAriaDescRef.current = null;
-      setTargetRect(null);
-      return;
-    }
-    const rect = el.getBoundingClientRect();
-    const pad = 8;
-    setTargetRect({ x: rect.left - pad, y: rect.top - pad, w: rect.width + pad * 2, h: rect.height + pad * 2 });
-    try {
-      // Mark as target for a11y relation; avoid clobbering existing id
-      el.setAttribute('data-welcome-tour-target', 'true');
-      // capture prior aria-describedby
-      previousAriaDescRef.current = el.getAttribute('aria-describedby');
-      const bodyId = 'welcome-tour-body';
-      const prevDesc = previousAriaDescRef.current;
-      const newDesc = prevDesc ? `${prevDesc} ${bodyId}` : bodyId;
-      el.setAttribute('aria-describedby', newDesc);
-      previousTargetRef.current = el;
-    } catch {}
-    try {
-      if (opts?.scrollIntoView) {
-        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+        } catch {}
+        previousTargetRef.current = null;
+        previousAriaDescRef.current = null;
+        setTargetRect(null);
+        return;
       }
-    } catch {}
-  }, [index, open, steps]);
+      const step = steps[index];
+      setCurrentStepId(step?.id || '');
+      if (!step?.selector) {
+        // cleanup previous target markers
+        try {
+          if (previousTargetRef.current) {
+            if (previousAriaDescRef.current === null) {
+              previousTargetRef.current.removeAttribute('aria-describedby');
+            } else {
+              previousTargetRef.current.setAttribute(
+                'aria-describedby',
+                previousAriaDescRef.current
+              );
+            }
+            previousTargetRef.current.removeAttribute(
+              'data-welcome-tour-target'
+            );
+          }
+        } catch {}
+        previousTargetRef.current = null;
+        previousAriaDescRef.current = null;
+        setTargetRect(null);
+        return;
+      }
+      const el = document.querySelector(step.selector) as HTMLElement | null;
+      if (!el) {
+        try {
+          if (previousTargetRef.current) {
+            if (previousAriaDescRef.current === null) {
+              previousTargetRef.current.removeAttribute('aria-describedby');
+            } else {
+              previousTargetRef.current.setAttribute(
+                'aria-describedby',
+                previousAriaDescRef.current
+              );
+            }
+            previousTargetRef.current.removeAttribute(
+              'data-welcome-tour-target'
+            );
+          }
+        } catch {}
+        previousTargetRef.current = null;
+        previousAriaDescRef.current = null;
+        setTargetRect(null);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const pad = 8;
+      setTargetRect({
+        x: rect.left - pad,
+        y: rect.top - pad,
+        w: rect.width + pad * 2,
+        h: rect.height + pad * 2,
+      });
+      try {
+        // Mark as target for a11y relation; avoid clobbering existing id
+        el.setAttribute('data-welcome-tour-target', 'true');
+        // capture prior aria-describedby
+        previousAriaDescRef.current = el.getAttribute('aria-describedby');
+        const bodyId = 'welcome-tour-body';
+        const prevDesc = previousAriaDescRef.current;
+        const newDesc = prevDesc ? `${prevDesc} ${bodyId}` : bodyId;
+        el.setAttribute('aria-describedby', newDesc);
+        previousTargetRef.current = el;
+      } catch {}
+      try {
+        if (opts?.scrollIntoView) {
+          el.scrollIntoView({
+            block: 'center',
+            inline: 'center',
+            behavior: 'smooth',
+          });
+        }
+      } catch {}
+    },
+    [index, open, steps]
+  );
 
   useLayoutEffect(() => {
     computeTarget({ scrollIntoView: true });
@@ -237,10 +302,33 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
       setIndex(0);
       setOpen(true);
       saveProgress('in_progress', 0);
-      postTelemetry('tour_restart', { page: context.page, lessonId: context.lessonId || 'example', auth: telemetryCtx.auth, device: telemetryCtx.device, locale: telemetryCtx.locale });
-      postTelemetry('tour_start', { page: context.page, lessonId: context.lessonId || 'example', stepIndex: 0, totalSteps: steps.length, auth: telemetryCtx.auth, device: telemetryCtx.device, locale: telemetryCtx.locale });
+      postTelemetry('tour_restart', {
+        page: context.page,
+        lessonId: context.lessonId || 'example',
+        auth: telemetryCtx.auth,
+        device: telemetryCtx.device,
+        locale: telemetryCtx.locale,
+      });
+      postTelemetry('tour_start', {
+        page: context.page,
+        lessonId: context.lessonId || 'example',
+        stepIndex: 0,
+        totalSteps: steps.length,
+        auth: telemetryCtx.auth,
+        device: telemetryCtx.device,
+        locale: telemetryCtx.locale,
+      });
     }
-  }, [restartSignal, context.page, context.lessonId, steps.length, saveProgress, telemetryCtx.auth, telemetryCtx.device, telemetryCtx.locale]);
+  }, [
+    restartSignal,
+    context.page,
+    context.lessonId,
+    steps.length,
+    saveProgress,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   // ESC closes without marking skipped; progress persists for resume
   useEffect(() => {
@@ -287,7 +375,17 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     if (nextIdx === total - 1) {
       // Will complete on Finish button, not here
     }
-  }, [index, total, current?.id, context.page, context.lessonId, saveProgress]);
+  }, [
+    index,
+    total,
+    current?.id,
+    context.page,
+    context.lessonId,
+    saveProgress,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   const handleBack = useCallback(() => {
     const dwellMs = Date.now() - (stepStartRef.current || Date.now());
@@ -306,7 +404,16 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     if (prevIdx === index) return;
     setIndex(prevIdx);
     saveProgress('in_progress', prevIdx);
-  }, [index, current?.id, context.page, context.lessonId, saveProgress]);
+  }, [
+    index,
+    current?.id,
+    context.page,
+    context.lessonId,
+    saveProgress,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   const handleSkip = useCallback(() => {
     const dwellMs = Date.now() - (stepStartRef.current || Date.now());
@@ -321,7 +428,15 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     });
     saveProgress('skipped', index);
     setOpen(false);
-  }, [index, context.page, context.lessonId, saveProgress]);
+  }, [
+    index,
+    context.page,
+    context.lessonId,
+    saveProgress,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   const handleFinish = useCallback(() => {
     const dwellMs = Date.now() - (stepStartRef.current || Date.now());
@@ -335,7 +450,15 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     });
     saveProgress('completed', index);
     setOpen(false);
-  }, [index, context.page, context.lessonId, saveProgress]);
+  }, [
+    index,
+    context.page,
+    context.lessonId,
+    saveProgress,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   // Announce step changes politely
   const liveRef = useRef<HTMLDivElement | null>(null);
@@ -354,7 +477,17 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
       device: telemetryCtx.device,
       locale: telemetryCtx.locale,
     });
-  }, [index, total, open, context.page, context.lessonId, currentStepId, telemetryCtx.auth, telemetryCtx.device, telemetryCtx.locale]);
+  }, [
+    index,
+    total,
+    open,
+    context.page,
+    context.lessonId,
+    currentStepId,
+    telemetryCtx.auth,
+    telemetryCtx.device,
+    telemetryCtx.locale,
+  ]);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -365,7 +498,12 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
   if (!open || !mounted) return null;
 
   // Compute panel position near target rect
-  let panelStyle: React.CSSProperties = { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
+  let panelStyle: React.CSSProperties = {
+    position: 'fixed',
+    left: '50%',
+    top: '50%',
+    transform: 'translate(-50%, -50%)',
+  };
   if (targetRect) {
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
@@ -380,8 +518,14 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
     const pw = panelDims?.w ?? 360;
     const cx = targetRect.x + targetRect.w / 2;
     const left = Math.min(vw - 16 - pw / 2, Math.max(16 + pw / 2, cx));
-    const unclampedTop = place === 'bottom' ? targetRect.y + targetRect.h + 12 : targetRect.y - ph - 12;
-    const top = Math.min(Math.max(24, unclampedTop), Math.max(24, vh - ph - 24));
+    const unclampedTop =
+      place === 'bottom'
+        ? targetRect.y + targetRect.h + 12
+        : targetRect.y - ph - 12;
+    const top = Math.min(
+      Math.max(24, unclampedTop),
+      Math.max(24, vh - ph - 24)
+    );
     panelStyle = {
       position: 'fixed',
       left,
@@ -392,21 +536,26 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
   }
 
   const ringStyle: React.CSSProperties | undefined = targetRect
-  ? {
-      position: 'fixed',
-      left: targetRect.x,
-      top: targetRect.y,
-      width: targetRect.w,
-      height: targetRect.h,
-      borderRadius: 8,
-      boxShadow: '0 0 0 2px rgba(255,255,255,0.7), 0 0 0 12px rgba(255,255,255,0.15)',
-      pointerEvents: 'none',
-      transition: 'width 80ms ease, height 80ms ease, box-shadow 80ms ease',
-    }
-  : undefined;
+    ? {
+        position: 'fixed',
+        left: targetRect.x,
+        top: targetRect.y,
+        width: targetRect.w,
+        height: targetRect.h,
+        borderRadius: 8,
+        boxShadow:
+          '0 0 0 2px rgba(255,255,255,0.7), 0 0 0 12px rgba(255,255,255,0.15)',
+        pointerEvents: 'none',
+        transition: 'width 80ms ease, height 80ms ease, box-shadow 80ms ease',
+      }
+    : undefined;
 
   const overlay = (
-    <div className="fixed inset-0 z-[9999]" aria-live="polite" aria-relevant="all">
+    <div
+      className="fixed inset-0 z-[9999]"
+      aria-live="polite"
+      aria-relevant="all"
+    >
       {/* Dim overlay - non-blocking */}
       <div
         className="fixed inset-0 bg-black/40"
@@ -431,18 +580,23 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
       >
         <div className="flex items-start justify-between gap-6">
           <div className="space-y-1">
-            <h2 id="welcome-tour-title" className="text-base font-semibold text-white">
+            <h2
+              id="welcome-tour-title"
+              className="text-base font-semibold text-white"
+            >
               {current.title}
             </h2>
             <p id="welcome-tour-body" className="text-sm text-neutral-300">
               {current.body}
             </p>
             <p className="sr-only" aria-live="polite" ref={liveRef} />
-            <div className="mt-2 text-xs text-neutral-400">Step {index + 1} of {total}</div>
+            <div className="mt-2 text-xs text-neutral-400">
+              Step {index + 1} of {total}
+            </div>
           </div>
-            <button
+          <button
             onClick={() => setOpen(false)}
-              className="rounded-md p-1 text-neutral-400 hover:bg-neutral-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+            className="rounded-md p-1 text-neutral-400 hover:bg-neutral-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
             aria-label="Close"
           >
             ✕
@@ -488,5 +642,3 @@ export default function WelcomeTour({ steps, storageKey, autoShow = true, contex
 
   return createPortal(overlay, document.body);
 }
-
-

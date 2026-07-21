@@ -11,10 +11,27 @@ import ChatPanel from '@/components/ChatPanel';
 import { Download } from 'lucide-react';
 
 type PreviewQuestion = { prompt: string; options: string[] };
-type PreviewSubtopic = { order: number; title: string; overview: string; explanation?: string; questions: PreviewQuestion[]; shortPrompt?: string };
-type PreviewData = { title: string; author: string; subtopics: PreviewSubtopic[] };
+type PreviewSubtopic = {
+  order: number;
+  title: string;
+  overview: string;
+  explanation?: string;
+  questions: PreviewQuestion[];
+  shortPrompt?: string;
+};
+type PreviewData = {
+  title: string;
+  author: string;
+  subtopics: PreviewSubtopic[];
+};
 
-export default function SharePreviewView({ token, data, isSignedIn, onImport }: { token: string; data: PreviewData; isSignedIn: boolean; onImport: (fd: FormData) => Promise<void> }) {
+export default function SharePreviewView({
+  data,
+  onImport,
+}: {
+  data: PreviewData;
+  onImport: (fd: FormData) => Promise<void>;
+}) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -30,7 +47,10 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
     };
   }, []);
 
-  const sorted = useMemo(() => [...data.subtopics].sort((a, b) => a.order - b.order), [data.subtopics]);
+  const sorted = useMemo(
+    () => [...data.subtopics].sort((a, b) => a.order - b.order),
+    [data.subtopics]
+  );
   const current = sorted[currentIndex] || sorted[0];
 
   const openGate = () => setModalOpen(true);
@@ -40,12 +60,18 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
       <div className="mx-auto">
         <div className="mb-4 grid grid-cols-1 items-start gap-2 px-2 md:px-4 lg:grid-cols-12">
           <div className="lg:col-span-9">
-            <div className="text-sm text-neutral-400">Shared lesson by {data.author}</div>
+            <div className="text-sm text-neutral-400">
+              Shared lesson by {data.author}
+            </div>
             <h1 className="text-3xl font-bold tracking-tight">{data.title}</h1>
           </div>
-          <div className="lg:col-span-3 flex justify-end">
+          <div className="flex justify-end lg:col-span-3">
             <form action={onImport} className="mt-3">
-              <input type="hidden" name="s" value={String(current?.order ?? 0)} />
+              <input
+                type="hidden"
+                name="s"
+                value={String(current?.order ?? 0)}
+              />
               <ImportCta />
             </form>
           </div>
@@ -68,25 +94,35 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
             </ul>
           </aside>
 
-          <main className="lg:col-span-6">
+          <section className="lg:col-span-6" aria-label="Shared lesson content">
             <div className="card p-6 md:p-8">
-              <h3 className="text-2xl font-bold tracking-tight">{current.title}</h3>
+              <h3 className="text-2xl font-bold tracking-tight">
+                {current.title}
+              </h3>
               <div className="mt-2 text-sm text-neutral-400">
                 <span>Preview mode</span>
               </div>
               <div className="markdown mt-4">
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
                   {current.explanation || current.overview || ''}
                 </ReactMarkdown>
               </div>
             </div>
 
             <div className="quiz-panel card mt-8 p-6 md:p-8">
-              <h3 className="mb-4 text-2xl font-bold tracking-tight">Questions</h3>
+              <h3 className="mb-4 text-2xl font-bold tracking-tight">
+                Questions
+              </h3>
               {current.shortPrompt && (
                 <div className="mb-6">
                   <div className="chat-md font-medium text-neutral-200">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
                       {current.shortPrompt}
                     </ReactMarkdown>
                   </div>
@@ -104,7 +140,10 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
                   {current.questions.map((q, idx) => (
                     <div key={`${idx}:${q.prompt}`} className="space-y-3">
                       <div className="chat-md font-medium text-neutral-200">
-                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
                           {q.prompt}
                         </ReactMarkdown>
                       </div>
@@ -137,7 +176,7 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
                 </div>
               )}
             </div>
-          </main>
+          </section>
 
           <aside className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3">
             <ChatPanel
@@ -159,11 +198,23 @@ export default function SharePreviewView({ token, data, isSignedIn, onImport }: 
             if (e.target === e.currentTarget) setModalOpen(false);
           }}
         >
-          <div ref={modalRef} className="w-full max-w-sm rounded-md border border-neutral-700 bg-neutral-900 p-4 text-neutral-200 shadow-xl">
+          <div
+            ref={modalRef}
+            className="w-full max-w-sm rounded-md border border-neutral-700 bg-neutral-900 p-4 text-neutral-200 shadow-xl"
+          >
             <h3 className="text-lg font-semibold">Import to answer</h3>
-            <p className="mt-2 text-sm text-neutral-400">Add this lesson to your library to submit answers.</p>
-            <form action={onImport} className="mt-4 flex items-center justify-end gap-2">
-              <input type="hidden" name="s" value={String(current?.order ?? 0)} />
+            <p className="mt-2 text-sm text-neutral-400">
+              Add this lesson to your library to submit answers.
+            </p>
+            <form
+              action={onImport}
+              className="mt-4 flex items-center justify-end gap-2"
+            >
+              <input
+                type="hidden"
+                name="s"
+                value={String(current?.order ?? 0)}
+              />
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
@@ -186,7 +237,12 @@ function ImportCta({ small = false }: { small?: boolean }) {
     ? 'inline-flex items-center justify-center rounded-md bg-[rgb(var(--accent))] px-4 py-1.5 text-sm font-semibold text-black shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60'
     : 'inline-flex items-center justify-center rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60';
   return (
-    <button type="submit" disabled={pending} aria-disabled={pending} className={className}>
+    <button
+      type="submit"
+      disabled={pending}
+      aria-disabled={pending}
+      className={className}
+    >
       {pending ? (
         'Importing…'
       ) : (
@@ -198,6 +254,3 @@ function ImportCta({ small = false }: { small?: boolean }) {
     </button>
   );
 }
-
-
-

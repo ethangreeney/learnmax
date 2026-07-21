@@ -3,16 +3,6 @@
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
-}
-
-body {
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Design tokens */
-:root {
   --accent: 34 197 94;
   --bg: 10 10 10;
   --panel: 23 23 23;
@@ -20,27 +10,31 @@ body {
   --muted: 163 163 163;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   background:
     radial-gradient(
       120% 80% at 20% -10%,
       rgba(34, 197, 94, 0.06) 0%,
-      rgba(0, 0, 0, 0) 50%
+      transparent 50%
     ),
     rgb(var(--bg));
-  /* Prevent the radial gradient from tiling, which causes repeating green bands */
-  background-repeat: no-repeat, no-repeat;
-  /* Keep the gradient anchored to the viewport */
-  background-attachment: fixed, fixed;
-  /* Make the gradient cover the viewport width; keep the base color layer auto */
-  background-size:
-    160% 100%,
-    auto;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: 160% 100%;
   color: rgb(245 245 245);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-html,
-body {
-  height: 100%;
+
+::selection {
+  color: white;
+  background: rgba(var(--accent), 0.35);
 }
 
 .container-narrow {
@@ -48,20 +42,21 @@ body {
 }
 
 .container-wide {
-  @apply mx-auto max-w-[1600px] px-6 md:px-8;
+  @apply mx-auto max-w-[1600px] px-4 md:px-8;
 }
 
-/* UI primitives */
 .card {
   background: rgba(var(--panel), 0.7);
   border: 1px solid rgb(var(--border));
   border-radius: 14px;
 }
-.btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all;
-}
+
+.btn,
 .btn-primary {
   @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all;
+}
+
+.btn-primary {
   color: #020617;
   background: rgb(var(--accent));
   box-shadow:
@@ -69,6 +64,7 @@ body {
     0 0 24px rgba(34, 197, 94, 0.24),
     0 -4px 14px rgba(34, 197, 94, 0.18);
 }
+
 .btn-primary:hover {
   filter: brightness(1.04);
   transform: translateY(-0.5px);
@@ -77,406 +73,228 @@ body {
     0 0 36px rgba(34, 197, 94, 0.3),
     0 -6px 18px rgba(34, 197, 94, 0.22);
 }
+
 .btn-ghost {
   @apply inline-flex items-center justify-center gap-2 rounded-md border border-neutral-700/60 px-4 py-2 text-sm font-medium text-neutral-200 transition-all;
 }
+
 .btn-ghost:hover {
   @apply bg-neutral-800/60;
 }
+
+.btn-xl {
+  @apply px-6 py-3 text-lg;
+}
+
 .input {
   @apply w-full rounded-md bg-neutral-900/80 px-3 text-sm ring-1 ring-neutral-700 outline-none;
 }
-.select { @apply rounded-md bg-neutral-900/80 px-3 py-2 text-sm ring-1 ring-neutral-700 outline-none; }
 
-/* Admin stats cards */
-.stat-card { @apply p-4 rounded-xl border border-neutral-800 bg-neutral-900/40; }
-.stat-card .label { @apply text-xs uppercase tracking-wide text-neutral-400; }
-.stat-card .value { @apply mt-2 text-2xl font-semibold; }
+.select {
+  @apply rounded-md bg-neutral-900/80 px-3 py-2 text-sm ring-1 ring-neutral-700 outline-none;
+}
+
+.btn-primary:focus-visible,
+.btn-ghost:focus-visible,
+.btn:focus-visible,
+.input:focus-visible,
+.select:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 3px;
+}
+
+.stat-card {
+  @apply rounded-xl border border-neutral-800 bg-neutral-900/40 p-4;
+}
+
+.stat-card .label {
+  @apply text-xs tracking-wide text-neutral-400 uppercase;
+}
+
+.stat-card .value {
+  @apply mt-2 text-2xl font-semibold;
+}
+
 .muted {
   color: rgb(var(--muted));
 }
 
-/* Compact markdown for chat bubbles */
 .chat-md p,
 .chat-md ul,
 .chat-md ol {
-  margin-top: 0.25rem;
-  margin-bottom: 0.25rem;
+  margin-block: 0.25rem;
 }
+
 .chat-md p:first-child,
 .chat-md ul:first-child,
 .chat-md ol:first-child {
   margin-top: 0;
 }
+
 .chat-md p:last-child,
 .chat-md ul:last-child,
 .chat-md ol:last-child {
   margin-bottom: 0;
 }
 
-/* Size modifiers */
-.btn-xl {
-  @apply px-6 py-3 text-lg;
-}
-
-/* BEGIN markdown-typography (Tailwind v4 safe) */
 .markdown {
-  color: rgb(229 229 229); /* neutral-200 */
+  color: rgb(229 229 229);
   line-height: 1.75;
 }
+
 .markdown h2 {
   margin-top: 2.5rem;
   margin-bottom: 1rem;
-  border-bottom: 1px solid rgb(38 38 38); /* neutral-800 */
+  border-bottom: 1px solid rgb(38 38 38);
   padding-bottom: 0.5rem;
   font-size: 1.5rem;
   font-weight: 700;
 }
+
 .markdown h3 {
   margin-top: 2rem;
   margin-bottom: 0.75rem;
   font-size: 1.25rem;
   font-weight: 600;
 }
+
 .markdown p,
 .markdown ul,
 .markdown ol,
 .markdown pre {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
+  margin-block: 1rem;
 }
+
 .markdown code {
-  color: rgb(103 232 249); /* cyan-300 */
+  color: rgb(103 232 249);
 }
+
 .markdown pre {
-  background: rgba(38, 38, 38, 0.5);
+  overflow-x: auto;
   border: 1px solid rgb(38 38 38);
   border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-}
-.markdown ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
-.markdown ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-}
-.markdown li::marker {
-  color: rgb(115 115 115); /* neutral-500 */
-}
-/* END markdown-typography (Tailwind v4 safe) */
-
-/* BEGIN markdown-typography (Tailwind v4 safe) */
-.markdown {
-  color: rgb(229 229 229);
-  line-height: 1.75;
-}
-.markdown h2 {
-  margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid rgb(38 38 38);
-  padding-bottom: 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.markdown h3 {
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown pre {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-.markdown code {
-  color: rgb(103 232 249);
-}
-.markdown pre {
   background: rgba(38, 38, 38, 0.5);
-  border: 1px solid rgb(38, 38, 38);
-  border-radius: 0.5rem;
   padding: 1rem;
-  overflow-x: auto;
 }
+
 .markdown ul {
   list-style: disc;
   padding-left: 1.25rem;
 }
+
 .markdown ol {
   list-style: decimal;
   padding-left: 1.25rem;
 }
+
 .markdown li::marker {
-  color: rgb(115, 115, 115);
-}
-/* END markdown-typography (Tailwind v4 safe) */
-
-/* BEGIN markdown-typography (Tailwind v4 safe) */
-.markdown {
-  color: rgb(229 229 229);
-  line-height: 1.75;
-}
-.markdown h2 {
-  margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid rgb(38 38 38);
-  padding-bottom: 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.markdown h3 {
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown pre {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-.markdown code {
-  color: rgb(103 232 249);
-}
-.markdown pre {
-  background: rgba(38, 38, 38, 0.5);
-  border: 1px solid rgb(38, 38, 38);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-}
-.markdown ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
-.markdown ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-}
-.markdown li::marker {
-  color: rgb(115, 115, 115);
-}
-/* END markdown-typography (Tailwind v4 safe) */
-
-/* BEGIN markdown-typography (Tailwind v4 safe) */
-.markdown {
-  color: rgb(229 229 229);
-  line-height: 1.75;
-}
-.markdown h2 {
-  margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid rgb(38 38 38);
-  padding-bottom: 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.markdown h3 {
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown pre {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-.markdown code {
-  color: rgb(103 232 249);
-}
-.markdown pre {
-  background: rgba(38, 38, 38, 0.5);
-  border: 1px solid rgb(38, 38, 38);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-}
-.markdown ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
-.markdown ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-}
-.markdown li::marker {
-  color: rgb(115, 115, 115);
-}
-/* END markdown-typography (Tailwind v4 safe) */
-
-/* BEGIN markdown-typography (Tailwind v4 safe) */
-.markdown {
-  color: rgb(229 229 229);
-  line-height: 1.75;
-}
-.markdown h2 {
-  margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid rgb(38 38 38);
-  padding-bottom: 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.markdown h3 {
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown pre {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-.markdown code {
-  color: rgb(103 232 249);
-}
-.markdown pre {
-  background: rgba(38, 38, 38, 0.5);
-  border: 1px solid rgb(38, 38, 38);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-}
-.markdown ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
-.markdown ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-}
-.markdown li::marker {
-  color: rgb(115, 115, 115);
-}
-/* END markdown-typography (Tailwind v4 safe) */
-
-/* Wider container for Learn page */
-.container-wide {
-  @apply mx-auto max-w-[1600px] px-6 md:px-8;
+  color: rgb(115 115 115);
 }
 
-/* learnmax-quiz-gate */
-/* learnmax-quiz-gate */
-
-/* learnmax-quiz-gate (fixed) */
 body:not([data-content='ready']) .quiz-panel {
   display: none;
 }
 
-/* quiz gate */
-body:not([data-content='ready']) .quiz-panel {
-  display: none;
-}
 body[data-content='ready'] .quiz-panel {
   display: block !important;
 }
 
-/* quiz gate */
-body:not([data-content='ready']) .quiz-panel {
-  display: none;
-}
-body[data-content='ready'] .quiz-panel {
-  display: block !important;
-}
-
-/* learnmax-complete-noscroll */
-/* Only while the completion page is mounted */
 body[data-page='complete'] {
   overflow: hidden !important;
   overscroll-behavior: contain;
 }
+
 body[data-page='complete'] footer {
   display: none !important;
 }
 
-/* Home page: enable scroll */
 body[data-page='home'] {
   overflow: auto !important;
   overscroll-behavior: auto;
 }
 
-/* Shared lesson page: tighten top spacing under the global header */
-body[data-page='shared-preview'] main {
-  padding-top: 0.2rem; /* even tighter spacing */
-}
-
-/* Example demo page: reduce top padding too */
+body[data-page='shared-preview'] main,
 body[data-page='demo-example'] main {
   padding-top: 0.2rem;
 }
 
-/* Home landing page: slightly reduce spacing beneath header */
 body[data-page='home'] main {
-  padding-top: 1.25rem; /* default was 2.5rem from py-10 */
+  padding-top: 1.25rem;
 }
 
-/* Hide navbar ELO on home page */
-body[data-page='home'] .nav-elo { display: none !important; }
+body[data-page='home'] .nav-elo {
+  display: none !important;
+}
 
-/* Hero background decorations */
 .hero-spotlight {
   background: radial-gradient(
     40% 40% at 50% 50%,
     rgba(16, 185, 129, 0.09) 0%,
     rgba(16, 185, 129, 0.06) 30%,
-    rgba(16, 185, 129, 0.0) 65%
+    transparent 65%
   );
   filter: blur(64px);
   animation: subtle-pulse 8s ease-in-out infinite;
 }
+
 .hero-grid {
   --line: 255 255 255 / 0.04;
-  --line-strong: 255 255 255 / 0.08;
   background-image:
     linear-gradient(to right, rgba(var(--line)) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(var(--line)) 1px, transparent 1px);
-  background-size: 60px 60px, 60px 60px;
-  /* Extend grid full-width; softly fade only top/bottom */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-}
-@keyframes subtle-pulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
+  background-size:
+    60px 60px,
+    60px 60px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 88%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 88%,
+    transparent 100%
+  );
 }
 
-/* Subtle animated shimmer for rank gradient text */
+@keyframes subtle-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .rank-shimmer {
-  /* Slightly faster shimmer as requested */
   background-size: 200% 100% !important;
   animation: rank-shimmer 2.5s ease-in-out infinite;
 }
+
 @keyframes rank-shimmer {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
-/* Slight contrast helpers for gradient-clipped text on dark backgrounds */
-/* rank-contrast removed per request */
-
-/* Global custom scrollbar styling (applies site-wide) */
 * {
-  /* Firefox */
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
-/* WebKit browsers */
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -487,19 +305,38 @@ body[data-page='home'] .nav-elo { display: none !important; }
 }
 
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+  border: 2px solid transparent;
   border-radius: 999px;
-  border: 2px solid transparent; /* creates padding around thumb */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.06)
+  );
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.09));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.18),
+    rgba(255, 255, 255, 0.09)
+  );
 }
 
 @media (max-width: 640px) {
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

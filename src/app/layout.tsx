@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import ContentGate from '@/components/ContentGate';
 import ClientBoundary from '@/components/ClientBoundary';
 import AuthProvider from '@/components/AuthProvider';
+import NavigationLinks from '@/components/NavigationLinks';
 import Link from 'next/link';
 import './globals.css';
 import 'katex/dist/katex.min.css';
@@ -15,7 +16,6 @@ const navLinks = [
   { href: '/welcome', label: 'Home' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/leaderboard', label: 'Leaderboard' },
-  // Keep Learn as the rightmost link for prominence
   { href: '/learn', label: 'Learn' },
 ];
 export default async function RootLayout({
@@ -27,37 +27,29 @@ export default async function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
         <AuthProvider>
-          <header className="app-header py-6">
-            <div className="container-narrow flex items-center justify-between">
+          <header className="app-header sticky top-0 z-40 border-b border-white/6 bg-neutral-950/85 py-3 backdrop-blur-xl">
+            <div className="container-wide flex items-center justify-between gap-4">
               <Link
                 href="/"
-                className="text-xl font-semibold tracking-tight transition-opacity hover:opacity-90"
+                className="shrink-0 text-xl font-semibold tracking-tight transition-opacity hover:opacity-90"
               >
                 <span className="bg-gradient-to-r from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">
                   LearnMax
                 </span>
               </Link>
-              <nav className="flex items-center gap-4 text-sm text-neutral-300">
-                {navLinks.map((link, index) => (
-                  <Link
-                    key={index}
-                    href={link.href}
-                    className="transition-colors hover:text-white"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
+              <NavigationLinks links={navLinks} />
               <div className="flex items-center gap-3">
                 <ClientBoundary />
               </div>
             </div>
           </header>
-          <main className="py-10">{children}</main>
+          <main className="py-8">{children}</main>
         </AuthProvider>
         <ContentGate />
         {/* Prefetch common routes globally for snappier navigation */}
-        <GlobalPrefetcher routes={[...navLinks.map((n) => n.href), '/profile']} />
+        <GlobalPrefetcher
+          routes={[...navLinks.map((n) => n.href), '/profile']}
+        />
       </body>
     </html>
   );

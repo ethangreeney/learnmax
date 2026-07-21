@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,8 +14,24 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const lectureId = String(searchParams.get('lectureId') || '').trim();
     const subtopicId = String(searchParams.get('subtopicId') || '').trim();
+    if (!isAuthed) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     if (!lectureId || !subtopicId) {
-      return NextResponse.json({ error: 'lectureId and subtopicId are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'lectureId and subtopicId are required' },
+        { status: 400 }
+      );
+    }
+    const ownedSubtopic = await prisma.subtopic.findFirst({
+      where: { id: subtopicId, lectureId, lecture: { userId } },
+      select: { id: true },
+    });
+    if (!ownedSubtopic) {
+      return NextResponse.json(
+        { error: 'Subtopic not found.' },
+        { status: 404 }
+      );
     }
     // 1) Load global saved prompt (idempotent per lecture+subtopic)
     let promptRow: any = null;
@@ -25,7 +42,9 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     // 2) Load most recent user-specific saved answer/score from TutorMessage (source of truth for answers)
-    let userSaved: { answer?: string; score?: number; feedback?: string } | undefined = undefined;
+    let userSaved:
+      | { answer?: string; score?: number; feedback?: string }
+      | undefined = undefined;
     if (isAuthed) {
       const rows = await prisma.tutorMessage.findMany({
         where: { userId, lectureId, role: 'short-q' },
@@ -38,7 +57,8 @@ export async function GET(req: NextRequest) {
           userSaved = {
             answer: typeof refs.answer === 'string' ? refs.answer : undefined,
             score: typeof refs.score === 'number' ? refs.score : undefined,
-            feedback: typeof refs.feedback === 'string' ? refs.feedback : undefined,
+            feedback:
+              typeof refs.feedback === 'string' ? refs.feedback : undefined,
           };
           break;
         }
@@ -69,14 +89,18 @@ export async function GET(req: NextRequest) {
             modelAnswer: refs.modelAnswer || '',
             answer: refs.answer || '',
             score: typeof refs.score === 'number' ? refs.score : undefined,
-            feedback: typeof refs.feedback === 'string' ? refs.feedback : undefined,
+            feedback:
+              typeof refs.feedback === 'string' ? refs.feedback : undefined,
           });
         }
       }
     }
     return NextResponse.json({ prompt: '', modelAnswer: '' });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
 
@@ -85,6 +109,20 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     const isAuthed = isSessionWithUser(session);
     const userId = isAuthed ? session.user.id : '';
+    if (!isAuthed) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const limit = rateLimit(
+      rateLimitKey(req, 'revision-save', userId),
+      100,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many revision updates. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
     const body = (await req.json().catch(() => ({}))) as {
       lectureId?: string;
       subtopicId?: string;
@@ -94,16 +132,44 @@ export async function POST(req: NextRequest) {
       score?: number;
       feedback?: string;
     };
-    const lectureId = String(body?.lectureId || '').trim();
-    const subtopicId = String(body?.subtopicId || '').trim();
-    const prompt = String(body?.prompt || '').trim();
-    const modelAnswer = String(body?.modelAnswer || '').trim();
-    const answer = String(body?.answer || '').trim();
+    const lectureId = String(body?.lectureId || '')
+      .trim()
+      .slice(0, 80);
+    const subtopicId = String(body?.subtopicId || '')
+      .trim()
+      .slice(0, 80);
+    const prompt = String(body?.prompt || '')
+      .trim()
+      .slice(0, 2_000);
+    const modelAnswer = String(body?.modelAnswer || '')
+      .trim()
+      .slice(0, 6_000);
+    const answer = String(body?.answer || '')
+      .trim()
+      .slice(0, 6_000);
     const scoreRaw = body?.score;
-    const score = typeof scoreRaw === 'number' && Number.isFinite(scoreRaw) ? Math.max(0, Math.min(10, Math.trunc(scoreRaw))) : undefined;
-    const feedback = String(body?.feedback || '').trim();
+    const score =
+      typeof scoreRaw === 'number' && Number.isFinite(scoreRaw)
+        ? Math.max(0, Math.min(10, Math.trunc(scoreRaw)))
+        : undefined;
+    const feedback = String(body?.feedback || '')
+      .trim()
+      .slice(0, 3_000);
     if (!lectureId || !subtopicId || !prompt) {
-      return NextResponse.json({ error: 'lectureId, subtopicId, and prompt are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'lectureId, subtopicId, and prompt are required' },
+        { status: 400 }
+      );
+    }
+    const ownedSubtopic = await prisma.subtopic.findFirst({
+      where: { id: subtopicId, lectureId, lecture: { userId } },
+      select: { id: true },
+    });
+    if (!ownedSubtopic) {
+      return NextResponse.json(
+        { error: 'Subtopic not found.' },
+        { status: 404 }
+      );
     }
     // Persist or upsert the global prompt so multiple clients do not generate duplicates.
     try {
@@ -111,7 +177,12 @@ export async function POST(req: NextRequest) {
         await prisma.shortAnswerPrompt.upsert({
           where: { lectureId_subtopicId: { lectureId, subtopicId } },
           update: { prompt, modelAnswer },
-          create: { lectureId, subtopicId, prompt, modelAnswer: modelAnswer || '' },
+          create: {
+            lectureId,
+            subtopicId,
+            prompt,
+            modelAnswer: modelAnswer || '',
+          },
         });
       }
     } catch {}
@@ -174,23 +245,30 @@ export async function POST(req: NextRequest) {
     // If a score is provided, persist into lifetime short-answer grades table (idempotent per user+prompt)
     try {
       if (typeof score === 'number' && isAuthed) {
-        const promptHash = crypto.createHash('sha256').update([lectureId, prompt].join('|')).digest('hex');
+        const promptHash = crypto
+          .createHash('sha256')
+          .update([lectureId, prompt].join('|'))
+          .digest('hex');
         try {
-          await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${lectureId || null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = EXCLUDED."score"`;
-        } catch (e: any) {
+          await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${lectureId || null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
+        } catch {
           try {
-            await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = EXCLUDED."score"`;
+            await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
           } catch (e2: any) {
-            console.error('ShortAnswerGrade insert failed (short route)', { userId, lectureId, err: String(e2?.message || e2) });
+            console.error('ShortAnswerGrade insert failed (short route)', {
+              userId,
+              lectureId,
+              err: String(e2?.message || e2),
+            });
           }
         }
       }
     } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
-
-
-

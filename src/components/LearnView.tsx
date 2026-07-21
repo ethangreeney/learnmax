@@ -8,7 +8,18 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import ChatPanel from '@/components/ChatPanel';
 import dynamic from 'next/dynamic';
-import { ArrowUpRight } from 'lucide-react';
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  LockKeyhole,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
 import { rankFromElo, rankGradient } from '@/lib/client/rank-colors';
 
 function GeneratingOverlayFallback(props: any) {
@@ -17,10 +28,15 @@ function GeneratingOverlayFallback(props: any) {
   const ariaLabel = hasError ? 'Generation failed' : 'Generating lesson…';
   if (!visible && !hasError) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" aria-hidden={!visible}>
-      <div className={`absolute inset-0 ${visible ? 'opacity-100' : 'opacity-0'} bg-black/60 transition-opacity duration-200`} />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      aria-hidden={!visible}
+    >
       <div
-        className={`rounded-xl border border-neutral-800 bg-neutral-950/70 shadow-2xl backdrop-blur-sm w-[92%] max-w-[520px] p-5 md:p-6 text-neutral-200 transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 ${visible ? 'opacity-100' : 'opacity-0'} bg-black/60 transition-opacity duration-200`}
+      />
+      <div
+        className={`w-[92%] max-w-[520px] rounded-xl border border-neutral-800 bg-neutral-950/70 p-5 text-neutral-200 shadow-2xl backdrop-blur-sm transition-opacity duration-200 md:p-6 ${visible ? 'opacity-100' : 'opacity-0'}`}
         role="status"
         aria-live="polite"
         aria-label={ariaLabel}
@@ -30,8 +46,12 @@ function GeneratingOverlayFallback(props: any) {
             <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-neutral-800">
               <div className="h-2 w-1/3 animate-[bar_1.2s_ease_infinite] rounded-full bg-[rgb(var(--accent))]" />
             </div>
-            <div className="mt-4 text-base font-medium">Preparing your lesson…</div>
-            <div className="mt-2 text-xs text-neutral-400">This can take up to a minute.</div>
+            <div className="mt-4 text-base font-medium">
+              Preparing your lesson…
+            </div>
+            <div className="mt-2 text-xs text-neutral-400">
+              This can take up to a minute.
+            </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               {props?.onCancel && (
                 <button
@@ -53,8 +73,12 @@ function GeneratingOverlayFallback(props: any) {
           </div>
         ) : (
           <div className="flex flex-col items-center text-center">
-            <div className="text-base font-semibold text-red-300">Generation failed</div>
-            <p className="mt-2 text-sm text-neutral-300">{props?.errorMessage || 'Something went wrong.'}</p>
+            <div className="text-base font-semibold text-red-300">
+              Generation failed
+            </div>
+            <p className="mt-2 text-sm text-neutral-300">
+              {props?.errorMessage || 'Something went wrong.'}
+            </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               {props?.onRetry && (
                 <button
@@ -77,8 +101,12 @@ function GeneratingOverlayFallback(props: any) {
         )}
         <style jsx>{`
           @keyframes bar {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(300%); }
+            0% {
+              transform: translateX(-100%);
+            }
+            100% {
+              transform: translateX(300%);
+            }
           }
         `}</style>
       </div>
@@ -86,16 +114,18 @@ function GeneratingOverlayFallback(props: any) {
   );
 }
 
-const GeneratingOverlay = dynamic<any>(() => import('@/components/GeneratingOverlay'), {
-  ssr: false,
-  loading: (props: any) => <GeneratingOverlayFallback {...props} />,
-});
+const GeneratingOverlay = dynamic<any>(
+  () => import('@/components/GeneratingOverlay'),
+  {
+    ssr: false,
+    loading: (props: any) => <GeneratingOverlayFallback {...props} />,
+  }
+);
 // Delete option removed inside lesson; available on dashboard only
 // Icons not needed since deletion controls were removed from this view
 import {
   deriveUnlockedIndex,
   type LearnLecture,
-  type QuizQuestion,
   type LearnSubtopic,
 } from '@/lib/shared/learn-types';
 import { createLearnUIStore } from '@/lib/client/learn-ui-store';
@@ -109,7 +139,9 @@ function sanitizeMarkdown(md: string): string {
   let t = md;
 
   // Clean up any legacy leaked mask placeholders
-  t = t.replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '').replace(/<<MD_MASK_\d+>>/g, '');
+  t = t
+    .replace(/&lt;&lt;MD_MASK_\d+&gt;&gt;/g, '')
+    .replace(/<<MD_MASK_\d+>>/g, '');
   // Remove any leaked MDMASK placeholders from prior runs BEFORE creating new masks
   t = t.replace(/%%MDMASK:\d+%%/g, '');
 
@@ -174,7 +206,7 @@ function sanitizeMarkdown(md: string): string {
     }
     // Restore masks
     t = t.replace(/%%MDMASK:(\d+)%%/g, (_, i) => masks[Number(i)] || '');
-  } catch { }
+  } catch {}
 
   return t;
 }
@@ -231,7 +263,7 @@ function stripLeadingTitle(md: string, title?: string): string {
 
   // Iteratively remove leading headings or exact title lines at the very start
   // to be resilient to streaming joins or minor variations.
-  for (; ;) {
+  for (;;) {
     let changed = false;
     // ATX heading at very beginning
     const atx = out.match(/^\s{0,3}#{1,6}\s+([^\n]+)\n+/);
@@ -325,9 +357,7 @@ export default function LearnView({
   };
 
   // Track progress restoration and pending scroll position
-  const restoringProgressRef = useRef<boolean>(false); // legacy flag (kept for backward compatibility)
   const restoringIndexRef = useRef<boolean>(false);
-  const restoringScrollRef = useRef<boolean>(false);
   const restoredScrollRef = useRef<boolean>(false);
   const pendingScrollYRef = useRef<number | null>(null);
   const pendingSubtopicIdRef = useRef<string | null>(null);
@@ -360,21 +390,29 @@ export default function LearnView({
   // Track a run ID per subtopic to discard stale chunks from earlier streams
   const explainRunIdRef = useRef<Map<string, string>>(new Map());
   // Track the first subtopic so we can hide the overlay when its content is ready
-  const firstSubtopicIdRef = useRef<string | null>(null);
+  const firstSubtopicIdRef = useRef<string | null>(
+    initial.subtopics?.[0]?.id || null
+  );
   const overlayHiddenRef = useRef<boolean>(false);
 
   // Subtopics Show/Hide state (default: expanded)
   const [subtopicsCollapsed, setSubtopicsCollapsed] = useState<boolean>(false);
   const hasAnySubtopics = (initial.subtopics?.length ?? 0) > 0;
-  const subtopicsContainerId = useMemo(() => `subtopics-container-${initial.id}` as const, [initial.id]);
+  const subtopicsContainerId = useMemo(
+    () => `subtopics-container-${initial.id}` as const,
+    [initial.id]
+  );
   const onToggleSubtopics = useCallback(() => {
     const next = !subtopicsCollapsed;
     setSubtopicsCollapsed(next);
     try {
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem('subtopicsCollapsed', next ? 'true' : 'false');
+        window.localStorage.setItem(
+          'subtopicsCollapsed',
+          next ? 'true' : 'false'
+        );
       }
-    } catch { }
+    } catch {}
     // Optional analytics without relying on postTelemetry ordering
     try {
       void fetch('/api/telemetry', {
@@ -387,7 +425,7 @@ export default function LearnView({
           state: next ? 'collapsed' : 'expanded',
         }),
       });
-    } catch { }
+    } catch {}
   }, [subtopicsCollapsed, initial.id]);
 
   // Restore persisted state after mount (avoids hydration mismatch)
@@ -397,20 +435,22 @@ export default function LearnView({
         const raw = window.localStorage.getItem('subtopicsCollapsed');
         if (raw !== null) setSubtopicsCollapsed(raw === 'true');
       }
-    } catch { }
+    } catch {}
   }, []);
 
   // Cleanup: abort any active streams on unmount
   useEffect(() => {
+    const explanationControllers = explainControllersRef.current;
+    const explanationRunIds = explainRunIdRef.current;
     return () => {
       try {
         if (abortRef.current) abortRef.current.abort();
-      } catch { }
+      } catch {}
       try {
-        for (const [, ctl] of explainControllersRef.current) ctl.abort();
-      } catch { }
-      explainControllersRef.current.clear();
-      explainRunIdRef.current.clear();
+        for (const [, ctl] of explanationControllers) ctl.abort();
+      } catch {}
+      explanationControllers.clear();
+      explanationRunIds.clear();
     };
   }, []);
 
@@ -427,7 +467,7 @@ export default function LearnView({
             ...data,
           }),
         });
-      } catch { }
+      } catch {}
     },
     [initial.id]
   );
@@ -439,15 +479,22 @@ export default function LearnView({
   useEffect(() => {
     try {
       const key = `lesson:progress:${initial.id}`;
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
+      const raw =
+        typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
       if (raw) {
         const parsed = JSON.parse(raw || '{}');
         const savedCurrent = Number(parsed?.currentIndex ?? 0);
         const savedUnlocked = Number(parsed?.unlockedIndex ?? 0);
         const savedScrollY = Number(parsed?.scrollY ?? 0);
         const maxIdx = Math.max(0, initial.subtopics.length - 1);
-        const nextCurrent = Math.max(0, Math.min(maxIdx, Number.isFinite(savedCurrent) ? savedCurrent : 0));
-        const nextUnlocked = Math.max(0, Math.min(maxIdx, Number.isFinite(savedUnlocked) ? savedUnlocked : 0));
+        const nextCurrent = Math.max(
+          0,
+          Math.min(maxIdx, Number.isFinite(savedCurrent) ? savedCurrent : 0)
+        );
+        const nextUnlocked = Math.max(
+          0,
+          Math.min(maxIdx, Number.isFinite(savedUnlocked) ? savedUnlocked : 0)
+        );
         if (Number.isFinite(savedScrollY) && savedScrollY > 0) {
           pendingScrollYRef.current = Math.max(0, Math.trunc(savedScrollY));
         } else {
@@ -467,7 +514,7 @@ export default function LearnView({
           pendingSubtopicIdRef.current = null;
         }
       }
-    } catch { }
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.id]);
 
@@ -482,22 +529,36 @@ export default function LearnView({
         const savedCurrent = Number(parsed?.currentIndex ?? NaN);
         const savedUnlocked = Number(parsed?.unlockedIndex ?? NaN);
         const maxIdx = Math.max(0, initial.subtopics.length - 1);
-        const clamp = (v: number) => Math.max(0, Math.min(maxIdx, Math.trunc(v)));
-        const nextCurrent = Number.isFinite(savedCurrent) ? clamp(savedCurrent) : ui.getState().currentIndex;
+        const clamp = (v: number) =>
+          Math.max(0, Math.min(maxIdx, Math.trunc(v)));
+        const nextCurrent = Number.isFinite(savedCurrent)
+          ? clamp(savedCurrent)
+          : ui.getState().currentIndex;
         const nextUnlocked = Number.isFinite(savedUnlocked)
-          ? Math.max(deriveUnlockedIndex(initial.subtopics), clamp(savedUnlocked), nextCurrent)
+          ? Math.max(
+              deriveUnlockedIndex(initial.subtopics),
+              clamp(savedUnlocked),
+              nextCurrent
+            )
           : ui.getState().unlockedIndex;
-        ui.setState((s) => ({ ...s, currentIndex: nextCurrent, unlockedIndex: nextUnlocked }));
+        ui.setState((s) => ({
+          ...s,
+          currentIndex: nextCurrent,
+          unlockedIndex: nextUnlocked,
+        }));
         // Remember pending scroll if present
         const savedScrollY = Number(parsed?.scrollY ?? NaN);
-        if (Number.isFinite(savedScrollY) && savedScrollY > 0) pendingScrollYRef.current = Math.max(0, Math.trunc(savedScrollY));
+        if (Number.isFinite(savedScrollY) && savedScrollY > 0)
+          pendingScrollYRef.current = Math.max(0, Math.trunc(savedScrollY));
         restoringIndexRef.current = true;
         try {
           const idx = Math.max(0, Math.min(maxIdx, nextCurrent));
           pendingSubtopicIdRef.current = initial.subtopics[idx]?.id || null;
-        } catch { pendingSubtopicIdRef.current = null; }
+        } catch {
+          pendingSubtopicIdRef.current = null;
+        }
       }
-    } catch { }
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.id]);
 
@@ -512,7 +573,7 @@ export default function LearnView({
         ts: Date.now(),
       };
       window.localStorage.setItem(key, JSON.stringify(payload));
-    } catch { }
+    } catch {}
   }, [currentIndex, unlockedIndex, initial.id]);
 
   // Seed base ELO for toast animation to sync with navbar counter (skip in demo)
@@ -545,13 +606,16 @@ export default function LearnView({
 
         // Coalesce duplicate events (e.g., dev StrictMode or double dispatch)
         const now = Date.now();
-        if (delta === lastToastDeltaRef.current && now - lastToastAtRef.current < 250) {
+        if (
+          delta === lastToastDeltaRef.current &&
+          now - lastToastAtRef.current < 250
+        ) {
           return;
         }
         lastToastDeltaRef.current = delta;
         lastToastAtRef.current = now;
 
-        const base = (eloBaseRef.current ?? 0);
+        const base = eloBaseRef.current ?? 0;
         const from = base;
         const to = base + delta;
         eloBaseRef.current = to;
@@ -559,19 +623,23 @@ export default function LearnView({
         setEloToastTo(Math.max(0, to));
         setShowEloToast(true);
         if (typeof window !== 'undefined') {
-          if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
-          eloToastTimerRef.current = window.setTimeout(() => setShowEloToast(false), 1500);
+          if (eloToastTimerRef.current)
+            window.clearTimeout(eloToastTimerRef.current);
+          eloToastTimerRef.current = window.setTimeout(
+            () => setShowEloToast(false),
+            1500
+          );
         }
-      } catch { }
+      } catch {}
     };
     window.addEventListener('elo:delta', onDelta as EventListener);
     return () => {
       window.removeEventListener('elo:delta', onDelta as EventListener);
       try {
-        if (eloToastTimerRef.current) window.clearTimeout(eloToastTimerRef.current);
-      } catch { }
+        if (eloToastTimerRef.current)
+          window.clearTimeout(eloToastTimerRef.current);
+      } catch {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function EloToast({ from, to }: { from: number; to: number }) {
@@ -595,7 +663,10 @@ export default function LearnView({
 
     const step = () => {
       const t = performance.now ? performance.now() : Date.now();
-      const elapsed = Math.max(0, Math.min(DURATION_MS, t - animStartRef.current));
+      const elapsed = Math.max(
+        0,
+        Math.min(DURATION_MS, t - animStartRef.current)
+      );
       const p = easeOutCubic(elapsed / DURATION_MS);
       const value = Math.round(
         animFromRef.current + (animToRef.current - animFromRef.current) * p
@@ -607,7 +678,9 @@ export default function LearnView({
         // If target changed during the run, continue smoothly
         if (animToRef.current !== value) {
           animFromRef.current = value;
-          animStartRef.current = performance.now ? performance.now() : Date.now();
+          animStartRef.current = performance.now
+            ? performance.now()
+            : Date.now();
           animFrameRef.current = requestAnimationFrame(step);
         } else {
           stopAnim();
@@ -634,7 +707,10 @@ export default function LearnView({
       const now = performance.now ? performance.now() : Date.now();
       // Compute instantaneous displayed value as new from-base
       if (animFrameRef.current !== null) {
-        const elapsed = Math.max(0, Math.min(DURATION_MS, now - animStartRef.current));
+        const elapsed = Math.max(
+          0,
+          Math.min(DURATION_MS, now - animStartRef.current)
+        );
         const p = easeOutCubic(elapsed / DURATION_MS);
         const currentValue = Math.round(
           animFromRef.current + (animToRef.current - animFromRef.current) * p
@@ -657,36 +733,30 @@ export default function LearnView({
       <div
         className={
           'group inline-flex items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-900/70 px-2.5 py-1.5 text-sm text-neutral-200 transition-shadow ' +
-          (glow ? 'shadow-[0_0_24px_rgba(34,197,94,0.35)] ring-1 ring-green-500/30' : '')
+          (glow
+            ? 'shadow-[0_0_24px_rgba(34,197,94,0.35)] ring-1 ring-green-500/30'
+            : '')
         }
         role="status"
         aria-label={`ELO ${to}`}
         aria-live="polite"
       >
-        <span className={`bg-gradient-to-r ${grad} bg-clip-text text-transparent rank-shimmer rank-contrast`}>ELO</span>
-        <span className={`bg-gradient-to-r ${grad} bg-clip-text font-semibold tabular-nums text-transparent rank-shimmer rank-contrast`}>
+        <span
+          className={`bg-gradient-to-r ${grad} rank-shimmer rank-contrast bg-clip-text text-transparent`}
+        >
+          ELO
+        </span>
+        <span
+          className={`bg-gradient-to-r ${grad} rank-shimmer rank-contrast bg-clip-text font-semibold text-transparent tabular-nums`}
+        >
           {displayed}
         </span>
-        {glow && <ArrowUpRight className="h-3.5 w-3.5 text-green-400" aria-hidden />}
+        {glow && (
+          <ArrowUpRight className="h-3.5 w-3.5 text-green-400" aria-hidden />
+        )}
       </div>
     );
   }
-
-  // Maintain a reactive questions map keyed by subtopicId so UI updates immediately
-  const [questionsById, setQuestionsById] = useState<
-    Record<string, QuizQuestion[]>
-  >(() =>
-    Object.fromEntries(initial.subtopics.map((s) => [s.id, s.questions || []]))
-  );
-
-  // Prevent duplicate quiz generation across preloader and panel
-  const questionsInFlightRef = useRef<Set<string>>(new Set());
-  const reserveQuestions = useCallback((id: string): boolean => {
-    const s = questionsInFlightRef.current;
-    if (s.has(id)) return false;
-    s.add(id);
-    return true;
-  }, []);
 
   // Prevent duplicate explanation generation (e.g., React StrictMode double effects
   // and races between prefetch and active streaming for the same subtopic)
@@ -707,13 +777,6 @@ export default function LearnView({
 
   // Track which subtopics have been prefetched to avoid missing/duplicate work
   const prefetchedNextRef = useRef<Set<string>>(new Set());
-  const releaseQuestions = useCallback((id: string): void => {
-    questionsInFlightRef.current.delete(id);
-  }, []);
-
-  // Force-correct first subtopic explanation once on mount to avoid any
-  // potential mismatch showing the second subtopic's content.
-  const forceFirstFixRef = useRef<boolean>(false);
 
   // Explanations cache (sanitized)
   const [explanations, setExplanations] = useState<Record<string, string>>(() =>
@@ -739,14 +802,32 @@ export default function LearnView({
   // Hide the generation overlay only when the first subtopic's content is actually ready
   useEffect(() => {
     if (overlayHiddenRef.current) return;
-    const firstId = firstSubtopicIdRef.current;
+    const firstId =
+      firstSubtopicIdRef.current ||
+      initial.subtopics?.[0]?.id ||
+      Object.keys(explanations)[0] ||
+      null;
     if (!firstId) return;
-    const md = stripLeadingTitle(explanations[firstId] || '').trim();
-    if (explanationDone[firstId] || md.length >= 50) {
+    firstSubtopicIdRef.current = firstId;
+    const candidateIds = Array.from(
+      new Set(
+        [
+          firstId,
+          initial.subtopics?.[0]?.id,
+          ...Object.keys(explanations),
+        ].filter(Boolean) as string[]
+      )
+    );
+    const hasRenderableSection = candidateIds.some((id) => {
+      const md = stripLeadingTitle(explanations[id] || '').trim();
+      return Boolean(explanationDone[id]) || md.length >= 50;
+    });
+    if (hasRenderableSection) {
       overlayHiddenRef.current = true;
       setGenVisible(false);
+      setGenHasError(false);
     }
-  }, [explanations, explanationDone]);
+  }, [explanations, explanationDone, initial.subtopics]);
 
   // TTS removed
 
@@ -769,11 +850,13 @@ export default function LearnView({
           const dt = (performance.now ? performance.now() : Date.now()) - t0;
           if (!ttfbSentRef.current) {
             ttfbSentRef.current = true;
-            postTelemetry('gen_overlay_ttfb', { ms: Math.max(0, Math.round(dt)) });
+            postTelemetry('gen_overlay_ttfb', {
+              ms: Math.max(0, Math.round(dt)),
+            });
           }
         });
       }
-    } catch { }
+    } catch {}
 
     const qs = new URLSearchParams({ lectureId: initial.id });
     const ac = new AbortController();
@@ -824,7 +907,13 @@ export default function LearnView({
               unlockedIndex: Math.max(st.unlockedIndex, st.currentIndex),
             }));
             setExplanations((e) => ({ ...e, [s.id]: s.explanation || '' }));
-          } else if (payload?.type === 'title' && typeof payload.title === 'string') {
+            if (String(s.explanation || '').trim().length >= 50) {
+              setExplanationDone((done) => ({ ...done, [s.id]: true }));
+            }
+          } else if (
+            payload?.type === 'title' &&
+            typeof payload.title === 'string'
+          ) {
             setTitle(String(payload.title));
           } else if (payload?.type === 'done') {
             // finished initial stream
@@ -833,7 +922,10 @@ export default function LearnView({
           }
         }
       }
-      const totalMs = Math.max(0, Date.now() - (genStartAtRef.current || Date.now()));
+      const totalMs = Math.max(
+        0,
+        Date.now() - (genStartAtRef.current || Date.now())
+      );
       postTelemetry('gen_total_wait', { ms: totalMs });
       // Do not hide overlay yet; wait until first subtopic's explanation is ready
     } catch (e: any) {
@@ -854,7 +946,15 @@ export default function LearnView({
       abortRef.current = null;
       genStartedRef.current = false;
     }
-  }, [readonly, streaming, initial.id, ui, setExplanations, postTelemetry]);
+  }, [
+    readonly,
+    streaming,
+    initial.id,
+    initial.subtopics,
+    ui,
+    setExplanations,
+    postTelemetry,
+  ]);
 
   // On first mount, if there are no subtopics yet, stream them progressively
   useEffect(() => {
@@ -880,6 +980,10 @@ export default function LearnView({
   const progressPctSafe = isCompleted ? 100 : progressPct;
 
   const canSelect = (i: number) => i <= unlockedIndex;
+  const goToSubtopic = (index: number) => {
+    if (!canSelect(index) || index === currentIndex) return;
+    ui.setState({ currentIndex: index });
+  };
 
   // Demo-only synthesized document for chat grounding
   const demoDoc = useMemo(() => {
@@ -928,7 +1032,7 @@ export default function LearnView({
     } catch {
       return '';
     }
-  }, [currentSubtopic?.id, explanations[currentSubtopic?.id || '']]);
+  }, [currentSubtopic, explanations]);
 
   // Keep unlockedIndex sane if server state changes, but do not override a restored currentIndex on initial mount
   const didApplyServerSyncRef = useRef<boolean>(false);
@@ -940,7 +1044,10 @@ export default function LearnView({
         unlockedIndex: Math.max(u, s.unlockedIndex),
       } as any;
       // Only clamp currentIndex to bounds; do not force it to derived index
-      next.currentIndex = Math.max(0, Math.min(s.currentIndex, initial.subtopics.length - 1));
+      next.currentIndex = Math.max(
+        0,
+        Math.min(s.currentIndex, initial.subtopics.length - 1)
+      );
       return next;
     });
     didApplyServerSyncRef.current = true;
@@ -963,7 +1070,7 @@ export default function LearnView({
         if (activeId !== targetId) {
           return;
         }
-      } catch { }
+      } catch {}
       // Guard: avoid duplicate in-flight generation for the same subtopic.
       // If a background prefetch has reserved this ID (no controller), override it so active view wins.
       if (!reserveExplanation(targetId)) {
@@ -984,8 +1091,8 @@ export default function LearnView({
         const covered =
           targetIndex > 0
             ? initial.subtopics
-              .slice(0, targetIndex)
-              .map((st) => ({ title: st.title, overview: st.overview }))
+                .slice(0, targetIndex)
+                .map((st) => ({ title: st.title, overview: st.overview }))
             : [];
         // Prepare abort + run guard for this subtopic
         const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -994,7 +1101,7 @@ export default function LearnView({
         try {
           const prev = explainControllersRef.current.get(targetId);
           if (prev) prev.abort();
-        } catch { }
+        } catch {}
         const ac = new AbortController();
         explainControllersRef.current.set(targetId, ac);
 
@@ -1057,7 +1164,7 @@ export default function LearnView({
                   (ui as any)?.getState?.().currentIndex ?? currentIndex;
                 const activeId = initial.subtopics[activeIndex]?.id;
                 stillActive = activeId === targetId;
-              } catch { }
+              } catch {}
               // Guard: ensure this chunk belongs to the latest run for this subtopic
               const isLatestRun =
                 explainRunIdRef.current.get(targetId) === runId;
@@ -1122,7 +1229,7 @@ export default function LearnView({
         try {
           const c = explainControllersRef.current.get(targetId);
           if (c) c.abort();
-        } catch { }
+        } catch {}
         explainControllersRef.current.delete(targetId);
         explainRunIdRef.current.delete(targetId);
         releaseExplanation(targetId);
@@ -1135,6 +1242,10 @@ export default function LearnView({
       initial.originalContent,
       initial.subtopics,
       demo,
+      currentIndex,
+      reserveExplanation,
+      releaseExplanation,
+      ui,
     ]
   );
 
@@ -1152,7 +1263,7 @@ export default function LearnView({
       for (const [id, ctl] of explainControllersRef.current) {
         if (s && id !== s.id) ctl.abort();
       }
-    } catch { }
+    } catch {}
     if (s && !explanations[s.id]) {
       // Start fetching explanation immediately
       fetchExplanationFor(s, 'default');
@@ -1162,7 +1273,11 @@ export default function LearnView({
       const isRestoringSubtopic =
         restoringIndexRef.current && pendingSubtopicIdRef.current === s.id;
       // If we're restoring and the correct subtopic is active, perform the saved scroll once
-      if (!restoredScrollRef.current && isRestoringSubtopic && pendingScrollYRef.current !== null) {
+      if (
+        !restoredScrollRef.current &&
+        isRestoringSubtopic &&
+        pendingScrollYRef.current !== null
+      ) {
         const y = Math.max(0, pendingScrollYRef.current);
         pendingScrollYRef.current = null;
         restoringIndexRef.current = false;
@@ -1175,7 +1290,8 @@ export default function LearnView({
               restoredScrollRef.current = true;
             }
           };
-          if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(doScroll);
+          if (typeof requestAnimationFrame !== 'undefined')
+            requestAnimationFrame(doScroll);
           else doScroll();
         }
       } else {
@@ -1255,7 +1371,7 @@ export default function LearnView({
                   const data = (await prev.json()) as any;
                   const p = String(data?.prompt || '').trim();
                   havePrompt = Boolean(p);
-                } catch { }
+                } catch {}
               }
               if (!havePrompt) {
                 // Generate a new short-answer question grounded in the prefetched content
@@ -1285,19 +1401,13 @@ export default function LearnView({
                           modelAnswer: String(data?.modelAnswer || ''),
                         }),
                       });
-                    } catch { }
+                    } catch {}
                   }
                 }
               }
-            } catch { }
+            } catch {}
 
-            // MCQ prefetch removed: lesson now uses a single short-answer mastery check
-            try {
-              // No-op to maintain reservation symmetry
-            } finally {
-              releaseQuestions(next.id);
-              if (reservedExplain) releaseExplanation(next.id);
-            }
+            if (reservedExplain) releaseExplanation(next.id);
           } catch {
             // If it failed early, allow retry on next navigation
             prefetchedNextRef.current.delete(next.id);
@@ -1311,15 +1421,35 @@ export default function LearnView({
 
   // rename removed from lesson page
 
+  const activeExplanation = currentSubtopic
+    ? stripLeadingTitle(explanations[currentSubtopic.id] || '').trim()
+    : '';
+  const activeExplanationFailed = activeExplanation.startsWith(
+    'Could not generate explanation.'
+  );
+  const activeExplanationReady = currentSubtopic
+    ? Boolean(explanationDone[currentSubtopic.id])
+    : false;
+  const currentIsMastered = currentSubtopic
+    ? countedIdsRef.current.has(currentSubtopic.id)
+    : false;
+
   return (
-    <div className="grid grid-cols-1 gap-8 px-2 md:px-4 lg:grid-cols-12 lg:gap-10 xl:gap-12">
+    <div className="grid grid-cols-1 gap-8 px-2 md:px-4 lg:grid-cols-12 lg:gap-7 xl:gap-9">
       {/* Left: Outline */}
       <aside
-        className="space-y-5 self-start rounded-lg border border-neutral-800 p-6 lg:col-span-3 lg:p-7 xl:p-8"
+        className="space-y-5 self-start rounded-xl border border-neutral-800 bg-neutral-950/40 p-5 lg:sticky lg:top-24 lg:col-span-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:p-6 xl:col-span-3"
         data-tour="outline"
       >
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-xl font-semibold">Lecture</h2>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-xs font-medium tracking-[0.16em] text-neutral-500 uppercase">
+              Lesson
+            </div>
+            <h2 className="mt-1 text-lg leading-snug font-semibold break-words">
+              {title}
+            </h2>
+          </div>
           {hasAnySubtopics && (
             <button
               type="button"
@@ -1327,12 +1457,14 @@ export default function LearnView({
               aria-expanded={!subtopicsCollapsed}
               aria-controls={subtopicsContainerId}
               title={subtopicsCollapsed ? 'Show subtopics' : 'Hide subtopics'}
-              aria-label={subtopicsCollapsed ? 'Show subtopics' : 'Hide subtopics'}
-              className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] leading-none text-neutral-200 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+              aria-label={
+                subtopicsCollapsed ? 'Show subtopics' : 'Hide subtopics'
+              }
+              className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] leading-none text-neutral-200 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
             >
               <span>{subtopicsCollapsed ? 'Show' : 'Hide'}</span>
-              <ArrowUpRight
-                className={`h-4 w-4 transition-transform duration-200 ${subtopicsCollapsed ? 'rotate-180' : ''}`}
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform duration-200 ${subtopicsCollapsed ? '-rotate-90' : ''}`}
                 aria-hidden="true"
               />
             </button>
@@ -1340,17 +1472,27 @@ export default function LearnView({
         </div>
 
         {/* Progress bar */}
-        <div className="mt-2" data-tour="progress">
+        <div
+          className="mt-2 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3"
+          data-tour="progress"
+        >
           <div className="mb-1 flex items-center justify-between text-xs text-neutral-400">
-            <span>Progress</span>
-            <span>
-              {masteredCount}/{totalCount} ({progressPctSafe}%)
+            <span>Mastery</span>
+            <span className="font-medium text-neutral-200">
+              {masteredCount} of {totalCount}
             </span>
           </div>
 
           {/* Bar + non-clipped glow */}
           <div className="relative">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+            <div
+              className="h-2 w-full overflow-hidden rounded-full bg-neutral-800"
+              role="progressbar"
+              aria-label="Lesson mastery"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPctSafe}
+            >
               <div
                 className="h-full rounded-full bg-green-600 transition-[width] duration-500"
                 style={{ width: `${progressPctSafe}%` }}
@@ -1363,13 +1505,11 @@ export default function LearnView({
               <div className="h-4 w-full rounded-full bg-green-400/40 mix-blend-screen blur-[10px]" />
             </div>
           </div>
-        </div>
-
-        {/* Title is managed on the Dashboard now */}
-
-        <div className="mt-4 mb-2">
-          <div className="text-sm text-neutral-400 uppercase">Title</div>
-          <div className="text-lg font-semibold">{title}</div>
+          <div className="mt-2 text-[11px] text-neutral-500">
+            {progressPctSafe === 100
+              ? 'Lesson complete'
+              : `${progressPctSafe}% complete · Section ${Math.min(currentIndex + 1, Math.max(1, totalCount))} of ${totalCount}`}
+          </div>
         </div>
 
         {/* Share controls removed from lesson page; available in Learn Workspace only */}
@@ -1378,73 +1518,234 @@ export default function LearnView({
 
         {/* No deletion error state in lesson view */}
 
-        <div id={subtopicsContainerId}>
-          <ul className="space-y-1">
-            {(subtopicsCollapsed
-              ? initial.subtopics.map((s, i) => ({ s, i })).filter(({ i }) => i <= unlockedIndex + 1)
-              : initial.subtopics.map((s, i) => ({ s, i }))
-            ).map(({ s, i }) => (
-              <li key={s.id}>
-                <button
-                  onClick={() => canSelect(i) && ui.setState({ currentIndex: i })}
-                  disabled={!canSelect(i)}
-                  className={`w-full rounded-md px-4 py-3.5 text-left text-sm leading-snug transition-colors ${i > unlockedIndex
-                      ? 'text-neutral-600'
-                      : i === currentIndex
-                        ? 'bg-neutral-800 font-semibold text-white'
-                        : 'text-neutral-300 hover:bg-neutral-900'
+        <div id={subtopicsContainerId} hidden={subtopicsCollapsed}>
+          <ul className="space-y-1.5" aria-label="Lesson sections">
+            {initial.subtopics.map((s, i) => {
+              const isMastered = countedIdsRef.current.has(s.id);
+              const isLocked = i > unlockedIndex;
+              return (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => goToSubtopic(i)}
+                    disabled={isLocked}
+                    aria-current={i === currentIndex ? 'step' : undefined}
+                    title={
+                      isLocked
+                        ? 'Complete the previous section to unlock'
+                        : s.title
+                    }
+                    className={`group flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left text-sm leading-snug transition-colors ${
+                      isLocked
+                        ? 'cursor-not-allowed border-transparent text-neutral-600'
+                        : i === currentIndex
+                          ? 'border-neutral-700 bg-neutral-800 font-semibold text-white'
+                          : 'border-transparent text-neutral-300 hover:border-neutral-800 hover:bg-neutral-900'
                     }`}
-                >
-                  {s.title}
-                </button>
-              </li>
-            ))}
+                  >
+                    <span
+                      className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center"
+                      aria-hidden="true"
+                    >
+                      {isMastered ? (
+                        <CheckCircle2 className="h-4.5 w-4.5 text-emerald-400" />
+                      ) : isLocked ? (
+                        <LockKeyhole className="h-4 w-4" />
+                      ) : (
+                        <Circle
+                          className={`h-4 w-4 ${i === currentIndex ? 'fill-[rgb(var(--accent))] text-[rgb(var(--accent))]' : ''}`}
+                        />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[10px] font-medium tracking-[0.12em] text-neutral-500 uppercase">
+                        Section {i + 1}
+                      </span>
+                      <span className="mt-0.5 block">{s.title}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </aside>
 
       {/* Center: Explanation + Quiz */}
-      <main
+      <section
         ref={mainRef}
-        className={`relative lg:col-span-6 ${readonly ? 'lg:col-span-9' : ''}`}
+        className={`relative lg:col-span-8 xl:col-span-6 ${readonly ? 'lg:col-span-8 xl:col-span-9' : ''}`}
         aria-busy={genVisible ? true : undefined}
+        aria-label="Lesson content"
       >
         {showEloToast && eloToastFrom !== null && eloToastTo !== null && (
-          <div className="pointer-events-none absolute right-0 top-0 z-20 p-2 md:p-3">
+          <div className="pointer-events-none absolute top-0 right-0 z-20 p-2 md:p-3">
             <div className="pointer-events-auto">
               <EloToast from={eloToastFrom} to={eloToastTo} />
             </div>
           </div>
         )}
+        {showSparkle && (
+          <div
+            className="pointer-events-none fixed top-24 left-1/2 z-40 -translate-x-1/2 rounded-full border border-emerald-500/40 bg-emerald-950/95 px-4 py-2.5 text-sm font-semibold text-emerald-100 shadow-2xl"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Sparkles
+                className="h-4 w-4 text-emerald-300"
+                aria-hidden="true"
+              />
+              Lesson complete
+            </span>
+          </div>
+        )}
         {currentSubtopic ? (
           <div className="space-y-8">
             <div className="card p-6 md:p-8 xl:p-10" data-tour="content-pane">
-              <h3 className="text-3xl font-bold tracking-tight">
-                {currentSubtopic.title}
-              </h3>
-              <div className="mt-2 text-sm text-neutral-400">
-                <span>
-                  {formatImportanceLabel(currentSubtopic.importance)} Importance&nbsp;&nbsp;•&nbsp;&nbsp;{formatDifficultyLabel(currentSubtopic.difficulty)} Difficulty
-                </span>
+              <div className="mb-7 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+                <div className="text-xs font-medium tracking-[0.14em] text-neutral-500 uppercase">
+                  Section {currentIndex + 1} of {totalCount}
+                </div>
+                <nav
+                  className="flex items-center gap-2"
+                  aria-label="Section navigation"
+                >
+                  <button
+                    type="button"
+                    onClick={() => goToSubtopic(currentIndex - 1)}
+                    disabled={currentIndex === 0}
+                    aria-label="Previous section"
+                    className="inline-flex h-9 items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSubtopic(currentIndex + 1)}
+                    disabled={
+                      currentIndex >= unlockedIndex ||
+                      currentIndex >= totalCount - 1
+                    }
+                    aria-label={
+                      currentIndex >= unlockedIndex
+                        ? 'Complete the mastery check to unlock the next section'
+                        : 'Next section'
+                    }
+                    title={
+                      currentIndex >= unlockedIndex &&
+                      currentIndex < totalCount - 1
+                        ? 'Complete the mastery check to unlock the next section'
+                        : undefined
+                    }
+                    className="inline-flex h-9 items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    {currentIndex >= unlockedIndex &&
+                    currentIndex < totalCount - 1 ? (
+                      <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </nav>
+              </div>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-3xl font-bold tracking-tight">
+                    {currentSubtopic.title}
+                  </h3>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-300">
+                    <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1">
+                      {formatImportanceLabel(currentSubtopic.importance)}{' '}
+                      importance
+                    </span>
+                    <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1">
+                      {formatDifficultyLabel(currentSubtopic.difficulty)}{' '}
+                      difficulty
+                    </span>
+                    {currentIsMastered && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-800 bg-emerald-950/40 px-2.5 py-1 text-emerald-300">
+                        <CheckCircle2
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        Mastered
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {!activeExplanationReady && !activeExplanationFailed && (
+                  <div
+                    className="inline-flex items-center gap-2 rounded-full bg-neutral-900 px-3 py-1.5 text-xs text-neutral-400"
+                    role="status"
+                  >
+                    <span
+                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-[rgb(var(--accent))]"
+                      aria-hidden="true"
+                    />
+                    Building section…
+                  </div>
+                )}
               </div>
               {/* TTS UI removed */}
-              {!readonly && !demo && (
-                <hr className="my-6 border-neutral-800" />
-              )}
-              <div
-                id="lesson-markdown"
-                data-lesson="markdown"
-                className="markdown"
-              >
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
+              {!readonly && !demo && <hr className="my-6 border-neutral-800" />}
+              {activeExplanationFailed ? (
+                <div
+                  className="rounded-lg border border-red-900/70 bg-red-950/20 p-5"
+                  role="alert"
                 >
-                  {stripLeadingTitle(
-                    explanations[currentSubtopic.id] || ''
-                  ) || 'Crafting learning module...'}
-                </ReactMarkdown>
-              </div>
+                  <div className="font-medium text-red-200">
+                    This section did not load
+                  </div>
+                  <p className="mt-1 text-sm text-neutral-400">
+                    Your progress is safe. Retry the section without leaving the
+                    lesson.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExplanations((current) => ({
+                        ...current,
+                        [currentSubtopic.id]: '',
+                      }));
+                      setExplanationDone((current) => ({
+                        ...current,
+                        [currentSubtopic.id]: false,
+                      }));
+                      void fetchExplanationFor(currentSubtopic, 'default');
+                    }}
+                    className="mt-4 inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800"
+                  >
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    Retry section
+                  </button>
+                </div>
+              ) : activeExplanation ? (
+                <div
+                  id="lesson-markdown"
+                  data-lesson="markdown"
+                  className="markdown"
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
+                  >
+                    {activeExplanation}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div
+                  className="space-y-3 py-2"
+                  role="status"
+                  aria-label="Preparing this lesson section"
+                >
+                  <div className="h-4 w-5/6 animate-pulse rounded bg-neutral-800" />
+                  <div className="h-4 w-full animate-pulse rounded bg-neutral-800" />
+                  <div className="h-4 w-4/6 animate-pulse rounded bg-neutral-800" />
+                </div>
+              )}
             </div>
 
             {!readonly &&
@@ -1454,10 +1755,17 @@ export default function LearnView({
                 ).trim();
                 const hasLesson = lessonMd.length >= 50;
                 return (
-                  <div className="quiz-panel card p-6 md:p-8 xl:p-10" data-tour="quiz-panel">
+                  <div
+                    className="quiz-panel card p-6 md:p-8 xl:p-10"
+                    data-tour="quiz-panel"
+                  >
                     <h3 className="mb-6 text-2xl font-bold tracking-tight">
                       Mastery Check
                     </h3>
+                    <p className="-mt-3 mb-6 text-sm text-neutral-400">
+                      Explain the idea in your own words. Score 8/10 or higher
+                      to unlock the next section.
+                    </p>
                     {!hasLesson && (
                       <p className="mb-4 text-sm text-neutral-400">
                         Waiting for the lesson to finish… quiz will be prepared
@@ -1472,57 +1780,65 @@ export default function LearnView({
                       )}
                       lectureId={initial.id}
                       lessonMd={lessonMd}
-                      onPassed={async (passed) => {
+                      isLast={currentIndex === initial.subtopics.length - 1}
+                      onPassed={async () => {
                         const id = currentSubtopic.id;
-                        if (passed && !countedIdsRef.current.has(id)) {
-                          countedIdsRef.current.add(id);
-                          setMasteredCount((m) => Math.min(totalCount, m + 1));
-                        }
-
-                        /* END-OF-LECTURE */
                         const isLast =
                           currentIndex === initial.subtopics.length - 1;
-                        // Persist mastery only outside demo
-                        if (passed && !demo) {
+
+                        // The server verifies ownership and the saved passing grade.
+                        // Never unlock locally until that confirmation succeeds.
+                        if (!demo) {
+                          let res: Response;
                           try {
-                            // Determine if the first check for this set was a perfect 2/2
-                            void (async () => {
-                              const res = await fetch('/api/mastery', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  subtopicId: currentSubtopic.id,
-                                  firstPerfect: true,
-                                }),
-                              });
-                              if (res.ok) {
-                                const data = (await res.json().catch(() => ({}))) as any;
-                                const d = Number(data?.eloDelta ?? 0);
-                                if (Number.isFinite(d) && d > 0) {
-                                  try {
-                                    window.dispatchEvent(
-                                      new CustomEvent('elo:delta', { detail: { delta: Math.trunc(d) } })
-                                    );
-                                  } catch { }
-                                } else {
-                                  // If no delta returned but mastery succeeded, attempt a refresh
-                                  if (data && data.ok) {
-                                    try {
-                                      window.dispatchEvent(new Event('elo:maybeRefresh'));
-                                    } catch { }
-                                  }
-                                }
-                              }
-                            })();
-                          } catch { }
+                            res = await fetch('/api/mastery', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ subtopicId: id }),
+                            });
+                          } catch {
+                            throw new Error(
+                              'Progress could not be saved. Check your connection and try again.'
+                            );
+                          }
+                          const data = (await res.json().catch(() => ({}))) as {
+                            ok?: boolean;
+                            error?: string;
+                            eloDelta?: number;
+                          };
+                          if (!res.ok || !data?.ok) {
+                            throw new Error(
+                              data?.error ||
+                                'Progress could not be saved. Please try again.'
+                            );
+                          }
+                          const delta = Number(data.eloDelta ?? 0);
+                          try {
+                            if (Number.isFinite(delta) && delta > 0) {
+                              window.dispatchEvent(
+                                new CustomEvent('elo:delta', {
+                                  detail: { delta: Math.trunc(delta) },
+                                })
+                              );
+                            } else {
+                              window.dispatchEvent(
+                                new Event('elo:maybeRefresh')
+                              );
+                            }
+                          } catch {}
+                        }
+
+                        if (!countedIdsRef.current.has(id)) {
+                          countedIdsRef.current.add(id);
+                          setMasteredCount((count) =>
+                            Math.min(totalCount, count + 1)
+                          );
                         }
 
                         if (isLast) {
                           // Mark complete so progress bar hits 100%
-                          if (passed) {
-                            setIsCompleted(true);
-                            setShowSparkle(true);
-                          }
+                          setIsCompleted(true);
+                          setShowSparkle(true);
                           // Smoothly scroll to the top so the user can see the full progress bar
                           if (typeof requestAnimationFrame !== 'undefined') {
                             requestAnimationFrame(() => scrollToMainTop());
@@ -1530,18 +1846,18 @@ export default function LearnView({
                             scrollToMainTop();
                           }
                           // Keep sparkle briefly, then hide
-                          if (passed) setTimeout(() => setShowSparkle(false), 1200);
+                          setTimeout(() => setShowSparkle(false), 1200);
                           // In demo, do not navigate away; otherwise go to completion page
                           if (!demo) {
                             setTimeout(() => {
                               try {
                                 router.push(`/learn/${initial.id}/complete`);
-                              } catch { }
+                              } catch {}
                             }, 1600);
                           }
                           return;
                         }
-                        // Optimistic advance
+                        // Advance only after the server has confirmed mastery.
                         const idx = currentIndex;
                         const next = Math.min(
                           idx + 1,
@@ -1564,12 +1880,12 @@ export default function LearnView({
             <p>Select a subtopic to begin</p>
           </div>
         )}
-      </main>
+      </section>
 
       {/* Right: AI Tutor */}
       {!readonly && (
         <aside
-          className="sticky top-24 h-[calc(100vh-8rem)] self-start lg:col-span-3"
+          className="h-[38rem] self-start lg:col-span-12 xl:sticky xl:top-24 xl:col-span-3 xl:h-[calc(100vh-8rem)]"
           data-tour="chat-panel"
         >
           <ChatPanel
@@ -1598,10 +1914,13 @@ export default function LearnView({
         onCancel={() => {
           try {
             if (abortRef.current) {
-              const ok = typeof window !== 'undefined' ? window.confirm('Cancel generation?') : true;
+              const ok =
+                typeof window !== 'undefined'
+                  ? window.confirm('Cancel generation?')
+                  : true;
               if (ok) abortRef.current.abort();
             }
-          } catch { }
+          } catch {}
         }}
         onRetry={() => {
           setGenHasError(false);
@@ -1612,7 +1931,7 @@ export default function LearnView({
         onBack={() => {
           try {
             router.push('/dashboard');
-          } catch { }
+          } catch {}
         }}
       />
 
@@ -1620,7 +1939,9 @@ export default function LearnView({
       <noscript>
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70">
           <div className="rounded-md border border-neutral-800 bg-neutral-950 px-5 py-4 text-neutral-200">
-            <div className="text-sm">Generating your lesson… This can take up to a minute.</div>
+            <div className="text-sm">
+              Generating your lesson… This can take up to a minute.
+            </div>
           </div>
         </div>
       </noscript>
@@ -1635,50 +1956,65 @@ function ShortAnswerPanel({
   explanationReady,
   lectureId,
   lessonMd,
+  isLast,
   onPassed,
 }: {
   subtopicId: string;
   explanationReady: boolean;
   lectureId: string;
   lessonMd?: string;
-  onPassed: (passed: boolean) => void;
+  isLast: boolean;
+  onPassed: () => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState<string>('');
   const [modelAnswer, setModelAnswer] = useState<string>('');
   const [answer, setAnswer] = useState<string>('');
   const [score, setScore] = useState<number | null>(null);
+  const [gradedAnswer, setGradedAnswer] = useState<string>('');
   const [feedback, setFeedback] = useState<string>('');
   const [grading, setGrading] = useState<boolean>(false);
   const [loaded, setLoaded] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
 
   // Generate or restore a single short-answer prompt grounded in the current lesson
   useEffect(() => {
     const load = async () => {
+      const payload = (lessonMd || '').trim();
+      if (!explanationReady || payload.length < 50) {
+        setLoaded(false);
+        return;
+      }
       try {
         setError(null);
         setLoaded(false);
-        const payload = (lessonMd || '').trim();
-        if (!explanationReady || payload.length < 50) return;
         // Local ephemeral cache key (for signed-out stability)
         const cacheKey = `sap:${lectureId}:${subtopicId}`;
+        let localQuestion: {
+          prompt: string;
+          modelAnswer: string;
+          feedback: string;
+        } | null = null;
         try {
-          const raw = typeof window !== 'undefined' ? window.localStorage.getItem(cacheKey) : null;
+          const raw =
+            typeof window !== 'undefined'
+              ? window.localStorage.getItem(cacheKey)
+              : null;
           if (raw) {
             const j = JSON.parse(raw || '{}');
             const pLocal = sanitizeMarkdown(String(j?.prompt || '').trim());
             if (pLocal) {
-              setPrompt(pLocal);
-              const maLocal = sanitizeMarkdown(String(j?.modelAnswer || ''));
-              if (maLocal) setModelAnswer(maLocal);
-              const fbLocal = sanitizeMarkdown(String(j?.feedback || ''));
-              if (fbLocal) setFeedback(fbLocal);
-              setLoaded(true);
-              return;
+              localQuestion = {
+                prompt: pLocal,
+                modelAnswer: sanitizeMarkdown(String(j?.modelAnswer || '')),
+                feedback: sanitizeMarkdown(String(j?.feedback || '')),
+              };
             }
           }
-        } catch { }
-        // First try to restore a previously saved short question for this subtopic
+        } catch {}
+        // Prefer the server copy so signed-in users also recover their answer and score.
         const prev = await fetch(
           `/api/revise/short?lectureId=${encodeURIComponent(lectureId)}&subtopicId=${encodeURIComponent(subtopicId)}`
         );
@@ -1692,7 +2028,16 @@ function ShortAnswerPanel({
               setAnswer(String(data.answer));
             }
             if (typeof data?.score === 'number') {
-              setScore(Number(data.score));
+              setScore(Math.max(0, Math.min(10, Number(data.score))));
+              if (typeof data?.answer === 'string') {
+                setGradedAnswer(String(data.answer).trim());
+              }
+              if (
+                typeof data?.modelAnswer === 'string' &&
+                data.modelAnswer.trim()
+              ) {
+                setModelAnswer(sanitizeMarkdown(String(data.modelAnswer)));
+              }
             }
             if (typeof data?.feedback === 'string' && data?.feedback.trim()) {
               setFeedback(sanitizeMarkdown(String(data.feedback)));
@@ -1700,13 +2045,29 @@ function ShortAnswerPanel({
             // Do not reveal model answer until graded in-session
             try {
               const ma = sanitizeMarkdown(String(data?.modelAnswer || ''));
-              const fb = typeof data?.feedback === 'string' ? sanitizeMarkdown(String(data.feedback)) : '';
-              const toSave = JSON.stringify({ prompt: p, modelAnswer: ma, feedback: fb });
-              if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
-            } catch { }
+              const fb =
+                typeof data?.feedback === 'string'
+                  ? sanitizeMarkdown(String(data.feedback))
+                  : '';
+              const toSave = JSON.stringify({
+                prompt: p,
+                modelAnswer: ma,
+                feedback: fb,
+              });
+              if (typeof window !== 'undefined')
+                window.localStorage.setItem(cacheKey, toSave);
+            } catch {}
             setLoaded(true);
             return;
           }
+        }
+        if (localQuestion) {
+          setPrompt(localQuestion.prompt);
+          if (localQuestion.modelAnswer)
+            setModelAnswer(localQuestion.modelAnswer);
+          if (localQuestion.feedback) setFeedback(localQuestion.feedback);
+          setLoaded(true);
+          return;
         }
         // Otherwise, generate a new one
         const res = await fetch('/api/revise/generate-one', {
@@ -1718,13 +2079,23 @@ function ShortAnswerPanel({
           }),
         });
         if (!res.ok) throw new Error('Failed to generate');
-        const data = (await res.json().catch(() => ({}))) as { prompt?: string; modelAnswer?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          prompt?: string;
+          modelAnswer?: string;
+        };
         const q = sanitizeMarkdown(String(data?.prompt || '').trim());
+        if (!q) throw new Error('No question was returned');
         setPrompt(q);
+        setModelAnswer(sanitizeMarkdown(String(data?.modelAnswer || '')));
         try {
-          const toSave = JSON.stringify({ prompt: q, modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')), feedback: '' });
-          if (typeof window !== 'undefined') window.localStorage.setItem(cacheKey, toSave);
-        } catch { }
+          const toSave = JSON.stringify({
+            prompt: q,
+            modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')),
+            feedback: '',
+          });
+          if (typeof window !== 'undefined')
+            window.localStorage.setItem(cacheKey, toSave);
+        } catch {}
         // Persist the generated prompt so it survives reloads/sessions
         try {
           await fetch('/api/revise/short', {
@@ -1737,7 +2108,7 @@ function ShortAnswerPanel({
               modelAnswer: sanitizeMarkdown(String(data?.modelAnswer || '')),
             }),
           });
-        } catch { }
+        } catch {}
       } catch (e: any) {
         setError(e?.message || 'Failed to prepare question');
       } finally {
@@ -1745,13 +2116,19 @@ function ShortAnswerPanel({
       }
     };
     void load();
-  }, [explanationReady, lessonMd, lectureId]);
+  }, [explanationReady, lessonMd, lectureId, subtopicId, retryNonce]);
 
   // Autosave the user's answer as they type so it restores when returning
   useEffect(() => {
     if (!prompt) return;
     const a = String(answer || '').trim();
-    const payload = { lectureId, subtopicId, prompt, modelAnswer, answer: a } as any;
+    const payload = {
+      lectureId,
+      subtopicId,
+      prompt,
+      modelAnswer,
+      answer: a,
+    } as any;
     const save = () => {
       try {
         void fetch('/api/revise/short', {
@@ -1759,7 +2136,7 @@ function ShortAnswerPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-      } catch { }
+      } catch {}
     };
     const t = setTimeout(save, 600);
     return () => clearTimeout(t);
@@ -1768,28 +2145,53 @@ function ShortAnswerPanel({
   const submit = async () => {
     const a = (answer || '').trim();
     if (!a || !prompt) return;
+    setError(null);
+    setAdvanceError(null);
     setGrading(true);
     try {
       const res = await fetch('/api/revise/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Allow server to award elo when appropriate
-        body: JSON.stringify({ lectureId, prompt, answer: a, suppressElo: false, lessonMd }),
+        body: JSON.stringify({
+          lectureId,
+          prompt,
+          answer: a,
+          suppressElo: true,
+          lessonMd,
+        }),
       });
       if (!res.ok) throw new Error('Failed to grade');
-      const data = (await res.json()) as { score: number; modelAnswer?: string; feedback?: string; eloDelta?: number };
+      const data = (await res.json()) as {
+        score: number;
+        modelAnswer?: string;
+        feedback?: string;
+        eloDelta?: number;
+      };
       const s = Math.max(0, Math.min(10, Number(data?.score)));
       setScore(Number.isFinite(s) ? s : 0);
-      if (data?.modelAnswer && !modelAnswer) setModelAnswer(sanitizeMarkdown(String(data.modelAnswer)));
-      if (typeof data?.feedback === 'string') setFeedback(sanitizeMarkdown(String(data.feedback)));
+      setGradedAnswer(a);
+      const nextModelAnswer = data?.modelAnswer
+        ? sanitizeMarkdown(String(data.modelAnswer))
+        : modelAnswer;
+      const nextFeedback =
+        typeof data?.feedback === 'string'
+          ? sanitizeMarkdown(String(data.feedback))
+          : feedback;
+      if (nextModelAnswer) setModelAnswer(nextModelAnswer);
+      setFeedback(nextFeedback);
       // Fire ELO UI update if server awarded points
       try {
         const delta = Number(data?.eloDelta ?? 0);
         if (Number.isFinite(delta) && delta > 0) {
-          window.dispatchEvent(new CustomEvent('elo:delta', { detail: { delta: Math.trunc(delta) } }));
+          window.dispatchEvent(
+            new CustomEvent('elo:delta', {
+              detail: { delta: Math.trunc(delta) },
+            })
+          );
           window.dispatchEvent(new Event('elo:maybeRefresh'));
         }
-      } catch { }
+      } catch {}
       // Persist the answer + score so the user resumes where they left off
       try {
         await fetch('/api/revise/short', {
@@ -1799,13 +2201,13 @@ function ShortAnswerPanel({
             lectureId,
             subtopicId,
             prompt,
-            modelAnswer,
+            modelAnswer: nextModelAnswer,
             answer: a,
             score: s,
-            feedback,
+            feedback: nextFeedback,
           }),
         });
-      } catch { }
+      } catch {}
     } catch (e: any) {
       setError(e?.message || 'Grading failed');
     } finally {
@@ -1814,667 +2216,234 @@ function ShortAnswerPanel({
   };
 
   // More lenient pass threshold (> 7)
-  const canAdvance = typeof score === 'number' && score >= 8;
+  const answerChangedSinceGrade =
+    typeof score === 'number' &&
+    Boolean(gradedAnswer) &&
+    answer.trim() !== gradedAnswer;
+  const canAdvance =
+    typeof score === 'number' &&
+    score >= 8 &&
+    Boolean(answer.trim()) &&
+    !answerChangedSinceGrade;
+  const wordCount = answer.trim() ? answer.trim().split(/\s+/).length : 0;
+  const answerId = `mastery-answer-${subtopicId}`;
+  const answerHintId = `mastery-answer-hint-${subtopicId}`;
+
+  const continueAfterMastery = async () => {
+    if (!canAdvance || advancing) return;
+    setAdvancing(true);
+    setAdvanceError(null);
+    try {
+      await onPassed();
+    } catch (caught: any) {
+      setAdvanceError(
+        caught?.message ||
+          'Progress could not be saved. Your answer is safe—please try again.'
+      );
+    } finally {
+      setAdvancing(false);
+    }
+  };
 
   if (!loaded) {
-    return <p className="text-sm text-neutral-400">Preparing question…</p>;
+    return (
+      <div
+        className="space-y-3"
+        role="status"
+        aria-label="Preparing mastery question"
+      >
+        <div className="h-4 w-5/6 animate-pulse rounded bg-neutral-800" />
+        <div className="h-24 w-full animate-pulse rounded-lg bg-neutral-900" />
+      </div>
+    );
   }
   if (!prompt) {
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-neutral-400">No question available for this section.</p>
+      <div
+        className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4"
+        role="alert"
+      >
+        <p className="text-sm font-medium text-amber-100">
+          The mastery question did not load.
+        </p>
+        <p className="mt-1 text-sm text-neutral-400">
+          Your lesson progress is safe. Try preparing the question again.
+        </p>
+        <button
+          type="button"
+          onClick={() => setRetryNonce((value) => value + 1)}
+          className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          Retry question
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {error && <div className="text-sm text-red-400">{error}</div>}
+      {error && (
+        <div
+          className="rounded-md border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200"
+          role="alert"
+        >
+          {error === 'Grading failed' || error === 'Failed to grade'
+            ? 'Your answer could not be graded. It is still here—please try again.'
+            : 'The mastery check ran into a problem. Please try again.'}
+        </div>
+      )}
       <div className="chat-md font-medium text-neutral-200">
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+        >
           {prompt}
         </ReactMarkdown>
       </div>
+      <label
+        htmlFor={answerId}
+        className="block text-sm font-medium text-neutral-300"
+      >
+        Your answer
+      </label>
       <textarea
-        className="w-full rounded-md border border-neutral-700 bg-neutral-900 p-3 text-sm"
+        id={answerId}
+        aria-describedby={answerHintId}
+        className="w-full rounded-lg border border-neutral-700 bg-neutral-900 p-4 text-sm leading-relaxed transition-colors outline-none placeholder:text-neutral-500 focus:border-[rgb(var(--accent))] focus:ring-2 focus:ring-[rgba(var(--accent),0.2)]"
         rows={5}
         value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={(e) => {
+          setAnswer(e.target.value);
+          setAdvanceError(null);
+        }}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            void submit();
+          }
+        }}
         placeholder="Write your answer…"
+        disabled={advancing}
       />
-      <div className="flex items-center gap-3">
+      <div
+        id={answerHintId}
+        className="flex items-center justify-between gap-3 text-xs text-neutral-500"
+      >
+        <span>Use your own words. ⌘/Ctrl + Enter to submit.</span>
+        <span>
+          {wordCount} {wordCount === 1 ? 'word' : 'words'}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={submit}
-          disabled={grading || !answer.trim()}
-          className="rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+          disabled={grading || advancing || !answer.trim()}
+          className="rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {grading ? 'Grading…' : 'Submit'}
+          {grading
+            ? 'Grading answer…'
+            : typeof score === 'number'
+              ? 'Grade revised answer'
+              : 'Grade my answer'}
         </button>
-        {typeof score === 'number' && (
-          <span className="text-sm text-neutral-300">
-            Score: <span className="font-semibold">{score}/10</span>
-          </span>
-        )}
       </div>
+      {typeof score === 'number' && (
+        <div
+          className={`rounded-lg border p-4 ${answerChangedSinceGrade ? 'border-neutral-700 bg-neutral-900/50' : canAdvance ? 'border-emerald-800 bg-emerald-950/30' : 'border-amber-800 bg-amber-950/25'}`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div
+              className={`inline-flex items-center gap-2 font-semibold ${answerChangedSinceGrade ? 'text-neutral-200' : canAdvance ? 'text-emerald-200' : 'text-amber-100'}`}
+            >
+              {canAdvance ? (
+                <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <Circle className="h-5 w-5" aria-hidden="true" />
+              )}
+              {answerChangedSinceGrade
+                ? 'Answer changed—grade it again'
+                : canAdvance
+                  ? 'Section mastered'
+                  : 'Almost there—revise and try again'}
+            </div>
+            <div className="text-sm text-neutral-300">
+              <span className="text-lg font-bold text-white">{score}</span>/10
+            </div>
+          </div>
+          {!canAdvance && !answerChangedSinceGrade && (
+            <p className="mt-2 text-sm text-neutral-400">
+              Review the feedback, strengthen your answer, then resubmit. You
+              need 8/10 to continue.
+            </p>
+          )}
+        </div>
+      )}
       {typeof score === 'number' && feedback && (
-        <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-          <div className="text-neutral-400">Feedback:</div>
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+        <div className="chat-md mt-2 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-300">
+          <div className="mb-2 text-xs font-semibold tracking-[0.12em] text-neutral-500 uppercase">
+            Feedback
+          </div>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
             {feedback}
           </ReactMarkdown>
         </div>
       )}
       {typeof score === 'number' && modelAnswer && (
-        <div className="chat-md mt-2 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-          <div className="text-neutral-400">Model answer:</div>
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-            {modelAnswer}
-          </ReactMarkdown>
-        </div>
+        <details className="group mt-2 rounded-lg border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-400">
+          <summary className="cursor-pointer font-medium text-neutral-300 marker:text-neutral-500">
+            Compare with a strong answer
+          </summary>
+          <div className="chat-md mt-3 border-t border-neutral-800 pt-3">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {modelAnswer}
+            </ReactMarkdown>
+          </div>
+        </details>
       )}
-      {typeof score === 'number' && (
-        <div className="pt-2">
+      {canAdvance && (
+        <div className="space-y-3 pt-2">
+          {advanceError && (
+            <div
+              className="rounded-md border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200"
+              role="alert"
+            >
+              <div className="font-medium">Progress was not saved</div>
+              <p className="mt-1 text-neutral-300">{advanceError}</p>
+            </div>
+          )}
           <button
-            onClick={() => onPassed(canAdvance)}
-            className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
+            onClick={() => void continueAfterMastery()}
+            disabled={advancing}
+            aria-busy={advancing || undefined}
+            className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-70"
           >
-            Go to next subtopic
+            {advancing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Saving progress…
+              </>
+            ) : (
+              <>
+                {advanceError
+                  ? 'Try saving again'
+                  : isLast
+                    ? 'Complete lesson'
+                    : 'Continue to next section'}
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </>
+            )}
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ------------------------------ QuizPanel --------------------------------- */
-
-function QuizPanel({
-  subtopicId,
-  subtopicTitle,
-  overview,
-  explanationReady,
-  lectureId,
-  lessonMd,
-  questions,
-  onPassed,
-  onQuestionsSaved,
-  reserveQuestions,
-  releaseQuestions,
-  disablePersistence,
-}: {
-  subtopicId: string;
-  subtopicTitle: string;
-  overview?: string;
-  explanationReady: boolean;
-  lectureId: string;
-  lessonMd?: string;
-  questions: QuizQuestion[];
-  onPassed: (firstPerfect: boolean) => void;
-  onQuestionsSaved?: (saved: QuizQuestion[]) => void;
-  reserveQuestions?: (id: string) => boolean;
-  releaseQuestions?: (id: string) => void;
-  disablePersistence?: boolean;
-}) {
-  const stripABCD = (str: string) =>
-    (str ?? '').replace(/^\s*[A-Da-d]\s*[.)-:]\s*/, '').trim();
-
-  // Stable, seeded shuffle so the correct answer isn't position-biased and
-  // ordering is consistent per question across rerenders.
-  const hashStringToSeed = (s: string): number => {
-    let h = 2166136261 >>> 0; // FNV-1a base
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-  };
-  const seededRandomFactory = (seed: number) => {
-    let t = seed >>> 0;
-    return () => {
-      t += 0x6d2b79f5;
-      let r = Math.imul(t ^ (t >>> 15), 1 | t);
-      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-  };
-  const shuffleOptionsWithAnswerSeeded = (
-    options: string[],
-    answerIndex: number,
-    seedStr: string
-  ): { options: string[]; answerIndex: number } => {
-    const rng = seededRandomFactory(hashStringToSeed(seedStr));
-    const pairs = options.map((opt, idx) => ({ opt, idx }));
-    for (let i = pairs.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
-    }
-    const newOptions = pairs.map((p) => p.opt);
-    let newAnswerIndex = pairs.findIndex((p) => p.idx === answerIndex);
-    // Guard: avoid placing the correct answer at index 0 to reduce perceived bias
-    if (newAnswerIndex === 0) {
-      const rng2 = seededRandomFactory(hashStringToSeed(`${seedStr}|nofirst`));
-      const j = 1 + Math.floor(rng2() * 3); // pick 1..3 uniformly
-      [newOptions[0], newOptions[j]] = [newOptions[j], newOptions[0]];
-      newAnswerIndex = j;
-    }
-    return { options: newOptions, answerIndex: newAnswerIndex };
-  };
-  const shuffleForDisplay = (q: QuizQuestion): QuizQuestion => {
-    const seed = q.id || `${q.prompt}:${q.explanation}`;
-    const sh = shuffleOptionsWithAnswerSeeded(q.options, q.answerIndex, seed);
-    return { ...q, options: sh.options, answerIndex: sh.answerIndex };
-  };
-
-  const [items, setItems] = useState<QuizQuestion[]>(() =>
-    Array.isArray(questions) ? questions.map(shuffleForDisplay) : []
-  );
-  const [answers, setAnswers] = useState<number[]>([]);
-  const [revealed, setRevealed] = useState(false);
-  const [loadingAnother, setLoadingAnother] = useState(false);
-  const [hardLoaded, setHardLoaded] = useState(false);
-  const [version, setVersion] = useState(0); // Force re-render when questions change
-  const REQUIRED_QUESTIONS = 2;
-  const hasRequired = items.length >= REQUIRED_QUESTIONS;
-
-  // Reset when subtopic questions change
-  useEffect(() => {
-    const processed = Array.isArray(questions)
-      ? questions.map(shuffleForDisplay)
-      : [];
-    setItems(processed);
-    setAnswers([]);
-    setRevealed(false);
-    setHardLoaded(false);
-  }, [questions.map((q) => q.id).join('|')]);
-
-  const setAns = (qIndex: number, ansIndex: number) => {
-    const next = [...answers];
-    next[qIndex] = ansIndex;
-    setAnswers(next);
-  };
-
-  const allCorrect =
-    items &&
-    items.length > 0 &&
-    items.every((q, i) => answers[i] === q.answerIndex);
-  const twoCorrect =
-    hasRequired &&
-    answers[0] === items[0]?.answerIndex &&
-    answers[1] === items[1]?.answerIndex;
-
-  const firstCheckRef = useRef<{ done: boolean; wasPerfect: boolean }>({
-    done: false,
-    wasPerfect: false,
-  });
-
-  useEffect(() => {
-    // Reset the first-check tracker whenever the question set changes
-    firstCheckRef.current = { done: false, wasPerfect: false };
-  }, [items.map((q) => q.id).join('|')]);
-
-  const check = () => {
-    if (!firstCheckRef.current.done) {
-      const twoNow =
-        items.length >= REQUIRED_QUESTIONS &&
-        answers[0] === items[0]?.answerIndex &&
-        answers[1] === items[1]?.answerIndex;
-      firstCheckRef.current = { done: true, wasPerfect: Boolean(twoNow) };
-    }
-    setRevealed(true);
-    // Persist attempts for the current selections at check-time (not on every click)
-    try {
-      if (!disablePersistence) {
-        for (let i = 0; i < items.length; i++) {
-          const q = items[i];
-          const sel = answers[i];
-          if (typeof sel === 'number' && q && q.id) {
-            void fetch('/api/quiz/attempt', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                questionId: q.id,
-                selectedIndex: sel,
-                isCorrect: sel === q.answerIndex,
-              }),
-            });
-          }
-        }
-      }
-    } catch { }
-  };
-  const tryAgain = () => setRevealed(false);
-
-  // Optionally fetch questions from lesson content until we have REQUIRED_QUESTIONS
-  useEffect(() => {
-    // Delay initial question generation until the explanation is fully ready
-    // to ensure richer context (parity with the "Another set" flow)
-    if (!explanationReady) return;
-    // Generate sequentially to avoid duplicates and race conditions
-    if (hardLoaded || items.length >= REQUIRED_QUESTIONS) return;
-    const lessonPayload = (lessonMd || '').trim();
-    if (lessonPayload.length < 50) {
-      // If no lesson content yet, retry when it arrives
-      return;
-    }
-    // Prevent duplicate generations (e.g., StrictMode double invoke / re-mounts)
-    const reserved = reserveQuestions ? reserveQuestions(subtopicId) : true;
-    if (!reserved) return;
-
-    (async () => {
-      let success = false;
-      try {
-        const needed = Math.max(0, REQUIRED_QUESTIONS - items.length);
-        if (needed === 0) {
-          setHardLoaded(true);
-          return;
-        }
-
-        // Request both questions in a single call when possible to reduce overlap
-        const generated: Array<{
-          prompt: string;
-          options: string[];
-          answerIndex: number;
-          explanation: string;
-        }> = [];
-        const avoid = new Set<string>(
-          (Array.isArray(items) ? items : [])
-            .map((q) => q.prompt)
-            .filter(Boolean)
-        );
-        try {
-          const res = await fetch('/api/quiz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lessonMd: lessonPayload,
-              difficulty: 'hard',
-              subtopicTitle,
-              lectureId,
-              overview,
-              subtopicId,
-              avoidPrompts: Array.from(avoid),
-              count: Math.min(2, needed),
-            }),
-          });
-          if (res.ok) {
-            const data = (await res.json()) as {
-              questions: Array<{
-                prompt: string;
-                options: string[];
-                answerIndex: number;
-                explanation: string;
-              }>;
-              debug?: any;
-            };
-            try {
-              if (data?.debug)
-                console.debug('[quiz]', { subtopicId, debug: data.debug });
-            } catch { }
-            for (const cand of data.questions || []) {
-              const prompt = String(cand?.prompt || '').trim();
-              if (
-                !prompt ||
-                avoid.has(prompt) ||
-                generated.some((g) => g.prompt === prompt)
-              )
-                continue;
-              generated.push(cand);
-              avoid.add(prompt);
-              if (generated.length >= needed) break;
-            }
-          }
-        } catch { }
-
-        if (generated.length) {
-          if (disablePersistence) {
-            // Demo: ephemeral temp IDs
-            const temp = generated.map((q, idx) => ({
-              ...q,
-              id: `${subtopicId}-temp-${Date.now()}-${idx}`,
-            })) as unknown as QuizQuestion[];
-            const processed = temp.map(shuffleForDisplay);
-            setItems(processed);
-            setAnswers([]);
-            setRevealed(false);
-            setVersion((v) => v + 1);
-            success = true;
-          } else {
-            // Persist to DB so these questions have stable IDs and survive reloads
-            const save = await fetch('/api/quiz/questions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ subtopicId, questions: generated }),
-            });
-            if (save.ok) {
-              const payload = (await save.json()) as {
-                questions: Array<{
-                  id: string;
-                  prompt: string;
-                  options: string[];
-                  answerIndex: number;
-                  explanation: string;
-                }>;
-              };
-              const saved = (payload.questions || []).slice(
-                0,
-                REQUIRED_QUESTIONS
-              );
-              if (saved.length) {
-                const processed = saved.map(
-                  shuffleForDisplay
-                ) as unknown as QuizQuestion[];
-                setItems(processed);
-                setAnswers([]);
-                setRevealed(false);
-                setVersion((v) => v + 1); // Force re-render
-                success = true;
-                // Inform parent so future mounts use the saved questions and avoid re-generating
-                try {
-                  onQuestionsSaved?.(processed as unknown as QuizQuestion[]);
-                } catch { }
-              }
-            }
-            // Fallback: if not saved to DB, still show the generated questions with temporary IDs
-            if (!success) {
-              const temp = generated.map((q, idx) => ({
-                ...q,
-                id: `${subtopicId}-temp-${Date.now()}-${idx}`,
-              })) as unknown as QuizQuestion[];
-              const processed = temp.map(shuffleForDisplay);
-              setItems(processed);
-              setAnswers([]);
-              setRevealed(false);
-              setVersion((v) => v + 1);
-              success = true;
-            }
-          }
-        }
-        // If nothing could be generated/saved, mark as loaded to avoid infinite spinner
-        if (!success) {
-          setHardLoaded(true);
-        }
-      } catch {
-        // swallow
-      } finally {
-        setHardLoaded((prev) => prev || success);
-        try {
-          releaseQuestions?.(subtopicId);
-        } catch { }
-      }
-    })();
-  }, [
-    explanationReady,
-    lessonMd,
-    hardLoaded,
-    items.length,
-    subtopicId,
-    subtopicTitle,
-    reserveQuestions,
-    releaseQuestions,
-    onQuestionsSaved,
-  ]);
-
-  // Quiz progress is not persisted; no restore/reset logic
-
-  const askAnother = async () => {
-    setLoadingAnother(true);
-    try {
-      const payload = (lessonMd || '').trim();
-      if (payload.length < 50) throw new Error('lesson too short');
-
-      // Generate sequentially, ensuring uniqueness against current items
-      const generated: Array<{
-        prompt: string;
-        options: string[];
-        answerIndex: number;
-        explanation: string;
-      }> = [];
-      const avoid = new Set<string>(
-        (Array.isArray(items) ? items : []).map((q) => q.prompt).filter(Boolean)
-      );
-      try {
-        const res = await fetch('/api/quiz', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lessonMd: payload,
-            difficulty: 'hard',
-            subtopicTitle,
-            lectureId,
-            overview,
-            subtopicId,
-            avoidPrompts: Array.from(avoid),
-            count: 2,
-          }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as {
-            questions: Array<{
-              prompt: string;
-              options: string[];
-              answerIndex: number;
-              explanation: string;
-            }>;
-            debug?: any;
-          };
-          try {
-            if (data?.debug)
-              console.debug('[quiz/another]', {
-                subtopicId,
-                debug: data.debug,
-              });
-          } catch { }
-          for (const cand of data.questions || []) {
-            const prompt = String(cand?.prompt || '').trim();
-            if (
-              !prompt ||
-              avoid.has(prompt) ||
-              generated.some((g) => g.prompt === prompt)
-            )
-              continue;
-            generated.push(cand);
-            avoid.add(prompt);
-          }
-        }
-      } catch { }
-
-      if (generated.length === 0) throw new Error('No questions returned');
-
-      // Persist the newly generated set so they have stable IDs
-      let saved: Array<{
-        id: string;
-        prompt: string;
-        options: string[];
-        answerIndex: number;
-        explanation: string;
-      }> = [];
-      if (!disablePersistence) {
-        try {
-          const save = await fetch('/api/quiz/questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              subtopicId,
-              questions: generated,
-              replace: true,
-            }),
-          });
-          if (save.ok) {
-            const payload = (await save.json()) as {
-              questions: Array<{
-                id: string;
-                prompt: string;
-                options: string[];
-                answerIndex: number;
-                explanation: string;
-              }>;
-            };
-            saved = payload.questions || [];
-          }
-        } catch { }
-      }
-
-      const nextItemsRaw = (saved.length > 0
-        ? saved
-        : generated.map((q, idx) => ({
-          ...q,
-          id: `${subtopicId}-temp-${Date.now()}-${idx}`,
-        }))) as unknown as QuizQuestion[];
-      const nextItems = nextItemsRaw.map(shuffleForDisplay);
-
-      // Update state and ensure re-render
-      setItems(nextItems);
-      setAnswers([]);
-      setRevealed(false);
-      setVersion((v) => v + 1); // Force re-render
-
-      // Notify parent if questions were saved
-      if (!disablePersistence && saved.length > 0) {
-        try {
-          onQuestionsSaved?.(nextItems);
-        } catch { }
-      }
-    } catch (_e) {
-      // Do not use any fallback question variants; leave questions unchanged on failure.
-    } finally {
-      setLoadingAnother(false);
-    }
-  };
-  if (items.length < REQUIRED_QUESTIONS && !hardLoaded) {
-    return <p className="text-sm text-neutral-400">Preparing questions…</p>;
-  }
-
-  if (explanationReady && (!items || items.length === 0) && hardLoaded) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-neutral-400">
-          No quiz questions for this subtopic.
-        </p>
-        <button
-          onClick={askAnother}
-          disabled={loadingAnother}
-          className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
-        >
-          {loadingAnother ? 'Generating…' : 'Generate questions'}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4" key={`quiz-${version}`}>
-      <ul className="space-y-6">
-        {items.map((q, i) => {
-          const selected = answers[i];
-          const isAllCorrect = allCorrect;
-          return (
-            <li key={q.id} className="space-y-3">
-              <div className="chat-md font-medium text-neutral-200">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={{
-                    em: (props) => (
-                      <em className="font-semibold not-italic" {...props} />
-                    ),
-                  }}
-                >
-                  {q.prompt}
-                </ReactMarkdown>
-              </div>
-              <div className="grid gap-2">
-                {q.options.map((o, j) => {
-                  const isSelected = selected === j;
-                  const isCorrect = revealed && j === q.answerIndex;
-                  const isIncorrect =
-                    revealed && isSelected && j !== q.answerIndex;
-                  const buttonClass = `rounded-md border p-3 text-left transition-all text-sm ${isCorrect
-                      ? 'border-green-500 bg-green-900/30'
-                      : isIncorrect
-                        ? 'border-red-500 bg-red-900/30'
-                        : isSelected
-                          ? 'border-blue-500 bg-blue-900/20'
-                          : 'border-neutral-700 hover:bg-neutral-800'
-                    }`;
-                  return (
-                    <button
-                      key={j}
-                      onClick={async () => {
-                        setAns(i, j);
-                      }}
-                      className={buttonClass}
-                      disabled={revealed && isAllCorrect}
-                    >
-                      <span className="chat-md">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm, remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                          components={{
-                            // Avoid invalid block elements inside <button>
-                            p: (props) => <span {...props} />,
-                            em: (props) => (
-                              <em
-                                className="font-semibold not-italic"
-                                {...props}
-                              />
-                            ),
-                          }}
-                        >
-                          {stripABCD(o)}
-                        </ReactMarkdown>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {revealed && (
-                <div className="chat-md mt-4 border-t border-neutral-800 pt-3 text-sm text-neutral-400">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                  >
-                    {q.explanation}
-                  </ReactMarkdown>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="flex flex-wrap items-center gap-4 pt-4">
-        {!revealed && (
-          <button
-            onClick={check}
-            disabled={
-              items.length === 0 ||
-              answers.length < items.length ||
-              answers.some((a) => typeof a !== 'number')
-            }
-            className="rounded-md bg-[rgb(var(--accent))] px-5 py-2 font-semibold text-black disabled:opacity-50"
-          >
-            Check Answer
-          </button>
-        )}
-
-        {revealed && twoCorrect && (
-          <>
-            <button
-              onClick={() => onPassed(firstCheckRef.current.wasPerfect)}
-              className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
-            >
-              Go to next subtopic
-            </button>
-            <button
-              onClick={askAnother}
-              disabled={loadingAnother}
-              className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700 disabled:opacity-50"
-            >
-              {loadingAnother ? 'Generating...' : 'Another set of questions'}
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdf from 'pdf-extraction';
+import { requireSession } from '@/lib/auth';
+import { isSessionWithUser } from '@/lib/session-utils';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 // Set the runtime to Node.js for server-side operations.
 export const runtime = 'nodejs';
@@ -8,6 +11,22 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await requireSession();
+    if (!isSessionWithUser(session)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const limit = rateLimit(
+      rateLimitKey(req, 'pdf-extraction', session.user.id),
+      12,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many PDF requests. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
+
     const form = await req.formData();
     const file = form.get('file');
 
@@ -22,6 +41,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'Invalid file type. Only PDF files are accepted.' },
         { status: 400 }
+      );
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'PDF is too large. The maximum file size is 20 MB.' },
+        { status: 413 }
       );
     }
 

@@ -2,11 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
-import { normalizeModelMarkdown, stripDependentPhrasing } from '@/lib/text/normalize-markdown';
+import {
+  normalizeModelMarkdown,
+  stripDependentPhrasing,
+} from '@/lib/text/normalize-markdown';
 import crypto from 'crypto';
+import { SOURCE_HANDLING_RULES, wrapSource } from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 // Coalesce concurrent generation requests with identical lesson text
-const inflight = new Map<string, Promise<{ prompt: string; modelAnswer: string }>>();
+const inflight = new Map<
+  string,
+  Promise<{ prompt: string; modelAnswer: string }>
+>();
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,20 +24,41 @@ export async function POST(req: NextRequest) {
       lessonMd?: string;
       subtopicTitle?: string;
     };
-    const lessonMd = String(body?.lessonMd || '').trim();
-    const subtopicTitle = String(body?.subtopicTitle || '').trim();
+    const lessonMd = String(body?.lessonMd || '')
+      .trim()
+      .slice(0, 8_000);
+    const subtopicTitle = String(body?.subtopicTitle || '')
+      .trim()
+      .slice(0, 200);
 
     const session = await getServerSession(authOptions);
-    if (!isSessionWithUser(session) && (!lessonMd || lessonMd.length < 50)) {
+    const isAuthed = isSessionWithUser(session);
+    const userId = isAuthed ? session.user.id : null;
+    const limit = rateLimit(
+      rateLimitKey(req, 'revision-question', userId),
+      isAuthed ? 30 : 8,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many revision requests. Please wait and try again.' },
+        { status: 429 }
+      );
+    }
+    if (!isAuthed && (!lessonMd || lessonMd.length < 50)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     if (!lessonMd || lessonMd.length < 50) {
-      return NextResponse.json({ error: 'Lesson content too short' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Lesson content too short' },
+        { status: 400 }
+      );
     }
 
     const { generateJSON } = await import('@/lib/ai');
     const prompt = [
       'You are writing ONE short-answer question to assess conceptual understanding using ONLY the LESSON below.',
+      SOURCE_HANDLING_RULES,
       'Requirements:',
       '- The question must be self-contained and answerable strictly from the LESSON.',
       '- Make it broad and high-level to check understanding of the subtopic overall, not a niche detail.',
@@ -39,26 +68,26 @@ export async function POST(req: NextRequest) {
       'Return ONLY JSON with exactly this shape:',
       '{ "prompt": string, "modelAnswer": string }',
       'Model answer should be concise (2–6 sentences) and aligned with the LESSON.',
-      '---',
       subtopicTitle ? `SUBTOPIC: ${subtopicTitle}` : '',
-      'LESSON:',
-      lessonMd.slice(0, 6000),
-      '---',
+      wrapSource(lessonMd.slice(0, 6000), 'LESSON'),
     ]
       .filter(Boolean)
       .join('\n');
 
-    const key = crypto.createHash('sha256').update(lessonMd.slice(0, 6000)).digest('hex');
+    const key = crypto
+      .createHash('sha256')
+      .update([subtopicTitle, lessonMd.slice(0, 6000)].join('|'))
+      .digest('hex');
     const run = async (): Promise<{ prompt: string; modelAnswer: string }> => {
-      let out: any = {};
-      try {
-        const model = process.env.AI_QUALITY_MODEL || 'gpt-5-mini';
-        out = await generateJSON(prompt, model, undefined);
-      } catch {}
+      const out: any = await generateJSON(prompt);
       const qPromptRaw = String(out?.prompt || '').trim();
       const modelAnswerRaw = String(out?.modelAnswer || '').trim();
-      const qPrompt = stripDependentPhrasing(normalizeModelMarkdown(qPromptRaw));
-      const modelAnswer = stripDependentPhrasing(normalizeModelMarkdown(modelAnswerRaw));
+      const qPrompt = stripDependentPhrasing(
+        normalizeModelMarkdown(qPromptRaw)
+      );
+      const modelAnswer = stripDependentPhrasing(
+        normalizeModelMarkdown(modelAnswerRaw)
+      );
       return { prompt: qPrompt || '', modelAnswer: modelAnswer || '' };
     };
     let p = inflight.get(key);
@@ -70,13 +99,17 @@ export async function POST(req: NextRequest) {
       inflight.set(key, p);
     }
     const result = await p;
-    if (!result.prompt) {
-      return NextResponse.json({ prompt: '', modelAnswer: '' });
+    if (!result.prompt || !result.modelAnswer) {
+      return NextResponse.json(
+        { error: 'Could not generate a grounded revision question.' },
+        { status: 502 }
+      );
     }
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
-
-

@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { generateJSON } from '@/lib/ai';
+import { buildBreakdownPrompt } from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 function sanitizeDbText(s: string): string {
   return (s || '').replace(/\u0000/g, '');
@@ -22,14 +24,25 @@ export async function GET(req: NextRequest) {
     }
     const url = new URL(req.url);
     const lectureId = String(url.searchParams.get('lectureId') || '').trim();
-    // Ignore client-selected model for breakdown/subtopic generation
-    const preferredModel = undefined;
     if (!lectureId) {
       return new Response(JSON.stringify({ error: 'lectureId required' }), {
         status: 400,
       });
     }
     const userId = session.user.id;
+    const limit = rateLimit(
+      rateLimitKey(req, 'lecture-stream', userId),
+      15,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return new Response(
+        JSON.stringify({
+          error: 'Too many lesson generation requests. Please wait and retry.',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     const lecture = await prisma.lecture.findFirst({
       where: { id: lectureId, userId },
       select: { id: true, title: true, originalContent: true },
@@ -72,32 +85,8 @@ export async function GET(req: NextRequest) {
           const text = lecture.originalContent || '';
           if (!text) throw new Error('Lecture has no content');
 
-          const charLen = text.length;
-          const breakdownPrompt = `
-You are an expert instructional designer. Create an exhaustive, sequential breakdown of the entire document below.
-
-Goals:
-- Cover ALL major sections and distinct concepts. Do not merge unrelated topics.
-- Return subtopics in a logical pedagogical order (prerequisites before dependents). Prefer the document's order; minor local reordering is allowed for clarity.
-- Be concise but complete: each subtopic should map to a coherent portion of the document.
-- Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.
-
-Return ONLY a single JSON object with exactly these keys:
-{
-  "topic": "string",
-  "subtopics": [
-    { "title": "string", "importance": "high" | "medium" | "low", "difficulty": 1 | 2 | 3, "overview": "string" }
-  ]
-}
-
-Document:
----
-${text}
-          `;
-          const bdRaw = await generateJSON(
-            breakdownPrompt,
-            process.env.AI_QUALITY_MODEL || 'gemini-2.5-pro'
-          );
+          const breakdownPrompt = buildBreakdownPrompt(text);
+          const bdRaw = await generateJSON(breakdownPrompt);
           const DEFAULT_TITLE = 'Generating lesson... Please Wait';
           const topic =
             typeof bdRaw?.topic === 'string' && bdRaw.topic.trim()

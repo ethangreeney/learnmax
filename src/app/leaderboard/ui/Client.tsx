@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { rankGradient, rankFromElo } from '@/lib/client/rank-colors';
 
@@ -11,7 +11,12 @@ type LBUser = {
   image: string | null;
   elo: number;
   lastActiveAt: string | null;
-  rankInfo?: { slug: string; name: string; minElo: number; iconUrl: string | null } | null;
+  rankInfo?: {
+    slug: string;
+    name: string;
+    minElo: number;
+    iconUrl: string | null;
+  } | null;
 };
 
 function getClientRank(u: LBUser) {
@@ -146,17 +151,28 @@ export default function LeaderboardClient() {
                         return (
                           <div className="grid grid-cols-[auto,1fr] grid-rows-2 items-center gap-x-2">
                             {r.iconUrl ? (
-                              <div className="relative col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10">
+                              <div className="relative col-start-1 row-span-2 h-9 w-9 self-center md:h-10 md:w-10">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={r.iconUrl} alt={r.name} className="absolute inset-0 h-full w-full object-contain" />
+                                <img
+                                  src={r.iconUrl}
+                                  alt={r.name}
+                                  className="absolute inset-0 h-full w-full object-contain"
+                                />
                               </div>
                             ) : (
-                              <div className={`col-start-1 row-span-2 self-center h-9 w-9 md:h-10 md:w-10 rounded-md bg-gradient-to-br ${grad} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`} aria-hidden />
+                              <div
+                                className={`col-start-1 row-span-2 h-9 w-9 self-center rounded-md bg-gradient-to-br md:h-10 md:w-10 ${grad} shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]`}
+                                aria-hidden
+                              />
                             )}
-                            <div className={`col-start-2 row-start-1 bg-gradient-to-r ${grad} bg-clip-text text-[13px] font-semibold leading-none text-transparent rank-shimmer`}>
+                            <div
+                              className={`col-start-2 row-start-1 bg-gradient-to-r ${grad} rank-shimmer bg-clip-text text-[13px] leading-none font-semibold text-transparent`}
+                            >
                               {r.name}
                             </div>
-                            <div className="col-start-2 row-start-2 mt-1 text-[11px] leading-none text-neutral-400">Elo {u.elo}</div>
+                            <div className="col-start-2 row-start-2 mt-1 text-[11px] leading-none text-neutral-400">
+                              Elo {u.elo}
+                            </div>
                           </div>
                         );
                       })()}

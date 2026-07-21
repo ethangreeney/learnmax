@@ -4,7 +4,14 @@ import { requireAdmin } from '@/lib/admin';
 import { revalidateTag } from 'next/cache';
 
 export async function POST() {
-  await requireAdmin();
+  try {
+    await requireAdmin();
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || 'Forbidden' },
+      { status: error?.status || 403 }
+    );
+  }
   // Ensure Rank table exists (idempotent) before upserting
   try {
     await prisma.$executeRawUnsafe(`
@@ -36,6 +43,8 @@ export async function POST() {
     });
   }
   // Invalidate cached ranks so UI refresh reflects cleared icons
-  try { revalidateTag('ranks'); } catch { }
+  try {
+    revalidateTag('ranks');
+  } catch {}
   return NextResponse.json({ ok: true });
 }

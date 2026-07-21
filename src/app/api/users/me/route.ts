@@ -4,6 +4,26 @@ import { requireSession } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
 import { getRanksSafe, pickRankForElo } from '@/lib/ranks';
 
+const USERNAME_RULE = /^[a-z0-9_]{3,20}$/;
+
+function isAllowedProfileImage(value: string): boolean {
+  if (!value) return true;
+  if (value.length > 2_048) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname === 'lh3.googleusercontent.com' ||
+        url.hostname === 'lh4.googleusercontent.com' ||
+        url.hostname === 'lh5.googleusercontent.com' ||
+        url.hostname === 'lh6.googleusercontent.com' ||
+        url.hostname.endsWith('.public.blob.vercel-storage.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function PATCH(req: NextRequest) {
   try {
     const session = await requireSession();
@@ -12,10 +32,30 @@ export async function PATCH(req: NextRequest) {
     const data: any = {};
     if (typeof body.name === 'string')
       data.name = body.name.trim().slice(0, 80);
-    if (typeof body.username === 'string')
-      data.username = body.username.trim().slice(0, 40).toLowerCase();
-    if (typeof body.bio === 'string') data.bio = body.bio.trim().slice(0, 280);
-    if (typeof body.image === 'string') data.image = body.image.trim();
+    if (typeof body.username === 'string') {
+      const username = body.username.trim().toLowerCase();
+      if (username && !USERNAME_RULE.test(username)) {
+        return NextResponse.json(
+          {
+            error:
+              'Username must use 3–20 lowercase letters, numbers, or underscores.',
+          },
+          { status: 400 }
+        );
+      }
+      data.username = username;
+    }
+    if (typeof body.bio === 'string') data.bio = body.bio.trim().slice(0, 240);
+    if (typeof body.image === 'string') {
+      const image = body.image.trim();
+      if (!isAllowedProfileImage(image)) {
+        return NextResponse.json(
+          { error: 'Profile image URL is not allowed.' },
+          { status: 400 }
+        );
+      }
+      data.image = image || null;
+    }
     if (typeof body.leaderboardOptOut === 'boolean')
       data.leaderboardOptOut = !!body.leaderboardOptOut;
 

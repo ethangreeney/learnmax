@@ -20,14 +20,13 @@ export default function YourLessonActions({
   lectureId: string;
   initialDiscoverable?: boolean;
 }) {
-  const { state, setState, createOrUpdate, revoke, copy, cancel } =
-    useShareLesson(lectureId);
+  const { state, setState, createOrUpdate, revoke } = useShareLesson(lectureId);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setState((s) => ({ ...s, discoverable: true }));
+    setState((s) => ({ ...s, discoverable: initialDiscoverable }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

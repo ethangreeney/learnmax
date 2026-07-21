@@ -5,12 +5,34 @@ import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
 import { bumpDailyStreak } from '@/lib/streak';
 import { revalidateTag } from 'next/cache';
+import { buildBreakdownPrompt } from '@/lib/ai-prompts';
+import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const userId = isSessionWithUser(session) ? session.user.id : null;
-    const { content, model } = await req.json();
+    const limit = rateLimit(
+      rateLimitKey(req, 'breakdown', userId),
+      userId ? 15 : 4,
+      10 * 60_000
+    );
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many lesson requests. Please wait and try again.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(
+              Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1000))
+            ),
+          },
+        }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const content = String(body?.content || '').trim();
 
     if (!content) {
       return NextResponse.json(
@@ -18,32 +40,21 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (content.length > 60_000) {
+      return NextResponse.json(
+        { error: 'Content is too long. Keep it under 60,000 characters.' },
+        { status: 413 }
+      );
+    }
 
-    // A detailed prompt for generating a topic breakdown.
-    const prompt = `
-      As an expert instructional designer, analyze the following text and break it down into a structured learning path.
-      The output must be a JSON object with two keys: "topic" (a concise title for the overall subject) and "subtopics" (an array of objects).
-      Each subtopic object must have the following keys:
-      - "title": A clear, concise title for the subtopic.
-      - "importance": A rating of "high", "medium", or "low".
-      - "difficulty": A number from 1 (easy) to 3 (hard).
-      - "overview": A one-sentence summary of what the subtopic covers.
-      - Aim for 7 subtopics in total. Deviate only if clearly necessary; allowed range is 2 to 12. Never exceed 12.
+    const prompt = buildBreakdownPrompt(content);
 
-      Here is the text to analyze:
-      ---
-      ${content}
-      ---
-    `;
-
-    const chosenModel =
-      (typeof model === 'string' && model.trim()) ||
-      process.env.AI_QUALITY_MODEL ||
-      'gemini-2.5-pro';
-    const aiResponse = await generateJSON(prompt, chosenModel);
+    const aiResponse = await generateJSON(prompt);
     if (userId) {
       await bumpDailyStreak(userId);
-      try { revalidateTag(`user-stats:${userId}`); } catch {}
+      try {
+        revalidateTag(`user-stats:${userId}`);
+      } catch {}
     }
     return NextResponse.json(aiResponse);
   } catch (error: any) {
