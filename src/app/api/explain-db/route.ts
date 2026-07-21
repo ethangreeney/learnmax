@@ -1,7 +1,12 @@
 // src/app/api/explain-db/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { generateText, PRIMARY_MODEL, streamTextChunks } from '@/lib/ai';
+import {
+  generateText,
+  PRIMARY_MODEL,
+  REASONING_EFFORT,
+  streamTextChunks,
+} from '@/lib/ai';
 import prisma from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 import { isSessionWithUser } from '@/lib/session-utils';
@@ -709,7 +714,14 @@ export async function POST(req: NextRequest) {
             const ms = Date.now() - t0;
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ type: 'done', debug: { model: effectiveModel, ms } })}\n\n`
+                `data: ${JSON.stringify({
+                  type: 'done',
+                  debug: {
+                    model: effectiveModel,
+                    reasoningEffort: REASONING_EFFORT,
+                    ms,
+                  },
+                })}\n\n`
               )
             );
             controller.close();
@@ -730,6 +742,8 @@ export async function POST(req: NextRequest) {
           'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
+          'X-AI-Model': effectiveModel,
+          'X-AI-Reasoning-Effort': REASONING_EFFORT,
         },
       });
     }
@@ -769,11 +783,24 @@ export async function POST(req: NextRequest) {
         });
       } catch {}
     }
-    return NextResponse.json({
-      markdown,
-      explanation: markdown,
-      debug: { model: effectiveModel, ms },
-    });
+    return NextResponse.json(
+      {
+        markdown,
+        explanation: markdown,
+        debug: {
+          model: effectiveModel,
+          reasoningEffort: REASONING_EFFORT,
+          ms,
+        },
+      },
+      {
+        headers: {
+          'X-AI-Model': effectiveModel,
+          'X-AI-Reasoning-Effort': REASONING_EFFORT,
+          'X-Response-Time-Ms': String(ms),
+        },
+      }
+    );
   } catch (e: any) {
     const ms = Date.now() - t0;
     err('ERR', { ms, message: e?.message });

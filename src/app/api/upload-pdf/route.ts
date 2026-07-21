@@ -76,6 +76,9 @@ export async function POST(req: NextRequest) {
       content: text,
     });
   } catch (e: any) {
+    if (e?.status === 401) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     // Log the full error on the server for easier debugging.
     console.error('UPLOAD_PDF_ERROR:', e?.stack || e?.message || e);
     const errorMessage =
