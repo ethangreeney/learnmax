@@ -1,11 +1,17 @@
 'use client';
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Image as ImageIcon } from 'lucide-react';
+import {
+  CheckCircle2,
+  Image as ImageIcon,
+  Loader2,
+  UserRound,
+} from 'lucide-react';
 import { upload } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
 import { useMeStore } from '@/lib/client/me-store';
 import AvatarCropper from '@/components/AvatarCropper';
+import ProfileAvatar from '@/components/ProfileAvatar';
 
 export type PublicProfile = {
   id: string;
@@ -85,6 +91,7 @@ export default function ProfileClient({
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
+  const [currentImage, setCurrentImage] = useState(initialUser.image);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [pickedIsGif, setPickedIsGif] = useState(false);
@@ -100,6 +107,10 @@ export default function ProfileClient({
       }
     };
   }, []);
+
+  useEffect(() => {
+    setCurrentImage(initialUser.image);
+  }, [initialUser.image]);
 
   const usernameValid = username.length === 0 || USERNAME_RULE.test(username);
   const hasChanges =
@@ -231,6 +242,7 @@ export default function ProfileClient({
     const user = await patchProfile({ image: url });
     if (!user) throw new Error('Your avatar could not be confirmed.');
     const confirmedImage = user.image || url;
+    setCurrentImage(confirmedImage);
     setMe({ image: confirmedImage });
     setSuccess('Avatar updated.');
     router.refresh();
@@ -335,9 +347,13 @@ export default function ProfileClient({
   return (
     <form
       onSubmit={onSave}
-      className="card space-y-6 p-5 sm:p-6"
+      className="card relative overflow-hidden shadow-[0_24px_80px_-55px_rgba(0,0,0,0.9)]"
       aria-busy={saving || avatarSaving}
     >
+      <div
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-neutral-600/80 to-transparent"
+        aria-hidden="true"
+      />
       {cropSrc && (
         <AvatarCropper
           src={cropSrc}
@@ -350,155 +366,209 @@ export default function ProfileClient({
         />
       )}
 
-      <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex flex-col justify-between gap-2 border-b border-neutral-800/80 px-5 py-5 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
         <div>
           <h3 className="text-lg font-semibold text-white">Edit profile</h3>
           <p className="mt-1 text-sm text-neutral-500">
             These details appear on your public profile.
           </p>
         </div>
-        <div className="min-h-5 text-xs" aria-live="polite" aria-atomic="true">
-          {success ? <span className="text-emerald-400">{success}</span> : null}
+        <div className="min-h-6 text-xs" aria-live="polite" aria-atomic="true">
+          {success ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1 text-emerald-300 motion-safe:animate-[learnmax-dashboard-enter_240ms_ease-out_both]">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {success}
+            </span>
+          ) : null}
         </div>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <label className="grid content-start gap-2 text-sm">
-          <span className="font-medium text-neutral-300">Name</span>
-          <input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              markEdited();
-            }}
-            className="input h-10"
-            placeholder="Display name"
-            autoComplete="name"
-            maxLength={80}
-            disabled={saving}
-          />
-        </label>
-
-        <label className="grid content-start gap-2 text-sm">
-          <span className="font-medium text-neutral-300">Username</span>
-          <div
-            className={`flex h-10 items-center rounded-md bg-neutral-900/80 ring-1 ${
-              username && !usernameValid
-                ? 'ring-red-500'
-                : 'ring-neutral-700 focus-within:ring-emerald-500'
-            }`}
-          >
-            <span
-              className="pr-1 pl-3 text-neutral-500 select-none"
-              aria-hidden="true"
-            >
-              @
-            </span>
-            <input
-              value={username}
-              onChange={(event) => {
-                setUsername(event.target.value.toLowerCase());
-                markEdited();
-              }}
-              className="w-full bg-transparent px-2 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
-              placeholder="your_handle"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              maxLength={20}
-              disabled={saving}
-              aria-invalid={Boolean(username && !usernameValid)}
-              aria-describedby="username-help"
-            />
-          </div>
-          <span
-            id="username-help"
-            className={`text-xs ${
-              username && !usernameValid ? 'text-red-400' : 'text-neutral-500'
-            }`}
-          >
-            Use 3–20 lowercase letters, numbers, or underscores.
-          </span>
-        </label>
-
-        <label className="grid gap-2 text-sm md:col-span-2">
-          <span className="font-medium text-neutral-300">Bio</span>
-          <textarea
-            value={bio}
-            onChange={(event) => {
-              setBio(event.target.value.slice(0, BIO_LIMIT));
-              markEdited();
-            }}
-            rows={4}
-            maxLength={BIO_LIMIT}
-            className="input min-h-28 resize-y p-4 leading-6"
-            placeholder="What are you learning?"
-            disabled={saving}
-            aria-describedby="bio-help bio-count"
-          />
-          <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
-            <span id="bio-help">A short introduction for other learners.</span>
-            <span id="bio-count" className="tabular-nums">
-              {bio.length}/{BIO_LIMIT}
-            </span>
-          </div>
-        </label>
-      </div>
-
-      <div className="flex flex-col justify-between gap-4 border-t border-neutral-800 pt-5 sm:flex-row sm:items-center">
-        <div>
-          <label
-            className={`btn-ghost focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2 focus-within:ring-offset-neutral-950 ${
-              saving || avatarSaving
-                ? 'cursor-not-allowed opacity-50'
-                : 'cursor-pointer'
-            }`}
-          >
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="sr-only"
-              disabled={saving || avatarSaving}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onPickAvatar(file);
-                event.target.value = '';
-              }}
-            />
-            <ImageIcon className="h-4 w-4" aria-hidden="true" />
-            Change avatar
-          </label>
-          <p className="mt-2 text-xs text-neutral-500">
-            PNG, JPEG, WebP, or GIF. Animated images can take longer.
+      <div className="grid lg:grid-cols-[14rem_minmax(0,1fr)]">
+        <aside className="border-b border-neutral-800/80 bg-neutral-950/30 p-5 sm:p-6 lg:border-r lg:border-b-0">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-neutral-500 uppercase">
+            Profile image
           </p>
-        </div>
+          <div className="mt-4 flex items-center gap-4 lg:flex-col lg:items-start">
+            <div className="group/avatar relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-neutral-900 ring-1 ring-neutral-700 transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 motion-reduce:transform-none motion-reduce:transition-none">
+              {currentImage ? (
+                <ProfileAvatar
+                  userId={initialUser.id}
+                  src={currentImage}
+                  width={80}
+                  height={80}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover/avatar:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-neutral-600">
+                  <UserRound className="h-6 w-6" aria-hidden="true" />
+                </div>
+              )}
+              {avatarSaving && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                  <Loader2
+                    className="h-5 w-5 animate-spin text-emerald-300 motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <label
+                className={`inline-flex cursor-pointer items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-200 transition-[border-color,background-color,transform] focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2 focus-within:ring-offset-neutral-950 hover:-translate-y-0.5 hover:border-neutral-600 hover:bg-neutral-800 motion-reduce:transform-none motion-reduce:transition-none ${
+                  saving || avatarSaving
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'cursor-pointer'
+                }`}
+              >
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="sr-only"
+                  disabled={saving || avatarSaving}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) onPickAvatar(file);
+                    event.target.value = '';
+                  }}
+                />
+                <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                Change image
+              </label>
+              <p className="mt-2 max-w-44 text-xs leading-5 text-neutral-500">
+                PNG, JPEG, WebP, or GIF up to 12 MB.
+              </p>
+            </div>
+          </div>
+        </aside>
 
-        <button
-          type="submit"
-          disabled={
-            saving ||
-            avatarSaving ||
-            !hasChanges ||
-            Boolean(username && !usernameValid)
-          }
-          className="btn-primary min-w-32 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving
-            ? 'Saving…'
-            : avatarSaving
-              ? 'Updating avatar…'
-              : 'Save changes'}
-        </button>
+        <div className="space-y-6 p-5 sm:p-6">
+          <div className="grid gap-5 md:grid-cols-2">
+            <label className="grid content-start gap-2 text-sm">
+              <span className="font-medium text-neutral-300">Name</span>
+              <input
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  markEdited();
+                }}
+                className="input h-10 transition-[background-color,box-shadow] hover:bg-neutral-900 focus:bg-neutral-900 motion-reduce:transition-none"
+                placeholder="Display name"
+                autoComplete="name"
+                maxLength={80}
+                disabled={saving}
+              />
+            </label>
+
+            <label className="grid content-start gap-2 text-sm">
+              <span className="font-medium text-neutral-300">Username</span>
+              <div
+                className={`flex h-10 items-center rounded-md bg-neutral-900/80 ring-1 transition-[background-color,box-shadow] hover:bg-neutral-900 motion-reduce:transition-none ${
+                  username && !usernameValid
+                    ? 'ring-red-500'
+                    : 'ring-neutral-700 focus-within:bg-neutral-900 focus-within:ring-emerald-500'
+                }`}
+              >
+                <span
+                  className="pr-1 pl-3 text-neutral-500 select-none"
+                  aria-hidden="true"
+                >
+                  @
+                </span>
+                <input
+                  value={username}
+                  onChange={(event) => {
+                    setUsername(event.target.value.toLowerCase());
+                    markEdited();
+                  }}
+                  className="w-full bg-transparent px-2 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder="your_handle"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={20}
+                  disabled={saving}
+                  aria-invalid={Boolean(username && !usernameValid)}
+                  aria-describedby="username-help"
+                />
+              </div>
+              <span
+                id="username-help"
+                className={`text-xs ${
+                  username && !usernameValid
+                    ? 'text-red-400'
+                    : 'text-neutral-500'
+                }`}
+              >
+                Use 3–20 lowercase letters, numbers, or underscores.
+              </span>
+            </label>
+
+            <label className="grid gap-2 text-sm md:col-span-2">
+              <span className="font-medium text-neutral-300">Bio</span>
+              <textarea
+                value={bio}
+                onChange={(event) => {
+                  setBio(event.target.value.slice(0, BIO_LIMIT));
+                  markEdited();
+                }}
+                rows={4}
+                maxLength={BIO_LIMIT}
+                className="input min-h-28 resize-y p-4 leading-6 transition-[background-color,box-shadow] hover:bg-neutral-900 focus:bg-neutral-900 motion-reduce:transition-none"
+                placeholder="What are you learning?"
+                disabled={saving}
+                aria-describedby="bio-help bio-count"
+              />
+              <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
+                <span id="bio-help">
+                  A short introduction for other learners.
+                </span>
+                <span id="bio-count" className="tabular-nums">
+                  {bio.length}/{BIO_LIMIT}
+                </span>
+              </div>
+            </label>
+          </div>
+
+          {error ? (
+            <div
+              className="rounded-lg border border-red-900/50 bg-red-950/25 px-3 py-2.5 text-sm text-red-300 motion-safe:animate-[learnmax-dashboard-enter_240ms_ease-out_both]"
+              role="alert"
+            >
+              {error}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col justify-between gap-4 border-t border-neutral-800 pt-5 sm:flex-row sm:items-center">
+            <p className="text-xs text-neutral-500">
+              {hasChanges
+                ? 'You have unsaved changes.'
+                : 'Everything is up to date.'}
+            </p>
+            <button
+              type="submit"
+              disabled={
+                saving ||
+                avatarSaving ||
+                !hasChanges ||
+                Boolean(username && !usernameValid)
+              }
+              className="btn-primary min-w-36 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving && (
+                <Loader2
+                  className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              )}
+              {saving
+                ? 'Saving…'
+                : avatarSaving
+                  ? 'Updating image…'
+                  : 'Save changes'}
+            </button>
+          </div>
+        </div>
       </div>
-
-      {error ? (
-        <div
-          className="rounded-md border border-red-900/50 bg-red-950/25 px-3 py-2 text-sm text-red-300"
-          role="alert"
-        >
-          {error}
-        </div>
-      ) : null}
 
       <span className="sr-only" aria-live="polite">
         {avatarSaving ? 'Updating avatar.' : ''}

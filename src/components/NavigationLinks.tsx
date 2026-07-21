@@ -28,10 +28,7 @@ export default function NavigationLinks({
   const pathname = usePathname() || '';
 
   return (
-    <nav
-      aria-label="Primary navigation"
-      className="flex items-center gap-1 text-sm"
-    >
+    <nav aria-label="Primary navigation" className="primary-nav">
       {links.map((link) => {
         const current = isCurrentRoute(pathname, link.href);
 
@@ -40,11 +37,7 @@ export default function NavigationLinks({
             key={link.href}
             href={link.href}
             aria-current={current ? 'page' : undefined}
-            className={`rounded-md px-3 py-2 font-medium transition-colors ${
-              current
-                ? 'bg-white/8 text-white'
-                : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-100'
-            }`}
+            className="primary-nav-link"
           >
             {link.label}
           </Link>

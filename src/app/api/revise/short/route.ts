@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       .trim()
       .slice(0, 6_000);
     const scoreRaw = body?.score;
-    const score =
+    const requestedScore =
       typeof scoreRaw === 'number' && Number.isFinite(scoreRaw)
         ? Math.max(0, Math.min(10, Math.trunc(scoreRaw)))
         : undefined;
@@ -171,21 +171,34 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
-    // Persist or upsert the global prompt so multiple clients do not generate duplicates.
-    try {
-      if (lectureId && subtopicId && prompt) {
-        await prisma.shortAnswerPrompt.upsert({
-          where: { lectureId_subtopicId: { lectureId, subtopicId } },
-          update: { prompt, modelAnswer },
-          create: {
-            lectureId,
-            subtopicId,
-            prompt,
-            modelAnswer: modelAnswer || '',
-          },
-        });
-      }
-    } catch {}
+    let verifiedScore: number | undefined;
+    if (typeof requestedScore === 'number') {
+      const promptHash = crypto
+        .createHash('sha256')
+        .update([lectureId, prompt].join('|'))
+        .digest('hex');
+      const serverGrade = await prisma.shortAnswerGrade.findUnique({
+        where: { userId_promptHash: { userId, promptHash } },
+        select: { score: true },
+      });
+      verifiedScore = serverGrade?.score;
+    }
+    // Canonical prompts are created by the server-side generation route from
+    // owned lesson content. This endpoint may only save answers against that
+    // immutable question.
+    const canonicalPrompt = await prisma.shortAnswerPrompt.findUnique({
+      where: { lectureId_subtopicId: { lectureId, subtopicId } },
+      select: { prompt: true },
+    });
+    if (!canonicalPrompt || canonicalPrompt.prompt !== prompt) {
+      return NextResponse.json(
+        {
+          error:
+            'This mastery question changed. Refresh the lesson and try again.',
+        },
+        { status: 409 }
+      );
+    }
 
     // Persist user-specific answer/score for restore in TutorMessage.
     // Idempotent: update existing record for this (user, lecture, subtopic) when present.
@@ -197,11 +210,11 @@ export async function POST(req: NextRequest) {
           orderBy: { createdAt: 'desc' },
           take: 50,
         });
-        let target: { id: string } | null = null;
+        let target: { id: string; refs: Record<string, unknown> } | null = null;
         for (const r of recent) {
           const refs = (r.refs as any) || {};
           if (refs && refs.subtopicId === subtopicId && r.text === prompt) {
-            target = { id: r.id };
+            target = { id: r.id, refs };
             break;
           }
         }
@@ -209,17 +222,34 @@ export async function POST(req: NextRequest) {
           for (const r of recent) {
             const refs = (r.refs as any) || {};
             if (refs && refs.subtopicId === subtopicId) {
-              target = { id: r.id };
+              target = { id: r.id, refs };
               break;
             }
           }
         }
+        const existingRefs = target?.refs || {};
+        const sameSavedAnswer =
+          typeof existingRefs.answer === 'string' &&
+          existingRefs.answer === answer;
         const payload = {
           subtopicId,
-          modelAnswer,
+          modelAnswer:
+            modelAnswer ||
+            (sameSavedAnswer && typeof existingRefs.modelAnswer === 'string'
+              ? existingRefs.modelAnswer
+              : ''),
           answer,
-          score,
-          feedback: feedback || undefined,
+          score:
+            typeof requestedScore === 'number'
+              ? verifiedScore
+              : sameSavedAnswer && typeof existingRefs.score === 'number'
+                ? existingRefs.score
+                : undefined,
+          feedback:
+            feedback ||
+            (sameSavedAnswer && typeof existingRefs.feedback === 'string'
+              ? existingRefs.feedback
+              : undefined),
         } as any;
         if (target) {
           await prisma.tutorMessage.update({
@@ -242,28 +272,6 @@ export async function POST(req: NextRequest) {
         }
       } catch {}
     }
-    // If a score is provided, persist into lifetime short-answer grades table (idempotent per user+prompt)
-    try {
-      if (typeof score === 'number' && isAuthed) {
-        const promptHash = crypto
-          .createHash('sha256')
-          .update([lectureId, prompt].join('|'))
-          .digest('hex');
-        try {
-          await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${lectureId || null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
-        } catch {
-          try {
-            await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
-          } catch (e2: any) {
-            console.error('ShortAnswerGrade insert failed (short route)', {
-              userId,
-              lectureId,
-              err: String(e2?.message || e2),
-            });
-          }
-        }
-      }
-    } catch {}
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(

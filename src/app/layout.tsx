@@ -28,22 +28,22 @@ export default async function RootLayout({
       <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
         <AuthProvider>
           <header className="app-header sticky top-0 z-40 border-b border-white/6 bg-neutral-950/85 py-3 backdrop-blur-xl">
-            <div className="container-wide flex items-center justify-between gap-4">
+            <div className="app-header-inner container-wide flex items-center justify-between gap-4">
               <Link
                 href="/"
-                className="shrink-0 text-xl font-semibold tracking-tight transition-opacity hover:opacity-90"
+                className="brand-link shrink-0"
+                aria-label="LearnMax home"
               >
-                <span className="bg-gradient-to-r from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">
-                  LearnMax
-                </span>
+                <span className="brand-glyph" aria-hidden="true" />
+                <span className="brand-wordmark">LearnMax</span>
               </Link>
               <NavigationLinks links={navLinks} />
-              <div className="flex items-center gap-3">
+              <div className="app-account flex items-center gap-2">
                 <ClientBoundary />
               </div>
             </div>
           </header>
-          <main className="py-8">{children}</main>
+          <main className="app-main py-8">{children}</main>
         </AuthProvider>
         <ContentGate />
         {/* Prefetch common routes globally for snappier navigation */}

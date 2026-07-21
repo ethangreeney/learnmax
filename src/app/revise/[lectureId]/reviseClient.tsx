@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowRight,
+  BookOpenCheck,
   CheckCircle2,
   Circle,
+  Focus,
   Loader2,
   RefreshCw,
-  Sparkles,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -293,21 +295,41 @@ export default function ReviseClient({
   };
 
   return (
-    <div className="space-y-8" aria-busy={loading || undefined}>
-      <header className="flex flex-col gap-5 border-b border-neutral-800 pb-6 xl:flex-row xl:items-end xl:justify-between">
+    <div className="space-y-8 pb-8" aria-busy={loading || undefined}>
+      <style>{`
+        @keyframes learnmax-revise-enter {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes learnmax-focus-ring {
+          0%, 100% { transform: scale(.9); opacity: .2; }
+          50% { transform: scale(1.15); opacity: .5; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .revise-enter, .focus-ring { animation: none !important; }
+        }
+      `}</style>
+      <header className="revise-enter relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/40 p-5 shadow-[0_24px_80px_-55px_rgba(16,185,129,0.25)] motion-safe:animate-[learnmax-revise-enter_500ms_cubic-bezier(0.22,1,0.36,1)_both] sm:p-6 xl:flex xl:items-end xl:justify-between xl:gap-8">
+        <div
+          className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/60 to-transparent"
+          aria-hidden="true"
+        />
         <div className="min-w-0">
-          <div className="text-xs font-semibold tracking-[0.16em] text-[rgb(var(--accent))] uppercase">
-            Revision practice
+          <div className="flex items-center gap-3">
+            <span className="h-px w-7 bg-emerald-400/80" aria-hidden="true" />
+            <div className="text-xs font-semibold tracking-[0.16em] text-[rgb(var(--accent))] uppercase">
+              Revision practice
+            </div>
           </div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="mt-4 max-w-2xl text-2xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">
             {lecture.title}
           </h1>
-          <p className="mt-2 text-sm text-neutral-400">
-            Practice retrieval, get focused feedback, and improve until the idea
-            sticks.
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">
+            Recall first. Use the feedback second. Repeat until you can explain
+            the idea without support.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
+        <div className="mt-6 flex w-full flex-col gap-2 sm:flex-row xl:mt-0 xl:w-auto">
           {lecture.subtopics.length > 0 && (
             <label className="min-w-0 flex-1 xl:w-56">
               <span className="sr-only">Choose a topic to practise</span>
@@ -315,7 +337,7 @@ export default function ReviseClient({
                 value={selectedSubtopicId}
                 onChange={(event) => setSelectedSubtopicId(event.target.value)}
                 disabled={loading}
-                className="h-11 w-full cursor-pointer truncate rounded-md border border-neutral-700 bg-neutral-900 px-3 pr-8 text-sm text-white outline-none hover:bg-neutral-800 focus:border-[rgb(var(--accent))] focus:ring-2 focus:ring-[rgba(var(--accent),0.2)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full cursor-pointer truncate rounded-lg border border-neutral-700 bg-neutral-900 px-3 pr-8 text-sm text-white transition-[border-color,background-color,box-shadow] outline-none hover:border-neutral-600 hover:bg-neutral-800 focus:border-[rgb(var(--accent))] focus:ring-4 focus:ring-[rgba(var(--accent),0.1)] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
                 title={selectedSubtopicTitle}
               >
                 {lecture.subtopics.map((topic) => (
@@ -329,13 +351,16 @@ export default function ReviseClient({
           <button
             type="button"
             onClick={() => void generateSet(selectedSubtopicId)}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[rgb(var(--accent))] px-4 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group/set inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[rgb(var(--accent))] px-4 text-sm font-semibold text-black shadow-lg shadow-emerald-500/10 transition-[filter,transform,box-shadow] hover:-translate-y-0.5 hover:shadow-emerald-500/20 hover:brightness-105 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none"
             disabled={loading}
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              <RefreshCw
+                className="h-4 w-4 transition-transform duration-300 group-hover/set:rotate-45 motion-reduce:transform-none motion-reduce:transition-none"
+                aria-hidden="true"
+              />
             )}
             {loading ? 'Preparing…' : 'New practice set'}
           </button>
@@ -344,9 +369,13 @@ export default function ReviseClient({
 
       {!loading && items.length > 0 && (
         <section
-          className="card grid gap-5 p-5 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+          className="revise-enter relative grid gap-5 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/35 p-5 motion-safe:animate-[learnmax-revise-enter_500ms_80ms_cubic-bezier(0.22,1,0.36,1)_both] sm:grid-cols-[1fr_auto_auto] sm:items-center"
           aria-label="Revision session progress"
         >
+          <div
+            className="absolute inset-y-4 left-0 w-px bg-emerald-400/50"
+            aria-hidden="true"
+          />
           <div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <div className="min-w-0">
@@ -370,7 +399,7 @@ export default function ReviseClient({
               aria-valuenow={sessionProgress}
             >
               <div
-                className="h-full rounded-full bg-[rgb(var(--accent))] transition-[width] duration-300"
+                className="h-full rounded-full bg-[rgb(var(--accent))] transition-[width] duration-500 ease-out motion-reduce:transition-none"
                 style={{ width: `${sessionProgress}%` }}
               />
             </div>
@@ -392,7 +421,7 @@ export default function ReviseClient({
 
       {error && (
         <div
-          className="rounded-lg border border-red-900/70 bg-red-950/20 p-4"
+          className="revise-enter rounded-xl border border-red-900/70 bg-red-950/20 p-4 motion-safe:animate-[learnmax-revise-enter_260ms_ease-out_both]"
           role="alert"
         >
           <div className="font-medium text-red-200">
@@ -405,7 +434,7 @@ export default function ReviseClient({
           <button
             type="button"
             onClick={() => void generateSet(selectedSubtopicId)}
-            className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+            className="mt-3 inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-neutral-800 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none"
           >
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Try again
@@ -415,24 +444,28 @@ export default function ReviseClient({
 
       {loading && (
         <div
-          className="card p-6"
+          className="revise-enter relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/45 p-6 motion-safe:animate-[learnmax-revise-enter_300ms_ease-out_both]"
           role="status"
           aria-live="polite"
           aria-label="Preparing your revision questions"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(var(--accent),0.12)]">
-              <Sparkles
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-emerald-500/20 bg-[rgba(var(--accent),0.1)]">
+              <span
+                className="focus-ring absolute inset-0 rounded-full border border-emerald-400/40 motion-safe:animate-[learnmax-focus-ring_1.8s_ease-in-out_infinite]"
+                aria-hidden="true"
+              />
+              <Focus
                 className="h-5 w-5 text-[rgb(var(--accent))]"
                 aria-hidden="true"
               />
             </div>
             <div>
               <div className="text-sm font-medium text-neutral-200">
-                Building a focused practice set…
+                Preparing recall prompts…
               </div>
               <div className="mt-0.5 text-xs text-neutral-500">
-                Grounding every question in your lesson.
+                Using only the material in this lesson.
               </div>
             </div>
           </div>
@@ -444,7 +477,7 @@ export default function ReviseClient({
             aria-valuenow={Math.round(progress)}
           >
             <div
-              className="h-full rounded-full bg-[rgb(var(--accent))] transition-[width] duration-200"
+              className="h-full rounded-full bg-[rgb(var(--accent))] transition-[width] duration-300 ease-out motion-reduce:transition-none"
               style={{ width: `${Math.max(8, Math.min(100, progress))}%` }}
             />
           </div>
@@ -452,8 +485,11 @@ export default function ReviseClient({
       )}
 
       {!loading && items.length === 0 && !error && (
-        <div className="card border-dashed p-10 text-center">
-          <h2 className="text-lg font-semibold">Ready when you are</h2>
+        <div className="revise-enter rounded-2xl border border-dashed border-neutral-700 bg-neutral-950/30 p-10 text-center motion-safe:animate-[learnmax-revise-enter_400ms_ease-out_both]">
+          <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-900 text-neutral-400">
+            <BookOpenCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <h2 className="mt-4 text-lg font-semibold">Ready when you are</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-neutral-400">
             Choose a topic and start a practice set to test what you can recall
             without looking back at the lesson.
@@ -461,9 +497,13 @@ export default function ReviseClient({
           <button
             type="button"
             onClick={() => void generateSet(selectedSubtopicId)}
-            className="mt-5 rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black hover:brightness-110"
+            className="group/start mt-5 inline-flex items-center gap-2 rounded-md bg-[rgb(var(--accent))] px-4 py-2 text-sm font-semibold text-black transition-[filter,transform] hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none"
           >
             Start practising
+            <ArrowRight
+              className="h-4 w-4 transition-transform duration-200 group-hover/start:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+              aria-hidden="true"
+            />
           </button>
         </div>
       )}
@@ -488,10 +528,26 @@ export default function ReviseClient({
               : 0;
 
             return (
-              <li key={question.data.id || index} className="card p-6 md:p-8">
-                <div className="flex items-start gap-3">
+              <li
+                key={question.data.id || index}
+                className="revise-enter group/question relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/40 p-5 shadow-[0_24px_65px_-50px_rgba(0,0,0,0.95)] transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:border-neutral-700 hover:shadow-[0_28px_75px_-48px_rgba(16,185,129,0.12)] motion-safe:animate-[learnmax-revise-enter_460ms_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:transform-none motion-reduce:transition-none sm:p-6 md:p-8"
+                style={{ animationDelay: `${Math.min(index * 65, 260)}ms` }}
+              >
+                <div
+                  className={`absolute top-6 bottom-6 left-0 w-px transition-colors duration-300 motion-reduce:transition-none ${
+                    answerChangedSinceGrade
+                      ? 'bg-neutral-700'
+                      : isMastered
+                        ? 'bg-emerald-400/70'
+                        : result
+                          ? 'bg-amber-400/60'
+                          : 'bg-neutral-700 group-hover/question:bg-emerald-400/35'
+                  }`}
+                  aria-hidden="true"
+                />
+                <div className="flex items-start gap-3 sm:gap-4">
                   <div
-                    className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
+                    className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border text-xs font-semibold transition-transform duration-300 group-hover/question:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none ${
                       answerChangedSinceGrade
                         ? 'border-neutral-700 bg-neutral-900 text-neutral-400'
                         : isMastered
@@ -509,7 +565,14 @@ export default function ReviseClient({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="chat-md font-medium text-neutral-100">
+                    <div className="mb-3 flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-[0.14em] text-neutral-500 uppercase">
+                      <span>Question {String(index + 1).padStart(2, '0')}</span>
+                      <span className="text-neutral-700" aria-hidden="true">
+                        /
+                      </span>
+                      <span>Explain from memory</span>
+                    </div>
+                    <div className="chat-md text-base leading-7 font-medium text-neutral-100 sm:text-lg">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeKatex]}
@@ -528,7 +591,7 @@ export default function ReviseClient({
                       <textarea
                         id={answerId}
                         aria-describedby={hintId}
-                        className="w-full rounded-lg border border-neutral-700 bg-neutral-900 p-4 text-sm leading-relaxed transition-colors outline-none placeholder:text-neutral-500 focus:border-[rgb(var(--accent))] focus:ring-2 focus:ring-[rgba(var(--accent),0.2)]"
+                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900/75 p-4 text-sm leading-7 transition-[border-color,background-color,box-shadow] duration-200 outline-none placeholder:text-neutral-600 hover:border-neutral-600 hover:bg-neutral-900 focus:border-[rgb(var(--accent))] focus:bg-neutral-900 focus:ring-4 focus:ring-[rgba(var(--accent),0.1)] motion-reduce:transition-none"
                         rows={5}
                         value={shortAns[index] || ''}
                         onChange={(event) =>
@@ -561,7 +624,7 @@ export default function ReviseClient({
                         type="button"
                         onClick={() => void submitShort(index)}
                         disabled={grading[index] || !shortAns[index]?.trim()}
-                        className="inline-flex items-center gap-2 rounded-md bg-[rgb(var(--accent))] px-4 py-2.5 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="group/grade inline-flex items-center gap-2 rounded-lg bg-[rgb(var(--accent))] px-4 py-2.5 text-sm font-semibold text-black shadow-lg shadow-emerald-500/10 transition-[filter,transform,box-shadow] hover:-translate-y-0.5 hover:shadow-emerald-500/20 hover:brightness-105 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none"
                       >
                         {grading[index] && (
                           <Loader2
@@ -574,6 +637,12 @@ export default function ReviseClient({
                           : result
                             ? 'Grade revised answer'
                             : 'Grade my answer'}
+                        {!grading[index] && (
+                          <ArrowRight
+                            className="h-4 w-4 transition-transform duration-200 group-hover/grade:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+                            aria-hidden="true"
+                          />
+                        )}
                       </button>
 
                       {gradingError[index] && (
@@ -588,7 +657,7 @@ export default function ReviseClient({
 
                       {result && (
                         <div
-                          className={`rounded-lg border p-4 ${
+                          className={`rounded-xl border p-4 shadow-inner shadow-black/10 motion-safe:animate-[learnmax-revise-enter_260ms_ease-out_both] ${
                             answerChangedSinceGrade
                               ? 'border-neutral-700 bg-neutral-900/50'
                               : isMastered
@@ -619,8 +688,8 @@ export default function ReviseClient({
                                   ? 'Strong recall'
                                   : 'Review, improve, and try again'}
                             </div>
-                            <div className="text-sm text-neutral-300">
-                              <span className="text-lg font-bold text-white">
+                            <div className="rounded-lg border border-white/5 bg-black/10 px-3 py-1.5 text-sm text-neutral-300 tabular-nums">
+                              <span className="text-lg font-semibold text-white">
                                 {result.score}
                               </span>
                               /10
@@ -636,9 +705,13 @@ export default function ReviseClient({
                       )}
 
                       {result?.feedback && (
-                        <div className="chat-md rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-300">
+                        <div className="chat-md relative overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 text-sm leading-6 text-neutral-300 motion-safe:animate-[learnmax-revise-enter_300ms_60ms_ease-out_both]">
+                          <span
+                            className="absolute inset-y-3 left-0 w-px bg-emerald-400/45"
+                            aria-hidden="true"
+                          />
                           <div className="mb-2 text-xs font-semibold tracking-[0.12em] text-neutral-500 uppercase">
-                            Feedback
+                            What to improve
                           </div>
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm, remarkMath]}
@@ -650,8 +723,8 @@ export default function ReviseClient({
                       )}
 
                       {result?.modelAnswer && (
-                        <details className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-400">
-                          <summary className="cursor-pointer font-medium text-neutral-300 marker:text-neutral-500">
+                        <details className="group/answer rounded-xl border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-400 transition-colors open:border-neutral-700 open:bg-neutral-900/50 motion-reduce:transition-none">
+                          <summary className="cursor-pointer font-medium text-neutral-300 transition-colors marker:text-neutral-500 hover:text-white motion-reduce:transition-none">
                             Compare with a strong answer
                           </summary>
                           <div className="chat-md mt-3 border-t border-neutral-800 pt-3">
@@ -674,7 +747,14 @@ export default function ReviseClient({
       )}
 
       {!loading && gradedCount > 0 && (
-        <section className="card overflow-hidden" aria-label="Session summary">
+        <section
+          className="revise-enter relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/40 shadow-[0_24px_70px_-50px_rgba(16,185,129,0.15)] motion-safe:animate-[learnmax-revise-enter_420ms_ease-out_both]"
+          aria-label="Session summary"
+        >
+          <div
+            className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/55 to-transparent"
+            aria-hidden="true"
+          />
           <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold">
@@ -694,9 +774,13 @@ export default function ReviseClient({
               <button
                 type="button"
                 onClick={() => void generateSet(selectedSubtopicId)}
-                className="rounded-md border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+                className="group/another inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-neutral-800 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none"
               >
                 Practise another set
+                <ArrowRight
+                  className="h-4 w-4 transition-transform duration-200 group-hover/another:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
               </button>
             </div>
           </div>

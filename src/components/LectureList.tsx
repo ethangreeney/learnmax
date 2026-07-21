@@ -292,7 +292,7 @@ export default function LectureList({
         <div
           role={notice.type === 'error' ? 'alert' : 'status'}
           aria-live={notice.type === 'error' ? 'assertive' : 'polite'}
-          className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${
+          className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm shadow-lg shadow-black/10 motion-safe:animate-[learnmax-workspace-enter_250ms_ease-out_both] ${
             notice.type === 'success'
               ? 'border-emerald-700/50 bg-emerald-950/50 text-emerald-100'
               : 'border-red-700/50 bg-red-950/50 text-red-100'
@@ -322,7 +322,11 @@ export default function LectureList({
       )}
 
       {lectures.length > 1 && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/35 p-3">
+        <div className="relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/35 p-3 shadow-[0_18px_50px_-40px_rgba(0,0,0,0.9)]">
+          <div
+            className="absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-neutral-600/70 to-transparent"
+            aria-hidden="true"
+          />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative min-w-0 flex-1" role="search">
               <label htmlFor="lesson-search" className="sr-only">
@@ -338,7 +342,7 @@ export default function LectureList({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search lessons"
-                className="input h-10 pl-9"
+                className="input h-10 pl-9 transition-[box-shadow,background-color] duration-200 hover:bg-neutral-900 focus:bg-neutral-900 focus:ring-emerald-500/60 motion-reduce:transition-none"
               />
             </div>
 
@@ -358,9 +362,9 @@ export default function LectureList({
                   type="button"
                   onClick={() => setFilter(value)}
                   aria-pressed={filter === value}
-                  className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none ${
                     filter === value
-                      ? 'bg-neutral-700 text-white'
+                      ? 'bg-neutral-700 text-white shadow-sm shadow-black/30'
                       : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'
                   }`}
                 >
@@ -377,7 +381,7 @@ export default function LectureList({
                 id="lesson-sort"
                 value={sort}
                 onChange={(event) => setSort(event.target.value as Sort)}
-                className="select h-10 min-w-36"
+                className="select h-10 min-w-36 cursor-pointer transition-colors hover:bg-neutral-900 motion-reduce:transition-none"
               >
                 <option value="recent">Recently used</option>
                 <option value="newest">Newest created</option>
@@ -417,7 +421,7 @@ export default function LectureList({
         </div>
       ) : (
         <ul className="space-y-3">
-          {visibleLectures.map((lecture) => {
+          {visibleLectures.map((lecture, index) => {
             const isDeleting = deletingIds.has(lecture.id);
             const isStarPending = pendingStarIds.has(lecture.id);
             const needsSetup = lessonNeedsSetup(lecture);
@@ -428,15 +432,47 @@ export default function LectureList({
               : 'Created';
 
             return (
-              <li key={lecture.id}>
+              <li
+                key={lecture.id}
+                className="motion-safe:animate-[learnmax-workspace-enter_420ms_cubic-bezier(0.22,1,0.36,1)_both]"
+                style={{ animationDelay: `${Math.min(index * 45, 225)}ms` }}
+              >
                 <article
                   aria-label={displayTitle}
-                  className={`card relative overflow-visible p-4 transition-colors sm:p-5 ${
-                    isDeleting ? 'opacity-70' : 'hover:border-neutral-700'
+                  className={`group/lesson card relative overflow-visible p-4 transition-[border-color,background-color,box-shadow,opacity,transform] duration-300 motion-reduce:transform-none motion-reduce:transition-none sm:p-5 ${
+                    isDeleting
+                      ? 'opacity-70'
+                      : 'hover:-translate-y-0.5 hover:border-neutral-700 hover:bg-neutral-900/80 hover:shadow-[0_18px_44px_-30px_rgba(0,0,0,0.85)]'
                   }`}
                 >
+                  <div
+                    className={`absolute top-5 bottom-5 left-0 w-px transition-colors duration-300 motion-reduce:transition-none ${
+                      needsSetup
+                        ? 'bg-amber-400/60'
+                        : lecture.starred
+                          ? 'bg-yellow-400/45'
+                          : 'bg-neutral-700/70 group-hover/lesson:bg-emerald-400/45'
+                    }`}
+                    aria-hidden="true"
+                  />
                   <div className={isDeleting ? 'pointer-events-none' : ''}>
                     <div className="flex items-start gap-3">
+                      <span
+                        className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-[border-color,color,transform] duration-300 motion-reduce:transform-none motion-reduce:transition-none sm:inline-flex ${
+                          needsSetup
+                            ? 'border-amber-500/25 bg-amber-500/8 text-amber-300'
+                            : 'border-neutral-700 bg-neutral-900 text-neutral-500 group-hover/lesson:-translate-y-0.5 group-hover/lesson:border-emerald-500/25 group-hover/lesson:text-emerald-300'
+                        }`}
+                      >
+                        {needsSetup ? (
+                          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <BookOpenCheck
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </span>
                       <div className="min-w-0 flex-1">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           {needsSetup && (
@@ -520,9 +556,13 @@ export default function LectureList({
                           >
                             <Link
                               href={`/learn/${lecture.id}`}
-                              className="transition-colors hover:text-emerald-300"
+                              className="inline-flex max-w-full items-center gap-2 transition-colors hover:text-emerald-300 motion-reduce:transition-none"
                             >
-                              {displayTitle}
+                              <span className="truncate">{displayTitle}</span>
+                              <ArrowRight
+                                className="h-4 w-4 shrink-0 translate-x-0 opacity-0 transition-[opacity,transform] duration-200 group-hover/lesson:translate-x-0.5 group-hover/lesson:opacity-70 motion-reduce:transform-none motion-reduce:transition-none"
+                                aria-hidden="true"
+                              />
                             </Link>
                           </h3>
                         )}
@@ -579,7 +619,7 @@ export default function LectureList({
                             ? 'Remove from starred'
                             : 'Add to starred'
                         }
-                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors disabled:cursor-wait disabled:opacity-60 ${
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-[border-color,background-color,color,transform] duration-200 hover:-translate-y-0.5 active:scale-95 disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none motion-reduce:transition-none ${
                           lecture.starred
                             ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20'
                             : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-600 hover:text-neutral-100'
@@ -592,7 +632,7 @@ export default function LectureList({
                           />
                         ) : (
                           <Star
-                            className={`h-4 w-4 ${lecture.starred ? 'fill-current' : ''}`}
+                            className={`h-4 w-4 transition-transform duration-200 motion-reduce:transition-none ${lecture.starred ? 'scale-105 fill-current' : ''}`}
                             aria-hidden="true"
                           />
                         )}
@@ -605,17 +645,20 @@ export default function LectureList({
                           href={`/learn/${lecture.id}`}
                           className={
                             needsSetup
-                              ? 'btn-primary h-9 px-3'
-                              : 'inline-flex h-9 items-center justify-center gap-2 rounded-md bg-neutral-100 px-3 text-sm font-medium text-neutral-950 transition-colors hover:bg-white'
+                              ? 'btn-primary group/action h-9 px-3'
+                              : 'group/action inline-flex h-9 items-center justify-center gap-2 rounded-md bg-neutral-100 px-3 text-sm font-medium text-neutral-950 transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-white active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none'
                           }
                         >
                           {needsSetup ? 'Finish setup' : 'Continue'}
-                          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                          <ArrowRight
+                            className="h-4 w-4 transition-transform duration-200 group-hover/action:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+                            aria-hidden="true"
+                          />
                         </Link>
                         {!needsSetup && (
                           <Link
                             href={`/revise/${lecture.id}`}
-                            className="btn-ghost h-9 px-3"
+                            className="btn-ghost h-9 px-3 hover:-translate-y-0.5 active:translate-y-0 motion-reduce:transform-none"
                           >
                             Practise recall
                           </Link>
@@ -630,7 +673,7 @@ export default function LectureList({
                           type="button"
                           onClick={() => beginRename(lecture)}
                           disabled={editingId !== null || isDeleting}
-                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white disabled:opacity-50"
+                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-xs font-medium text-neutral-300 transition-[background-color,color,transform] hover:-translate-y-0.5 hover:bg-neutral-800 hover:text-white active:translate-y-0 disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none"
                           aria-label={`Rename ${displayTitle}`}
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />

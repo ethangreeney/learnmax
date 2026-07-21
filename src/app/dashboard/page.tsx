@@ -43,7 +43,7 @@ function StatCard({
   iconBackground: string;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800/80 bg-neutral-950/45 p-4">
+    <div className="group/stat rounded-xl border border-neutral-800/80 bg-neutral-950/45 p-4 transition-[border-color,background-color,transform] duration-300 hover:-translate-y-0.5 hover:border-neutral-700 hover:bg-neutral-900/70 motion-reduce:transform-none motion-reduce:transition-none">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium tracking-[0.14em] text-neutral-500 uppercase">
@@ -53,7 +53,10 @@ function StatCard({
             {value}
           </p>
         </div>
-        <div className={`rounded-lg p-2 ${iconBackground}`} aria-hidden="true">
+        <div
+          className={`rounded-lg p-2 transition-transform duration-300 group-hover/stat:scale-105 motion-reduce:transform-none motion-reduce:transition-none ${iconBackground}`}
+          aria-hidden="true"
+        >
           <Icon className={`h-4 w-4 ${iconClass}`} />
         </div>
       </div>
@@ -87,6 +90,13 @@ function formatTimeAgo(iso: string): string {
 
 function pluralize(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`;
+}
+
+function lessonIsActionable(lecture: ClientLecture) {
+  return (
+    lecture.subtopicCount > 0 &&
+    !/^generating lesson/i.test(lecture.title.trim())
+  );
 }
 
 async function getData() {
@@ -171,7 +181,8 @@ export default async function Dashboard() {
     starred: lecture.starred ?? false,
   }));
 
-  const recentLectures = [...clientLectures]
+  const recentLectures = clientLectures
+    .filter(lessonIsActionable)
     .sort((a, b) => {
       const aActivity = Date.parse(a.lastOpenedAtISO || a.createdAtISO);
       const bActivity = Date.parse(b.lastOpenedAtISO || b.createdAtISO);
@@ -189,46 +200,61 @@ export default async function Dashboard() {
   const streak = me.streak ?? 0;
 
   return (
-    <div className="container-narrow space-y-8">
+    <div className="container-narrow space-y-9 pb-8">
+      <style>{`
+        @keyframes learnmax-dashboard-enter {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dashboard-enter { animation: none !important; }
+        }
+      `}</style>
       <section
-        className="card relative overflow-hidden"
+        className="dashboard-enter card relative overflow-hidden shadow-[0_30px_90px_-55px_rgba(16,185,129,0.3)] motion-safe:animate-[learnmax-dashboard-enter_500ms_cubic-bezier(0.22,1,0.36,1)_both]"
         aria-labelledby="dashboard-title"
       >
         <div
           className="pointer-events-none absolute inset-0"
           aria-hidden="true"
         >
-          <div className="hero-spotlight absolute -top-28 -left-24 h-72 w-72 rounded-full opacity-80" />
-          <div className="hero-grid absolute inset-0 opacity-30" />
-          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+          <div className="hero-spotlight absolute -top-28 -left-24 h-72 w-72 rounded-full opacity-55" />
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/65 to-transparent" />
+          <div className="absolute top-0 right-[21rem] hidden h-full w-px bg-neutral-800/60 lg:block" />
         </div>
 
-        <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-center">
+        <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-center">
           <div className="min-w-0">
-            <p className="text-xs font-semibold tracking-[0.2em] text-emerald-400 uppercase">
-              Welcome back, {firstName}
-            </p>
+            <div className="flex items-center gap-3">
+              <span className="h-px w-7 bg-emerald-400/80" aria-hidden="true" />
+              <p className="text-xs font-semibold tracking-[0.18em] text-emerald-400 uppercase">
+                Welcome back, {firstName}
+              </p>
+            </div>
             <h1
               id="dashboard-title"
-              className="mt-3 max-w-2xl text-3xl font-bold tracking-tight text-white sm:text-4xl"
+              className="mt-4 max-w-2xl text-3xl font-semibold tracking-[-0.035em] text-balance text-white sm:text-5xl sm:leading-[1.08]"
             >
               {nextLecture
-                ? 'Ready for your next study session?'
-                : 'Build your first focused lesson'}
+                ? 'Keep building what you can recall.'
+                : 'Build understanding from material you trust.'}
             </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-neutral-400 sm:text-base">
+            <p className="mt-4 max-w-xl text-sm leading-7 text-neutral-400 sm:text-base">
               {nextLecture
-                ? `Pick up “${nextLecture.title}” where you left off, or turn new material into a focused lesson.`
-                : 'Paste your notes, choose the right level of detail, and let LearnMax guide you through one concept at a time.'}
+                ? `Return to “${nextLecture.title}”, then test the idea without looking back.`
+                : 'Bring your notes or readings. LearnMax will shape them into explanation, active recall, and focused revision.'}
             </p>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link
                 href={nextLecture ? `/learn/${nextLecture.id}` : '/learn'}
-                className="btn-primary px-5 py-2.5 font-semibold"
+                className="group/primary btn-primary px-5 py-2.5 font-semibold"
               >
-                {nextLecture ? 'Continue learning' : 'Create your first lesson'}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                {nextLecture ? 'Resume lesson' : 'Create your first lesson'}
+                <ArrowRight
+                  className="h-4 w-4 transition-transform duration-200 group-hover/primary:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
               </Link>
               {nextLecture ? (
                 <>
@@ -253,54 +279,66 @@ export default async function Dashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-neutral-800/80 bg-neutral-950/55 p-5 shadow-2xl shadow-black/20 backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full bg-neutral-900 ring-1 ring-neutral-700">
-                {me.image ? (
-                  <ProfileAvatar
-                    userId={me.id}
-                    src={String(me.image)}
-                    width={56}
-                    height={56}
-                    className="h-full w-full object-cover"
-                    priority
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-neutral-500">
-                    <UserIcon className="h-6 w-6" aria-hidden="true" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-white">
-                  {me.name || 'Your profile'}
+          <div className="group/brief rounded-2xl border border-neutral-800/80 bg-neutral-950/70 p-5 shadow-2xl shadow-black/20 backdrop-blur-sm transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-neutral-700 motion-reduce:transform-none motion-reduce:transition-none">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-mono text-[10px] tracking-[0.18em] text-neutral-500 uppercase">
+                  {nextLecture ? 'Up next' : 'Your profile'}
                 </p>
-                <p className="truncate text-xs text-neutral-500">
-                  {me.username ? `@${me.username}` : 'Add a username below'}
+                <p className="mt-2 line-clamp-2 text-base leading-6 font-semibold text-neutral-100">
+                  {nextLecture ? nextLecture.title : me.name || 'New learner'}
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {nextLecture
+                    ? `${pluralize(nextLecture.subtopicCount, 'section')} · ${formatTimeAgo(nextLecture.lastOpenedAtISO || nextLecture.createdAtISO)}`
+                    : 'Ready for your first lesson'}
                 </p>
               </div>
               <Link
-                href={profileUrl}
-                className="rounded-md p-2 text-neutral-400 transition-colors hover:bg-neutral-800/70 hover:text-white"
-                aria-label="View public profile"
+                href={nextLecture ? `/learn/${nextLecture.id}` : profileUrl}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900 text-neutral-400 transition-[border-color,color,transform] duration-200 hover:translate-x-0.5 hover:border-emerald-500/30 hover:text-emerald-300 motion-reduce:transform-none motion-reduce:transition-none"
+                aria-label={
+                  nextLecture
+                    ? `Open ${nextLecture.title}`
+                    : 'View public profile'
+                }
               >
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </div>
 
-            <div className="my-4 h-px bg-neutral-800/80" />
-            <div className="flex items-center justify-between gap-3">
+            <div className="my-5 h-px bg-neutral-800/80" />
+            <div className="flex items-center gap-3">
+              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-900 ring-1 ring-neutral-700 transition-transform duration-300 group-hover/brief:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none">
+                {me.image ? (
+                  <ProfileAvatar
+                    userId={me.id}
+                    src={String(me.image)}
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-cover"
+                    priority
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-neutral-500">
+                    <UserIcon className="h-4 w-4" aria-hidden="true" />
+                  </div>
+                )}
+              </div>
               <RankBadge
                 name={me.rank?.name || currentRank?.name || 'Unranked'}
                 iconUrl={me.rank?.iconUrl || null}
                 elo={me.elo}
                 rankColorClass={rankColor}
+                showIcon={false}
               />
-              <RankGuide
-                label="Rank guide"
-                initialElo={me.elo}
-                buttonClassName="rounded-md px-2.5 py-1.5 text-xs text-neutral-400 ring-1 ring-neutral-800 transition-colors hover:bg-neutral-900 hover:text-white"
-              />
+              <div className="ml-auto">
+                <RankGuide
+                  label="Rank guide"
+                  initialElo={me.elo}
+                  buttonClassName="rounded-md px-2.5 py-1.5 text-xs text-neutral-400 ring-1 ring-neutral-800 transition-colors hover:bg-neutral-900 hover:text-white"
+                />
+              </div>
             </div>
             <div className="mt-4">
               <RankProgressBar
@@ -315,7 +353,7 @@ export default async function Dashboard() {
         </div>
       </section>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.8fr)]">
+      <div className="dashboard-enter grid items-start gap-6 motion-safe:animate-[learnmax-dashboard-enter_520ms_100ms_cubic-bezier(0.22,1,0.36,1)_both] lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.8fr)]">
         <section
           className="card overflow-hidden"
           aria-labelledby="continue-learning-title"
@@ -335,9 +373,13 @@ export default async function Dashboard() {
             {recentLectures.length > 0 && (
               <Link
                 href="/learn"
-                className="shrink-0 text-sm font-medium text-neutral-300 hover:text-white"
+                className="group/link inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-neutral-300 transition-colors hover:text-white motion-reduce:transition-none"
               >
                 View all
+                <ArrowRight
+                  className="h-3.5 w-3.5 transition-transform duration-200 group-hover/link:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
               </Link>
             )}
           </div>
@@ -370,7 +412,7 @@ export default async function Dashboard() {
                 return (
                   <li
                     key={lecture.id}
-                    className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                    className="group/row -mx-2 flex flex-col gap-3 rounded-xl px-2 py-4 transition-[background-color,transform] duration-200 hover:translate-x-0.5 hover:bg-neutral-900/45 motion-reduce:transform-none motion-reduce:transition-none sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -388,7 +430,7 @@ export default async function Dashboard() {
                         )}
                         <Link
                           href={`/learn/${lecture.id}`}
-                          className="truncate font-medium text-neutral-100 transition-colors hover:text-emerald-300"
+                          className="truncate font-medium text-neutral-100 transition-colors group-hover/row:text-emerald-300 motion-reduce:transition-none"
                         >
                           {lecture.title}
                         </Link>
@@ -409,14 +451,14 @@ export default async function Dashboard() {
                     <div className="flex shrink-0 gap-2">
                       <Link
                         href={`/learn/${lecture.id}`}
-                        className="btn-ghost flex-1 px-3 py-1.5 sm:flex-none"
+                        className="btn-ghost flex-1 px-3 py-1.5 hover:-translate-y-0.5 motion-reduce:transform-none sm:flex-none"
                         aria-label={`Open ${lecture.title}`}
                       >
                         Open
                       </Link>
                       <Link
                         href={`/revise/${lecture.id}`}
-                        className="btn-ghost flex-1 px-3 py-1.5 sm:flex-none"
+                        className="btn-ghost flex-1 px-3 py-1.5 hover:-translate-y-0.5 motion-reduce:transform-none sm:flex-none"
                         aria-label={`Revise ${lecture.title}`}
                       >
                         Revise
@@ -429,7 +471,10 @@ export default async function Dashboard() {
           )}
         </section>
 
-        <aside className="card p-5 sm:p-6" aria-labelledby="progress-title">
+        <aside
+          className="card p-5 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.9)] sm:p-6"
+          aria-labelledby="progress-title"
+        >
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2
@@ -503,7 +548,10 @@ export default async function Dashboard() {
         </aside>
       </div>
 
-      <section className="space-y-4" aria-labelledby="profile-settings-title">
+      <section
+        className="dashboard-enter space-y-4 motion-safe:animate-[learnmax-dashboard-enter_520ms_180ms_cubic-bezier(0.22,1,0.36,1)_both]"
+        aria-labelledby="profile-settings-title"
+      >
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
           <div>
             <h2
@@ -553,27 +601,30 @@ function RankBadge({
   iconUrl,
   elo,
   rankColorClass,
+  showIcon = true,
 }: {
   name: string;
   iconUrl: string | null | undefined;
   elo: number;
   rankColorClass: string;
+  showIcon?: boolean;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      {iconUrl ? (
-        <Image
-          src={iconUrl}
-          alt=""
-          width={40}
-          height={40}
-          className="h-10 w-10 shrink-0 object-contain"
-        />
-      ) : (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
-          <Trophy className="h-4 w-4" aria-hidden="true" />
-        </div>
-      )}
+      {showIcon &&
+        (iconUrl ? (
+          <Image
+            src={iconUrl}
+            alt=""
+            width={40}
+            height={40}
+            className="h-10 w-10 shrink-0 object-contain"
+          />
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
+            <Trophy className="h-4 w-4" aria-hidden="true" />
+          </div>
+        ))}
       <div className="min-w-0">
         <p
           className={`truncate bg-gradient-to-r ${rankColorClass} bg-clip-text text-sm font-semibold text-transparent`}

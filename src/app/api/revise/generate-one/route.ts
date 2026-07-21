@@ -9,6 +9,7 @@ import {
 import crypto from 'crypto';
 import { SOURCE_HANDLING_RULES, wrapSource } from '@/lib/ai-prompts';
 import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
+import prisma from '@/lib/prisma';
 
 // Coalesce concurrent generation requests with identical lesson text
 const inflight = new Map<
@@ -21,13 +22,21 @@ export async function POST(req: NextRequest) {
     // Allow anonymous generation for public demo when lesson content is provided.
     // If not authenticated, require sufficient lesson content to proceed.
     const body = (await req.json().catch(() => ({}))) as {
+      lectureId?: string;
+      subtopicId?: string;
       lessonMd?: string;
       subtopicTitle?: string;
     };
-    const lessonMd = String(body?.lessonMd || '')
+    const lectureId = String(body?.lectureId || '')
+      .trim()
+      .slice(0, 80);
+    const subtopicId = String(body?.subtopicId || '')
+      .trim()
+      .slice(0, 80);
+    const providedLessonMd = String(body?.lessonMd || '')
       .trim()
       .slice(0, 8_000);
-    const subtopicTitle = String(body?.subtopicTitle || '')
+    let subtopicTitle = String(body?.subtopicTitle || '')
       .trim()
       .slice(0, 200);
 
@@ -45,7 +54,57 @@ export async function POST(req: NextRequest) {
         { status: 429 }
       );
     }
-    if (!isAuthed && (!lessonMd || lessonMd.length < 50)) {
+    if (lectureId && !isAuthed) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Real lessons are always read from the database. Browser-provided lesson
+    // text is reserved for the public demo and is never persisted.
+    let lessonMd = '';
+    if (lectureId) {
+      if (!subtopicId) {
+        return NextResponse.json(
+          { error: 'subtopicId required' },
+          { status: 400 }
+        );
+      }
+      const subtopic = await prisma.subtopic.findFirst({
+        where: { id: subtopicId, lectureId, lecture: { userId: userId || '' } },
+        select: {
+          title: true,
+          overview: true,
+          explanation: true,
+          lecture: { select: { title: true, originalContent: true } },
+        },
+      });
+      if (!subtopic) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
+      const existingPrompt = await prisma.shortAnswerPrompt.findUnique({
+        where: { lectureId_subtopicId: { lectureId, subtopicId } },
+        select: { prompt: true, modelAnswer: true },
+      });
+      if (existingPrompt) {
+        return NextResponse.json(existingPrompt);
+      }
+      subtopicTitle = subtopic.title || subtopicTitle;
+      lessonMd = [
+        `# ${subtopic.lecture.title}`,
+        subtopic.title ? `## ${subtopic.title}` : '',
+        subtopic.overview,
+        subtopic.explanation || '',
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+        .trim();
+      if (lessonMd.length < 50) {
+        lessonMd = subtopic.lecture.originalContent.slice(0, 8_000);
+      }
+    } else {
+      lessonMd = providedLessonMd;
+    }
+
+    if (!isAuthed && lessonMd.length < 50) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     if (!lessonMd || lessonMd.length < 50) {
@@ -98,12 +157,26 @@ export async function POST(req: NextRequest) {
       });
       inflight.set(key, p);
     }
-    const result = await p;
+    let result = await p;
     if (!result.prompt || !result.modelAnswer) {
       return NextResponse.json(
         { error: 'Could not generate a grounded revision question.' },
         { status: 502 }
       );
+    }
+
+    if (lectureId && subtopicId) {
+      result = await prisma.shortAnswerPrompt.upsert({
+        where: { lectureId_subtopicId: { lectureId, subtopicId } },
+        update: {},
+        create: {
+          lectureId,
+          subtopicId,
+          prompt: result.prompt,
+          modelAnswer: result.modelAnswer,
+        },
+        select: { prompt: true, modelAnswer: true },
+      });
     }
     return NextResponse.json(result);
   } catch (e: any) {

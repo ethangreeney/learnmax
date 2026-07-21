@@ -32,7 +32,7 @@ export default function SignInOut() {
   if (status === 'loading') {
     return (
       <div
-        className="h-8 w-24 animate-pulse rounded-md bg-neutral-800/70"
+        className="account-skeleton"
         role="status"
         aria-label="Loading account"
       />
@@ -64,49 +64,59 @@ export default function SignInOut() {
       }
     })();
     return (
-      <Link
-        key={routeKey}
-        href={href}
-        className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black"
-      >
+      <Link key={routeKey} href={href} className="btn-primary header-signin">
         Sign In
       </Link>
     );
   }
 
   const user = session.user as { name?: string | null; image?: string | null };
+  const displayName = meName || user?.name || 'Profile';
+  const initials = displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('');
+  const profileIsCurrent =
+    pathname === '/profile' || Boolean(pathname?.startsWith('/profile/'));
+
   return (
-    <div className="flex items-center gap-3" key={routeKey}>
+    <div className="flex min-w-0 items-center gap-1" key={routeKey}>
       <Link
         href="/profile"
-        className="group relative inline-flex h-8 w-8 overflow-hidden rounded-full ring-1 ring-neutral-800"
-        aria-label="Open profile"
+        className="account-link"
+        aria-label={`Open ${displayName}'s profile`}
+        aria-current={profileIsCurrent ? 'page' : undefined}
       >
-        {meImage || user?.image ? (
-          (meImage || user?.image || '').toLowerCase().includes('.gif') ||
-          (meImage || user?.image || '').toLowerCase().includes('.webp') ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={meImage || user?.image || ''}
-              alt={meName || user?.name || 'avatar'}
-              className="h-full w-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+        <span className="account-avatar">
+          {meImage || user?.image ? (
+            (meImage || user?.image || '').toLowerCase().includes('.gif') ||
+            (meImage || user?.image || '').toLowerCase().includes('.webp') ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={meImage || user?.image || ''}
+                alt=""
+                className="h-full w-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <Image
+                src={meImage || user?.image || ''}
+                alt=""
+                fill
+                sizes="28px"
+                className="object-cover"
+                priority={false}
+              />
+            )
           ) : (
-            <Image
-              src={meImage || user?.image || ''}
-              alt={meName || user?.name || 'avatar'}
-              fill
-              sizes="32px"
-              className="object-cover"
-              priority={false}
-            />
-          )
-        ) : (
-          <span className="grid h-full w-full place-items-center bg-neutral-900 text-[10px] text-neutral-400">
-            You
-          </span>
-        )}
+            <span className="grid h-full w-full place-items-center bg-neutral-900 text-[9px] font-semibold text-neutral-400 uppercase">
+              {initials || 'Y'}
+            </span>
+          )}
+        </span>
+        <span className="account-name">{displayName}</span>
       </Link>
       <button
         type="button"
@@ -119,7 +129,7 @@ export default function SignInOut() {
           }
         }}
         disabled={isSigningOut}
-        className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900 hover:text-white disabled:cursor-wait disabled:opacity-60"
+        className="account-signout"
       >
         {isSigningOut ? 'Signing out…' : 'Sign out'}
       </button>

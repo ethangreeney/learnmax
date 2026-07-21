@@ -1,16 +1,41 @@
 function Skeleton({ className }: { className: string }) {
-  return <div className={`rounded-md bg-neutral-800/80 ${className}`} />;
+  return (
+    <div
+      className={`dashboard-skeleton relative overflow-hidden rounded-md bg-neutral-800/75 ${className}`}
+    />
+  );
 }
 
 export default function DashboardLoading() {
   return (
     <div
-      className="container-narrow animate-pulse space-y-8"
+      className="container-narrow space-y-9"
       aria-busy="true"
       aria-label="Loading your dashboard"
     >
-      <section className="card overflow-hidden">
-        <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-center">
+      <style>{`
+        @keyframes dashboard-skeleton-sweep {
+          from { transform: translateX(-120%); }
+          to { transform: translateX(240%); }
+        }
+        .dashboard-skeleton::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          width: 45%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.055), transparent);
+          animation: dashboard-skeleton-sweep 1.7s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dashboard-skeleton::after { animation: none; }
+        }
+      `}</style>
+      <section className="card relative overflow-hidden">
+        <div
+          className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/25 to-transparent"
+          aria-hidden="true"
+        />
+        <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-center">
           <div>
             <Skeleton className="h-3 w-36" />
             <div className="mt-4 space-y-3">

@@ -1379,7 +1379,9 @@ export default function LearnView({
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    lessonMd: md,
+                    lectureId: demo ? undefined : prefLectureId,
+                    subtopicId: demo ? undefined : prefSubtopicId,
+                    lessonMd: demo ? md : undefined,
                     // Keep title omitted to mirror in-session generation behavior
                   }),
                 });
@@ -1780,6 +1782,7 @@ export default function LearnView({
                       )}
                       lectureId={initial.id}
                       lessonMd={lessonMd}
+                      demoMode={demo}
                       isLast={currentIndex === initial.subtopics.length - 1}
                       onPassed={async () => {
                         const id = currentSubtopic.id;
@@ -1956,6 +1959,7 @@ function ShortAnswerPanel({
   explanationReady,
   lectureId,
   lessonMd,
+  demoMode,
   isLast,
   onPassed,
 }: {
@@ -1963,6 +1967,7 @@ function ShortAnswerPanel({
   explanationReady: boolean;
   lectureId: string;
   lessonMd?: string;
+  demoMode: boolean;
   isLast: boolean;
   onPassed: () => Promise<void>;
 }) {
@@ -2074,7 +2079,9 @@ function ShortAnswerPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            lessonMd: payload,
+            lectureId: demoMode ? undefined : lectureId,
+            subtopicId: demoMode ? undefined : subtopicId,
+            lessonMd: demoMode ? payload : undefined,
             subtopicTitle: subtopicId ? undefined : undefined,
           }),
         });
@@ -2116,7 +2123,7 @@ function ShortAnswerPanel({
       }
     };
     void load();
-  }, [explanationReady, lessonMd, lectureId, subtopicId, retryNonce]);
+  }, [explanationReady, lessonMd, lectureId, subtopicId, demoMode, retryNonce]);
 
   // Autosave the user's answer as they type so it restores when returning
   useEffect(() => {
@@ -2154,11 +2161,12 @@ function ShortAnswerPanel({
         headers: { 'Content-Type': 'application/json' },
         // Allow server to award elo when appropriate
         body: JSON.stringify({
-          lectureId,
+          lectureId: demoMode ? undefined : lectureId,
+          subtopicId: demoMode ? undefined : subtopicId,
           prompt,
           answer: a,
           suppressElo: true,
-          lessonMd,
+          lessonMd: demoMode ? lessonMd : undefined,
         }),
       });
       if (!res.ok) throw new Error('Failed to grade');

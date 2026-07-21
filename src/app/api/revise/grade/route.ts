@@ -7,6 +7,7 @@ import { isSessionWithUser } from '@/lib/session-utils';
 import crypto from 'crypto';
 import { SOURCE_HANDLING_RULES, wrapSource } from '@/lib/ai-prompts';
 import { rateLimit, rateLimitKey } from '@/lib/shared/ratelimit';
+import { persistBestShortAnswerGrade } from '@/lib/short-answer-grades';
 
 // Simple in-memory cache to stabilize repeated grading for identical inputs in a single server instance
 const gradeCache = new Map<
@@ -37,12 +38,16 @@ export async function POST(req: NextRequest) {
     }
     const body = (await req.json().catch(() => ({}))) as {
       lectureId?: string;
+      subtopicId?: string;
       prompt?: string;
       answer?: string;
       suppressElo?: boolean;
       lessonMd?: string;
     };
     const lectureId = String(body?.lectureId || '')
+      .trim()
+      .slice(0, 80);
+    const subtopicId = String(body?.subtopicId || '')
       .trim()
       .slice(0, 80);
     const prompt = String(body?.prompt || '')
@@ -53,20 +58,15 @@ export async function POST(req: NextRequest) {
       .slice(0, 6_000);
     const suppressElo = Boolean(body?.suppressElo);
     const providedLessonMd = String(body?.lessonMd || '').trim();
-    if (
-      (!lectureId && (!providedLessonMd || providedLessonMd.length < 50)) ||
-      !prompt ||
-      !answer
-    ) {
+    if (!prompt || !answer) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
-    // Ensure lecture ownership and pull composite lesson text for grounding
+    // Real lessons are always grounded in server-owned content. Client-provided
+    // lesson text is accepted only for the public demo, where no lecture ID is
+    // supplied and no grade or reward is persisted.
     let lessonMd = '';
-    if (providedLessonMd && providedLessonMd.length >= 50) {
-      // Anonymous or explicit grading using provided content (demo path)
-      lessonMd = providedLessonMd.slice(0, 8000);
-    } else {
+    if (lectureId) {
       if (!isAuthed) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
           title: true,
           originalContent: true,
           subtopics: {
+            ...(subtopicId ? { where: { id: subtopicId } } : {}),
             orderBy: { order: 'asc' },
             select: { title: true, overview: true, explanation: true },
           },
@@ -83,6 +84,27 @@ export async function POST(req: NextRequest) {
       });
       if (!lecture)
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      if (subtopicId && lecture.subtopics.length === 0) {
+        return NextResponse.json(
+          { error: 'Subtopic not found.' },
+          { status: 404 }
+        );
+      }
+      if (subtopicId) {
+        const savedPrompt = await prisma.shortAnswerPrompt.findUnique({
+          where: { lectureId_subtopicId: { lectureId, subtopicId } },
+          select: { prompt: true },
+        });
+        if (!savedPrompt || savedPrompt.prompt !== prompt) {
+          return NextResponse.json(
+            {
+              error:
+                'This mastery question changed. Refresh the lesson and try again.',
+            },
+            { status: 409 }
+          );
+        }
+      }
       const parts: string[] = [`# ${lecture.title}`];
       for (const s of lecture.subtopics || []) {
         if (s.title) parts.push(`\n## ${s.title}`);
@@ -94,6 +116,10 @@ export async function POST(req: NextRequest) {
         lecture.originalContent ||
         ''
       ).slice(0, 8000);
+    } else if (providedLessonMd.length >= 50) {
+      lessonMd = providedLessonMd.slice(0, 8000);
+    } else {
+      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
     if (!lessonMd || lessonMd.length < 50) {
       return NextResponse.json(
@@ -108,7 +134,8 @@ export async function POST(req: NextRequest) {
       [lectureId || 'demo', lessonHash, prompt, answer].join('|')
     );
     const promptHash = stableHash([lectureId, prompt].join('|'));
-    const alreadyPassed = isAuthed
+    const canPersistGrade = isAuthed && Boolean(lectureId);
+    const alreadyPassed = canPersistGrade
       ? await prisma.shortAnswerGrade
           .findUnique({
             where: { userId_promptHash: { userId, promptHash } },
@@ -203,17 +230,32 @@ ${wrapSource(answer, `LEARNER ANSWER ${key.slice(0, 8)}`)}`;
       }
     }
 
-    // Grade every answer, but award ELO only once per user + lecture + prompt.
-    const rewardKey = stableHash([lectureId || lessonHash, prompt].join('|'));
+    // Persist the server-issued grade before returning it to the client. Mastery
+    // unlocks read this record, so a successful grade response is guaranteed to
+    // be saveable and client-supplied scores never become a source of truth.
+    if (canPersistGrade) {
+      await persistBestShortAnswerGrade({
+        userId,
+        lectureId,
+        promptHash,
+        score,
+      });
+    }
+
+    // Grade every answer, but award revision ELO at most once per lesson. New
+    // AI-generated wording should not create an unlimited points loop.
+    const rewardKey = stableHash(
+      ['revision', lectureId || lessonHash].join('|')
+    );
     let appliedDelta = 0;
     // Do not award ELO when anonymous or when suppressElo is true
-    if (!suppressElo && isAuthed && !cameFromCache && !alreadyPassed) {
+    if (!suppressElo && canPersistGrade && !cameFromCache && !alreadyPassed) {
       const ELO_REVISE_SHORT_8PLUS = parseInt(
         process.env.ELO_REVISE_SHORT_8PLUS || '20',
         10
       );
       let delta = 0;
-      // Award points for any explanation strictly over 7 (i.e., 8–10). A lenient 7 is bumped to 8 above.
+      // Award points for any explanation strictly over 7 (i.e., 8–10).
       if (score > 7) delta = ELO_REVISE_SHORT_8PLUS;
 
       if (delta && Number.isFinite(delta) && delta !== 0) {
@@ -242,23 +284,6 @@ ${wrapSource(answer, `LEARNER ANSWER ${key.slice(0, 8)}`)}`;
           if (!(e && typeof e === 'object' && (e as any).code === 'P2002')) {
             // Swallow other errors, still return grade
           }
-        }
-      }
-    }
-
-    // Persist short-answer grade for lifetime stats (use raw SQL upsert for compatibility)
-    if (isAuthed) {
-      try {
-        await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${lectureId || null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
-      } catch {
-        try {
-          await prisma.$executeRaw`INSERT INTO "ShortAnswerGrade" ("userId", "lectureId", "promptHash", "score") VALUES (${userId}, ${null}, ${promptHash}, ${score}) ON CONFLICT ("userId", "promptHash") DO UPDATE SET "score" = GREATEST("ShortAnswerGrade"."score", EXCLUDED."score")`;
-        } catch (e2: any) {
-          console.error('ShortAnswerGrade insert failed', {
-            userId,
-            lectureId,
-            err: String(e2?.message || e2),
-          });
         }
       }
     }
